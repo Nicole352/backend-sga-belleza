@@ -1,22 +1,11 @@
 const express = require('express');
-const path = require('path');
 const multer = require('multer');
 const { pool } = require('../config/database');
 
 const router = express.Router();
 
-// Configuración de Multer para subir comprobantes
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, '../../uploads'));
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const base = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '');
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, `${base}-${unique}${ext}`);
-  }
-});
+// Configuración de Multer (memoria) para subir comprobantes y guardarlos en BD (columna comprobante_pago LONGBLOB)
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage,
@@ -84,7 +73,7 @@ router.post('/', upload.single('comprobante'), async (req, res) => {
     return res.status(500).json({ error: 'Error validando curso' });
   }
 
-  const comprobanteRuta = req.file ? `/uploads/${req.file.filename}` : null;
+  const comprobanteBuffer = req.file ? req.file.buffer : null;
   const comprobanteMime = req.file ? req.file.mimetype : null;
   const comprobanteSizeKb = req.file ? Math.ceil(req.file.size / 1024) : null;
   const comprobanteNombreOriginal = req.file ? req.file.originalname : null;
@@ -123,7 +112,7 @@ router.post('/', upload.single('comprobante'), async (req, res) => {
       Number(id_curso),
       Number(monto_matricula),
       metodo_pago,
-      comprobanteRuta,
+      comprobanteBuffer,
       comprobanteMime,
       comprobanteSizeKb,
       comprobanteNombreOriginal
