@@ -9,12 +9,15 @@ const startServer = async () => {
     // Probar conexión a BD
     await testConnection();
     
-    // Crear directorio de uploads si no existe
-    const fs = require('fs');
-    const path = require('path');
-    const uploadsDir = path.join(__dirname, 'uploads');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
+    // Crear directorio de uploads si está habilitado por env (por defecto deshabilitado).
+    // Nota: Actualmente los comprobantes se guardan en BD (LONGBLOB) con multer.memoryStorage.
+    if (process.env.ENABLE_UPLOADS_DIR === 'true') {
+      const fs = require('fs');
+      const path = require('path');
+      const uploadsDir = path.join(__dirname, 'uploads');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
     }
     
     // Iniciar servidor

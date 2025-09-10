@@ -6,6 +6,9 @@ const rateLimit = require('express-rate-limit');
 // Routes
 const cursosRoutes = require('./routes/cursos');
 const solicitudesRoutes = require('./routes/solicitudes');
+const authRoutes = require('./routes/auth');
+const adminsRoutes = require('./routes/admins');
+const rolesRoutes = require('./routes/roles');
 
 const app = express();
 
@@ -45,6 +48,9 @@ app.get('/api/health', (req, res) => {
 });
 
 // Rutas API
+app.use('/api/auth', authRoutes);
+app.use('/api/admins', adminsRoutes);
+app.use('/api/roles', rolesRoutes);
 app.use('/api/cursos', cursosRoutes);
 app.use('/api/solicitudes', solicitudesRoutes);
 
