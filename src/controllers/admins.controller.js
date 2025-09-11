@@ -24,6 +24,17 @@ async function createAdminController(req, res) {
 
     const hash = await bcrypt.hash(password, 10);
 
+    // Guardado en BDD: si llega archivo, usamos su buffer y mimetype
+    let fotoPerfilBuffer = null;
+    let fotoMimeType = null;
+    if (req.file && req.file.buffer && req.file.mimetype) {
+      fotoPerfilBuffer = req.file.buffer;
+      fotoMimeType = req.file.mimetype;
+    }
+
+    // Normalizar género a valores válidos para la BDD ('M'|'F'); si no coincide, enviar NULL
+    const generoDB = (genero === 'M' || genero === 'F') ? genero : null;
+
     const user = await createAdminUser({
       cedula,
       nombre,
@@ -32,8 +43,9 @@ async function createAdminController(req, res) {
       telefono: telefono || null,
       fecha_nacimiento: fecha_nacimiento || null,
       direccion: direccion || null,
-      genero: genero || null,
-      foto_perfil: foto_perfil || null,
+      genero: generoDB,
+      foto_perfil: fotoPerfilBuffer,
+      foto_mime_type: fotoMimeType,
       passwordHash: hash,
       id_rol: role.id_rol
     });
