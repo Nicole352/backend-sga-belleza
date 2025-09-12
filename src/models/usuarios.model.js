@@ -56,8 +56,9 @@ async function getAllRoles() {
 async function createRole(nombre_rol, descripcion = null) {
   await pool.execute(
     `INSERT INTO roles (nombre_rol, descripcion, estado) VALUES (?, ?, 'activo')
-     ON DUPLICATE KEY UPDATE descripcion = VALUES(descripcion), estado = 'activo'`
-  , [nombre_rol, descripcion]);
+     ON DUPLICATE KEY UPDATE descripcion = VALUES(descripcion), estado = 'activo'`,
+    [nombre_rol, descripcion]
+  );
   const role = await getRoleByName(nombre_rol);
   return role;
 }
@@ -96,6 +97,44 @@ async function getAdmins() {
   return rows;
 }
 
+// Actualizar datos de un usuario (campos opcionales)
+async function updateAdminUser(id_usuario, fields) {
+  const allowed = {
+    nombre: 'nombre',
+    apellido: 'apellido',
+    email: 'email',
+    telefono: 'telefono',
+    fecha_nacimiento: 'fecha_nacimiento',
+    direccion: 'direccion',
+    id_rol: 'id_rol',
+    foto_perfil: 'foto_perfil'
+  };
+
+  const setParts = [];
+  const values = [];
+  Object.keys(allowed).forEach((k) => {
+    if (Object.prototype.hasOwnProperty.call(fields, k) && fields[k] !== undefined) {
+      setParts.push(`${allowed[k]} = ?`);
+      values.push(fields[k]);
+    }
+  });
+
+  if (setParts.length === 0) return await getUserById(id_usuario);
+
+  values.push(id_usuario);
+  const sql = `UPDATE usuarios SET ${setParts.join(', ')} WHERE id_usuario = ?`;
+  await pool.execute(sql, values);
+  const user = await getUserById(id_usuario);
+  return user;
+}
+
+// Actualizar contraseña de un usuario
+async function updateUserPassword(id_usuario, passwordHash) {
+  await pool.execute('UPDATE usuarios SET password = ? WHERE id_usuario = ?', [passwordHash, id_usuario]);
+  const user = await getUserById(id_usuario);
+  return user;
+}
+
 module.exports = {
   getUserByEmail,
   getUserById,
@@ -106,4 +145,6 @@ module.exports = {
   getAdmins,
   getAllRoles,
   createRole,
+  updateAdminUser,
+  updateUserPassword,
 };

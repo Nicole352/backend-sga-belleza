@@ -1,9 +1,19 @@
 const bcrypt = require('bcryptjs');
-const { getRoleByName, createAdminUser, getUserByEmail, getUserByCedula, getAdmins, createRole } = require('../models/usuarios.model');
+const {
+  getRoleByName,
+  createAdminUser,
+  getUserByEmail,
+  getUserByCedula,
+  getAdmins,
+  createRole,
+  updateAdminUser,
+  updateUserPassword,
+  getUserById,
+} = require('../models/usuarios.model');
 
 async function createAdminController(req, res) {
   try {
-    const { cedula, nombre, apellido, email, telefono, password, fecha_nacimiento, direccion, genero, foto_perfil, roleName } = req.body;
+    const { cedula, nombre, apellido, email, telefono, password, fecha_nacimiento, direccion, genero, roleName } = req.body;
     if (!cedula || !nombre || !apellido || !email || !password) {
       return res.status(400).json({ error: 'cedula, nombre, apellido, email y password son obligatorios' });
     }
@@ -15,7 +25,6 @@ async function createAdminController(req, res) {
 
     let role = await getRoleByName(roleName || 'administrativo');
     if (!role) {
-      // Auto-crear el rol si no existe para ambientes vacíos
       const nombreRol = roleName || 'administrativo';
       await createRole(nombreRol, `Rol ${nombreRol} creado automáticamente`);
       role = await getRoleByName(nombreRol);
@@ -24,16 +33,13 @@ async function createAdminController(req, res) {
 
     const hash = await bcrypt.hash(password, 10);
 
-    // Guardado en BDD: si llega archivo, usamos su buffer y mimetype
+    // Foto en buffer si viene por multipart
     let fotoPerfilBuffer = null;
     let fotoMimeType = null;
     if (req.file && req.file.buffer && req.file.mimetype) {
       fotoPerfilBuffer = req.file.buffer;
       fotoMimeType = req.file.mimetype;
     }
-
-    // Normalizar género a valores válidos para la BDD ('M'|'F'); si no coincide, enviar NULL
-    const generoDB = (genero === 'M' || genero === 'F') ? genero : null;
 
     const user = await createAdminUser({
       cedula,
@@ -43,7 +49,7 @@ async function createAdminController(req, res) {
       telefono: telefono || null,
       fecha_nacimiento: fecha_nacimiento || null,
       direccion: direccion || null,
-      genero: generoDB,
+      genero: null, // ajusta si lo requieres en BDD
       foto_perfil: fotoPerfilBuffer,
       foto_mime_type: fotoMimeType,
       passwordHash: hash,
@@ -65,8 +71,6 @@ async function createAdminController(req, res) {
   }
 }
 
-module.exports = { createAdminController };
- 
 async function listAdminsController(req, res) {
   try {
     const admins = await getAdmins();
@@ -88,4 +92,96 @@ async function listAdminsController(req, res) {
   }
 }
 
-module.exports = { createAdminController, listAdminsController };
+// Actualizar datos de un administrador
+async function updateAdminController(req, res) {
+  try {
+    const { id } = req.params;
+    const id_usuario = Number(id);
+    if (!id_usuario) return res.status(400).json({ error: 'ID inválido' });
+
+    const current = await getUserById(id_usuario);
+    if (!current) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    const {
+      nombre,
+      apellido,
+      email,
+      telefono,
+      fecha_nacimiento,
+      direccion,
+      rolId,
+      roleName,
+    } = req.body || {};
+
+    // Resolver rol
+    let id_rol = undefined;
+    if (rolId) {
+      id_rol = Number(rolId) || undefined;
+    } else if (roleName) {
+      const role = await getRoleByName(roleName);
+      if (role) id_rol = role.id_rol;
+    }
+
+    // Foto si viene por multipart
+    let foto_perfil = undefined;
+    if (req.file && req.file.buffer) {
+      foto_perfil = req.file.buffer;
+    }
+
+    const fields = {
+      nombre: nombre ?? undefined,
+      apellido: apellido ?? undefined,
+      email: email ?? undefined,
+      telefono: telefono ?? undefined,
+      fecha_nacimiento: fecha_nacimiento ?? undefined,
+      direccion: direccion ?? undefined,
+      id_rol: id_rol ?? undefined,
+      foto_perfil: foto_perfil ?? undefined,
+    };
+
+    const updated = await updateAdminUser(id_usuario, fields);
+    return res.json({
+      id_usuario: updated.id_usuario,
+      cedula: updated.cedula,
+      nombre: updated.nombre,
+      apellido: updated.apellido,
+      email: updated.email,
+      telefono: updated.telefono,
+      rol: updated.nombre_rol,
+      estado: updated.estado,
+      fecha_registro: updated.fecha_registro,
+      fecha_ultima_conexion: updated.fecha_ultima_conexion
+    });
+  } catch (err) {
+    console.error('Error actualizando administrador:', err);
+    return res.status(500).json({ error: 'No se pudo actualizar el administrador' });
+  }
+}
+
+// Actualizar contraseña
+async function updateAdminPasswordController(req, res) {
+  try {
+    const { id } = req.params;
+    const { password } = req.body || {};
+    const id_usuario = Number(id);
+    if (!id_usuario) return res.status(400).json({ error: 'ID inválido' });
+    if (!password || String(password).length < 6) return res.status(400).json({ error: 'Password inválido' });
+
+    const current = await getUserById(id_usuario);
+    if (!current) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    const hash = await bcrypt.hash(password, 10);
+    await updateUserPassword(id_usuario, hash);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Error actualizando contraseña:', err);
+    return res.status(500).json({ error: 'No se pudo actualizar la contraseña' });
+  }
+}
+
+module.exports = {
+  createAdminController,
+  listAdminsController,
+  updateAdminController,
+  updateAdminPasswordController,
+};

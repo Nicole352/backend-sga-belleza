@@ -1,6 +1,11 @@
 const express = require('express');
 const multer = require('multer');
-const { createAdminController, listAdminsController } = require('../controllers/admins.controller');
+const {
+  createAdminController,
+  listAdminsController,
+  updateAdminController,
+  updateAdminPasswordController
+} = require('../controllers/admins.controller');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
@@ -21,5 +26,11 @@ router.post('/', authMiddleware, requireRole('superadmin'), upload.single('foto_
 
 // Listar administradores (solo superadmin)
 router.get('/', authMiddleware, requireRole('superadmin'), listAdminsController);
+
+// Actualizar administrador (datos); acepta foto opcional via multipart
+router.put('/:id', authMiddleware, requireRole('superadmin'), upload.single('foto_perfil'), updateAdminController);
+
+// Actualizar contraseña
+router.patch('/:id/password', authMiddleware, requireRole('superadmin'), updateAdminPasswordController);
 
 module.exports = router;
