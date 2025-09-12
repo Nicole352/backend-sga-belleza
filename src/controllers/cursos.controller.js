@@ -80,11 +80,9 @@ module.exports = {
         id_tipo_curso: original.id_tipo_curso,
         id_aula: original.id_aula ?? null,
         nombre: original.nombre,
-        descripcion: original.descripcion ?? null,
         capacidad_maxima: original.capacidad_maxima,
         fecha_inicio: original.fecha_inicio,
         fecha_fin: original.fecha_fin,
-        horario: original.horario ?? null,
         estado: 'planificado'
       };
       const created = await createCurso(payload);

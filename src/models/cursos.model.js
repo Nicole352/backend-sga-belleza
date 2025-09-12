@@ -10,7 +10,6 @@ async function listCursos({ estado, tipo, page = 1, limit = 10 }) {
       c.id_curso,
       c.codigo_curso,
       c.nombre,
-      c.descripcion,
       c.fecha_inicio,
       c.fecha_fin,
       c.estado,
@@ -51,6 +50,7 @@ async function getCursoById(id) {
       c.*,
       tc.nombre AS tipo_curso_nombre,
       tc.precio_base,
+      tc.descripcion AS tipo_descripcion,
       GREATEST(0, c.capacidad_maxima - COALESCE(
         (SELECT COUNT(*) 
          FROM solicitudes_matricula s 
@@ -71,11 +71,9 @@ async function createCurso(data) {
     id_tipo_curso,
     id_aula = null,
     nombre,
-    descripcion = null,
     capacidad_maxima = 20,
     fecha_inicio,
     fecha_fin,
-    horario = null,
     estado = 'planificado'
   } = data;
 
@@ -84,16 +82,15 @@ async function createCurso(data) {
     throw new Error('Faltan campos obligatorios: id_tipo_curso, nombre, fecha_inicio, fecha_fin');
   }
 
-  // Generar código automático
-  const [countRows] = await pool.execute('SELECT COUNT(*) as total FROM cursos');
-  const codigo_curso = `CUR${String(countRows[0].total + 1).padStart(4, '0')}`;
+  // Usar el código que viene del frontend (ya generado automáticamente)
+  const codigo_curso = data.codigo_curso || `CUR${String(Date.now()).slice(-4)}`;
 
   const [result] = await pool.execute(
     `INSERT INTO cursos (
-      codigo_curso, id_tipo_curso, id_aula, nombre, descripcion, 
-      capacidad_maxima, fecha_inicio, fecha_fin, horario, estado
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [codigo_curso, id_tipo_curso, id_aula, nombre, descripcion, capacidad_maxima, fecha_inicio, fecha_fin, horario, estado]
+      codigo_curso, id_tipo_curso, id_aula, nombre,
+      capacidad_maxima, fecha_inicio, fecha_fin, estado
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [codigo_curso, id_tipo_curso, id_aula, nombre, capacidad_maxima, fecha_inicio, fecha_fin, estado]
   );
 
   return getCursoById(result.insertId);
@@ -105,11 +102,9 @@ async function updateCurso(id, data) {
     id_tipo_curso,
     id_aula,
     nombre,
-    descripcion,
     capacidad_maxima,
     fecha_inicio,
     fecha_fin,
-    horario,
     estado
   } = data;
 
@@ -132,10 +127,6 @@ async function updateCurso(id, data) {
     fields.push('nombre = ?');
     values.push(nombre);
   }
-  if (descripcion !== undefined) {
-    fields.push('descripcion = ?');
-    values.push(descripcion);
-  }
   if (capacidad_maxima !== undefined) {
     fields.push('capacidad_maxima = ?');
     values.push(capacidad_maxima);
@@ -147,10 +138,6 @@ async function updateCurso(id, data) {
   if (fecha_fin !== undefined) {
     fields.push('fecha_fin = ?');
     values.push(fecha_fin);
-  }
-  if (horario !== undefined) {
-    fields.push('horario = ?');
-    values.push(horario);
   }
   if (estado !== undefined) {
     fields.push('estado = ?');

@@ -4,7 +4,7 @@ exports.listTiposCursos = async (req, res) => {
   try {
     const estado = req.query.estado;
     const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 100));
-    let sql = `SELECT id_tipo_curso, codigo, nombre, descripcion, duracion_meses, precio_base, estado FROM tipos_cursos WHERE 1=1`;
+    let sql = `SELECT id_tipo_curso, nombre, descripcion, duracion_meses, precio_base, estado FROM tipos_cursos WHERE 1=1`;
     const params = [];
     if (estado) { sql += ' AND estado = ?'; params.push(estado); }
     // Evitar placeholder en LIMIT para compatibilidad
@@ -19,17 +19,17 @@ exports.listTiposCursos = async (req, res) => {
 
 exports.createTipoCurso = async (req, res) => {
   try {
-    const { codigo, nombre, descripcion, duracion_meses, precio_base, estado } = req.body;
-    if (!codigo || !nombre) return res.status(400).json({ error: 'codigo y nombre son obligatorios' });
-    const sql = `INSERT INTO tipos_cursos (codigo, nombre, descripcion, duracion_meses, precio_base, estado) VALUES (?, ?, ?, ?, ?, ?)`;
-    const params = [codigo, nombre, descripcion || null, duracion_meses ?? null, precio_base ?? null, estado || 'activo'];
+    const { nombre, descripcion, duracion_meses, precio_base, estado } = req.body;
+    if (!nombre) return res.status(400).json({ error: 'nombre es obligatorio' });
+    const sql = `INSERT INTO tipos_cursos (nombre, descripcion, duracion_meses, precio_base, estado) VALUES (?, ?, ?, ?, ?)`;
+    const params = [nombre, descripcion || null, duracion_meses ?? null, precio_base ?? null, estado || 'activo'];
     const [result] = await pool.execute(sql, params);
-    const [rows] = await pool.execute('SELECT id_tipo_curso, codigo, nombre, descripcion, duracion_meses, precio_base, estado FROM tipos_cursos WHERE id_tipo_curso = ?', [result.insertId]);
+    const [rows] = await pool.execute('SELECT id_tipo_curso, nombre, descripcion, duracion_meses, precio_base, estado FROM tipos_cursos WHERE id_tipo_curso = ?', [result.insertId]);
     return res.status(201).json(rows[0]);
   } catch (err) {
     console.error('Error creando tipo de curso:', err);
     let msg = 'Error al crear tipo de curso';
-    if (err && err.code === 'ER_DUP_ENTRY') msg = 'Código o nombre ya existe';
+    if (err && err.code === 'ER_DUP_ENTRY') msg = 'Nombre ya existe';
     return res.status(500).json({ error: msg });
   }
 };
@@ -38,17 +38,17 @@ exports.updateTipoCurso = async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ error: 'ID inválido' });
-    const { codigo, nombre, descripcion, duracion_meses, precio_base, estado } = req.body;
-    const sql = `UPDATE tipos_cursos SET codigo = COALESCE(?, codigo), nombre = COALESCE(?, nombre), descripcion = COALESCE(?, descripcion), duracion_meses = COALESCE(?, duracion_meses), precio_base = COALESCE(?, precio_base), estado = COALESCE(?, estado) WHERE id_tipo_curso = ?`;
-    const params = [codigo ?? null, nombre ?? null, descripcion ?? null, duracion_meses ?? null, precio_base ?? null, estado ?? null, id];
+    const { nombre, descripcion, duracion_meses, precio_base, estado } = req.body;
+    const sql = `UPDATE tipos_cursos SET nombre = COALESCE(?, nombre), descripcion = COALESCE(?, descripcion), duracion_meses = COALESCE(?, duracion_meses), precio_base = COALESCE(?, precio_base), estado = COALESCE(?, estado) WHERE id_tipo_curso = ?`;
+    const params = [nombre ?? null, descripcion ?? null, duracion_meses ?? null, precio_base ?? null, estado ?? null, id];
     const [result] = await pool.execute(sql, params);
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Tipo de curso no encontrado' });
-    const [rows] = await pool.execute('SELECT id_tipo_curso, codigo, nombre, descripcion, duracion_meses, precio_base, estado FROM tipos_cursos WHERE id_tipo_curso = ?', [id]);
+    const [rows] = await pool.execute('SELECT id_tipo_curso, nombre, descripcion, duracion_meses, precio_base, estado FROM tipos_cursos WHERE id_tipo_curso = ?', [id]);
     return res.json(rows[0]);
   } catch (err) {
     console.error('Error actualizando tipo de curso:', err);
     let msg = 'Error al actualizar tipo de curso';
-    if (err && err.code === 'ER_DUP_ENTRY') msg = 'Código o nombre ya existe';
+    if (err && err.code === 'ER_DUP_ENTRY') msg = 'Nombre ya existe';
     return res.status(500).json({ error: msg });
   }
 };
