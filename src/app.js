@@ -2,7 +2,6 @@ const express = require('express');
 const path = require('path');
 const cors = require('cors');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
 
 // Routes
 const cursosRoutes = require('./routes/cursos');
@@ -10,6 +9,8 @@ const solicitudesRoutes = require('./routes/solicitudes');
 const authRoutes = require('./routes/auth');
 const adminsRoutes = require('./routes/admins');
 const rolesRoutes = require('./routes/roles');
+const tiposCursosRoutes = require('./routes/tipos-cursos');
+const aulasRoutes = require('./routes/aulas');
 
 const app = express();
 
@@ -25,15 +26,7 @@ app.use(cors({
   credentials: true
 }));
 
-// Rate limiting básico
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100, // máximo 100 requests por IP
-  message: {
-    error: 'Demasiadas solicitudes, intenta de nuevo en 15 minutos'
-  }
-});
-app.use('/api/', limiter);
+// Nota: el rate limiting ahora es específico por ruta (ver middleware/rateLimit.js)
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
@@ -55,5 +48,7 @@ app.use('/api/admins', adminsRoutes);
 app.use('/api/roles', rolesRoutes);
 app.use('/api/cursos', cursosRoutes);
 app.use('/api/solicitudes', solicitudesRoutes);
+app.use('/api/tipos-cursos', tiposCursosRoutes);
+app.use('/api/aulas', aulasRoutes);
 
 module.exports = app;

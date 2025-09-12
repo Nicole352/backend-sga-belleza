@@ -137,6 +137,7 @@ router.get('/', async (req, res) => {
   try {
     const estado = req.query.estado || 'pendiente';
     const curso = req.query.curso ? Number(req.query.curso) : undefined;
+    const tipo = req.query.tipo ? Number(req.query.tipo) : undefined;
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.max(1, Math.min(100, Number(req.query.limit) || 10));
     const offset = (page - 1) * limit;
@@ -145,22 +146,28 @@ router.get('/', async (req, res) => {
       SELECT
         s.id_solicitud,
         s.codigo_solicitud,
+        s.cedula_solicitante,
         s.nombre_solicitante,
         s.apellido_solicitante,
         s.email_solicitante,
         s.id_curso,
+        c.nombre AS curso_nombre,
+        tc.nombre AS tipo_curso_nombre,
         s.estado,
         s.fecha_solicitud
       FROM solicitudes_matricula s
+      LEFT JOIN cursos c ON c.id_curso = s.id_curso
+      LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = c.id_tipo_curso
       WHERE 1=1
     `;
     const params = [];
 
     if (estado) { sql += ' AND s.estado = ?'; params.push(estado); }
     if (curso)  { sql += ' AND s.id_curso = ?'; params.push(curso); }
+    if (tipo)   { sql += ' AND tc.id_tipo_curso = ?'; params.push(tipo); }
 
-    sql += ' ORDER BY s.fecha_solicitud DESC LIMIT ? OFFSET ?';
-    params.push(limit, offset);
+    // Evitar placeholders en LIMIT/OFFSET para compatibilidad
+    sql += ` ORDER BY s.fecha_solicitud DESC LIMIT ${Number(limit)} OFFSET ${Number(offset)}`;
 
     const [rows] = await pool.execute(sql, params);
     return res.json(rows);
@@ -178,8 +185,13 @@ router.get('/:id', async (req, res) => {
 
     const [rows] = await pool.execute(
       `
-      SELECT s.*
+      SELECT 
+        s.*, 
+        c.nombre AS curso_nombre,
+        tc.nombre AS tipo_curso_nombre
       FROM solicitudes_matricula s
+      LEFT JOIN cursos c ON c.id_curso = s.id_curso
+      LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = c.id_tipo_curso
       WHERE s.id_solicitud = ?
       `,
       [id]
@@ -190,6 +202,35 @@ router.get('/:id', async (req, res) => {
   } catch (err) {
     console.error('Error obteniendo solicitud:', err);
     return res.status(500).json({ error: 'Error al obtener la solicitud' });
+  }
+});
+
+// GET /api/solicitudes/:id/comprobante (admin)
+router.get('/:id/comprobante', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID inválido' });
+
+    const [rows] = await pool.execute(
+      `
+      SELECT comprobante_pago, comprobante_mime, comprobante_nombre_original
+      FROM solicitudes_matricula
+      WHERE id_solicitud = ?
+      `,
+      [id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Solicitud no encontrada' });
+    const row = rows[0];
+    if (!row.comprobante_pago) return res.status(404).json({ error: 'No hay comprobante para esta solicitud' });
+
+    const mime = row.comprobante_mime || 'application/octet-stream';
+    const filename = row.comprobante_nombre_original || `comprobante-${id}`;
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    return res.send(row.comprobante_pago);
+  } catch (err) {
+    console.error('Error obteniendo comprobante:', err);
+    return res.status(500).json({ error: 'Error al obtener el comprobante' });
   }
 });
 
