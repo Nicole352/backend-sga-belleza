@@ -17,9 +17,9 @@ async function listCursos({ estado, tipo, page = 1, limit = 10 }) {
       tc.precio_base,
       GREATEST(0, c.capacidad_maxima - COALESCE(
         (SELECT COUNT(*) 
-         FROM solicitudes_matricula s 
-         WHERE s.id_curso = c.id_curso 
-         AND s.estado = 'aprobado'), 0
+         FROM matriculas m 
+         WHERE m.id_curso = c.id_curso 
+         AND m.estado = 'activa'), 0
       )) AS cupos_disponibles
     FROM cursos c
     JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
@@ -53,9 +53,9 @@ async function getCursoById(id) {
       tc.descripcion AS tipo_descripcion,
       GREATEST(0, c.capacidad_maxima - COALESCE(
         (SELECT COUNT(*) 
-         FROM solicitudes_matricula s 
-         WHERE s.id_curso = c.id_curso 
-         AND s.estado = 'aprobado'), 0
+         FROM matriculas m 
+         WHERE m.id_curso = c.id_curso 
+         AND m.estado = 'activa'), 0
       )) AS cupos_disponibles
     FROM cursos c
     JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso

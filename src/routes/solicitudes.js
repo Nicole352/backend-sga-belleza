@@ -42,7 +42,7 @@ router.post('/', upload.single('comprobante'), async (req, res) => {
     fecha_nacimiento_solicitante,
     direccion_solicitante,
     genero_solicitante,
-    id_curso,
+    id_tipo_curso,
     monto_matricula,
     metodo_pago
   } = req.body;
@@ -51,26 +51,26 @@ router.post('/', upload.single('comprobante'), async (req, res) => {
   if (!cedula_solicitante || !nombre_solicitante || !apellido_solicitante || !email_solicitante) {
     return res.status(400).json({ error: 'Faltan campos obligatorios del solicitante' });
   }
-  if (!id_curso || !monto_matricula || !metodo_pago) {
+  if (!id_tipo_curso || !monto_matricula || !metodo_pago) {
     return res.status(400).json({ error: 'Faltan datos del curso/pago' });
   }
   if (metodo_pago === 'transferencia' && !req.file) {
     return res.status(400).json({ error: 'El comprobante es obligatorio para transferencia' });
   }
 
-  // Validar curso existente y estado disponible
+  // Validar tipo de curso existente y estado disponible
   try {
-    const idCursoNum = Number(id_curso);
-    if (!idCursoNum) return res.status(400).json({ error: 'id_curso inválido' });
-    const [cursoRows] = await pool.execute('SELECT id_curso, estado FROM cursos WHERE id_curso = ?', [idCursoNum]);
-    if (!cursoRows.length) return res.status(400).json({ error: 'El curso no existe' });
-    const curso = cursoRows[0];
-    if (!['planificado', 'activo'].includes(curso.estado)) {
-      return res.status(400).json({ error: 'El curso no está disponible para matrícula' });
+    const idTipoCursoNum = Number(id_tipo_curso);
+    if (!idTipoCursoNum) return res.status(400).json({ error: 'id_tipo_curso inválido' });
+    const [tipoCursoRows] = await pool.execute('SELECT id_tipo_curso, estado FROM tipos_cursos WHERE id_tipo_curso = ?', [idTipoCursoNum]);
+    if (!tipoCursoRows.length) return res.status(400).json({ error: 'El tipo de curso no existe' });
+    const tipoCurso = tipoCursoRows[0];
+    if (tipoCurso.estado !== 'activo') {
+      return res.status(400).json({ error: 'El tipo de curso no está disponible para matrícula' });
     }
   } catch (e) {
-    console.error('Error validando curso:', e);
-    return res.status(500).json({ error: 'Error validando curso' });
+    console.error('Error validando tipo de curso:', e);
+    return res.status(500).json({ error: 'Error validando tipo de curso' });
   }
 
   const comprobanteBuffer = req.file ? req.file.buffer : null;
@@ -90,7 +90,7 @@ router.post('/', upload.single('comprobante'), async (req, res) => {
       fecha_nacimiento_solicitante,
       direccion_solicitante,
       genero_solicitante,
-      id_curso,
+      id_tipo_curso,
       monto_matricula,
       metodo_pago,
       comprobante_pago,
@@ -109,7 +109,7 @@ router.post('/', upload.single('comprobante'), async (req, res) => {
       fecha_nacimiento_solicitante || null,
       direccion_solicitante || null,
       genero_solicitante || null,
-      Number(id_curso),
+      Number(id_tipo_curso),
       Number(monto_matricula),
       metodo_pago,
       comprobanteBuffer,
@@ -135,7 +135,38 @@ router.post('/', upload.single('comprobante'), async (req, res) => {
 // GET /api/solicitudes (admin)
 router.get('/', async (req, res) => {
   try {
-    const estado = req.query.estado || 'pendiente';
+    // Aggregated counters per estado
+    if (req.query.aggregate === 'by_estado') {
+      try {
+        const tipo = req.query.tipo ? Number(req.query.tipo) : undefined;
+        let sqlAgg = `SELECT s.estado, COUNT(*) AS total FROM solicitudes_matricula s WHERE 1=1`;
+        const paramsAgg = [];
+        if (tipo) { sqlAgg += ' AND s.id_tipo_curso = ?'; paramsAgg.push(tipo); }
+        sqlAgg += ' GROUP BY s.estado';
+        const [rowsAgg] = await pool.execute(sqlAgg, paramsAgg);
+        // Normalize to include all estados keys
+        const result = {
+          pendiente: 0,
+          aprobado: 0,
+          rechazado: 0,
+          observaciones: 0,
+        };
+        for (const r of rowsAgg) {
+          if (r.estado in result) {
+            result[r.estado] = Number(r.total) || 0;
+          }
+        }
+        return res.json(result);
+      } catch (e) {
+        console.error('Error agregando conteos por estado:', e);
+        return res.status(500).json({ error: 'Error obteniendo conteos' });
+      }
+    }
+
+    // Solo filtrar por estado si el cliente lo envía explícitamente
+    const estado = typeof req.query.estado === 'string' && req.query.estado.length > 0
+      ? req.query.estado
+      : undefined;
     const curso = req.query.curso ? Number(req.query.curso) : undefined;
     const tipo = req.query.tipo ? Number(req.query.tipo) : undefined;
     const page = Math.max(1, Number(req.query.page) || 1);
@@ -150,26 +181,33 @@ router.get('/', async (req, res) => {
         s.nombre_solicitante,
         s.apellido_solicitante,
         s.email_solicitante,
-        s.id_curso,
-        c.nombre AS curso_nombre,
+        s.id_tipo_curso,
         tc.nombre AS tipo_curso_nombre,
         s.estado,
         s.fecha_solicitud
       FROM solicitudes_matricula s
-      LEFT JOIN cursos c ON c.id_curso = s.id_curso
-      LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = c.id_tipo_curso
+      LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = s.id_tipo_curso
       WHERE 1=1
     `;
     const params = [];
 
     if (estado) { sql += ' AND s.estado = ?'; params.push(estado); }
-    if (curso)  { sql += ' AND s.id_curso = ?'; params.push(curso); }
-    if (tipo)   { sql += ' AND tc.id_tipo_curso = ?'; params.push(tipo); }
+    if (tipo)   { sql += ' AND s.id_tipo_curso = ?'; params.push(tipo); }
 
     // Evitar placeholders en LIMIT/OFFSET para compatibilidad
     sql += ` ORDER BY s.fecha_solicitud DESC LIMIT ${Number(limit)} OFFSET ${Number(offset)}`;
 
+    // Total count with same filters
+    let sqlCount = `SELECT COUNT(*) AS total FROM solicitudes_matricula s WHERE 1=1`;
+    const paramsCount = [];
+    if (estado) { sqlCount += ' AND s.estado = ?'; paramsCount.push(estado); }
+    if (tipo)   { sqlCount += ' AND s.id_tipo_curso = ?'; paramsCount.push(tipo); }
+
+    const [[countRow]] = await pool.execute(sqlCount, paramsCount);
+    const totalCount = Number(countRow?.total || 0);
+
     const [rows] = await pool.execute(sql, params);
+    res.setHeader('X-Total-Count', String(totalCount));
     return res.json(rows);
   } catch (err) {
     console.error('Error listando solicitudes:', err);
@@ -187,11 +225,9 @@ router.get('/:id', async (req, res) => {
       `
       SELECT 
         s.*, 
-        c.nombre AS curso_nombre,
         tc.nombre AS tipo_curso_nombre
       FROM solicitudes_matricula s
-      LEFT JOIN cursos c ON c.id_curso = s.id_curso
-      LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = c.id_tipo_curso
+      LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = s.id_tipo_curso
       WHERE s.id_solicitud = ?
       `,
       [id]
