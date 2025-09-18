@@ -1,5 +1,5 @@
 const express = require('express');
-const { listCursosController, getCursoController, createCursoController, updateCursoController, deleteCursoController, cloneCursoController } = require('../controllers/cursos.controller');
+const { listCursosController, getCursoController, createCursoController, updateCursoController, deleteCursoController } = require('../controllers/cursos.controller');
 const { pollingLimiter, generalLimiter } = require('../middleware/rateLimit');
 
 const router = express.Router();
@@ -19,7 +19,6 @@ router.put('/:id', updateCursoController);
 // DELETE /api/cursos/:id
 router.delete('/:id', deleteCursoController);
 
-// POST /api/cursos/:id/clone
-router.post('/:id/clone', cloneCursoController);
+// Ruta de clonado eliminada
 
 module.exports = router;

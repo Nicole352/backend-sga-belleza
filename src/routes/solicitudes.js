@@ -34,7 +34,7 @@ function generarCodigoSolicitud() {
 // POST /api/solicitudes
 router.post('/', upload.single('comprobante'), async (req, res) => {
   const {
-    cedula_solicitante,
+    identificacion_solicitante,
     nombre_solicitante,
     apellido_solicitante,
     telefono_solicitante,
@@ -48,14 +48,15 @@ router.post('/', upload.single('comprobante'), async (req, res) => {
   } = req.body;
 
   // Validaciones mínimas
-  if (!cedula_solicitante || !nombre_solicitante || !apellido_solicitante || !email_solicitante) {
+  if (!identificacion_solicitante || !nombre_solicitante || !apellido_solicitante || !email_solicitante) {
     return res.status(400).json({ error: 'Faltan campos obligatorios del solicitante' });
   }
   if (!id_tipo_curso || !monto_matricula || !metodo_pago) {
     return res.status(400).json({ error: 'Faltan datos del curso/pago' });
   }
-  if (metodo_pago === 'transferencia' && !req.file) {
-    return res.status(400).json({ error: 'El comprobante es obligatorio para transferencia' });
+  // Comprobante obligatorio para transferencia y efectivo
+  if ((metodo_pago === 'transferencia' || metodo_pago === 'efectivo') && !req.file) {
+    return res.status(400).json({ error: 'El comprobante es obligatorio para transferencia o efectivo' });
   }
 
   // Validar tipo de curso existente y estado disponible
@@ -82,7 +83,7 @@ router.post('/', upload.single('comprobante'), async (req, res) => {
   try {
     const sql = `INSERT INTO solicitudes_matricula (
       codigo_solicitud,
-      cedula_solicitante,
+      identificacion_solicitante,
       nombre_solicitante,
       apellido_solicitante,
       telefono_solicitante,
@@ -101,7 +102,7 @@ router.post('/', upload.single('comprobante'), async (req, res) => {
 
     const values = [
       codigo,
-      cedula_solicitante,
+      identificacion_solicitante,
       nombre_solicitante,
       apellido_solicitante,
       telefono_solicitante || null,
@@ -177,7 +178,7 @@ router.get('/', async (req, res) => {
       SELECT
         s.id_solicitud,
         s.codigo_solicitud,
-        s.cedula_solicitante,
+        s.identificacion_solicitante,
         s.nombre_solicitante,
         s.apellido_solicitante,
         s.email_solicitante,

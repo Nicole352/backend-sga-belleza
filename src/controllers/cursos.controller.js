@@ -69,27 +69,5 @@ module.exports = {
       console.error('Error eliminando curso:', err);
       return res.status(500).json({ error: 'Error al eliminar curso' });
     }
-  },
-  async cloneCursoController(req, res) {
-    try {
-      const id = Number(req.params.id);
-      if (!id) return res.status(400).json({ error: 'ID inválido' });
-      const original = await getCursoById(id);
-      if (!original) return res.status(404).json({ error: 'Curso no encontrado' });
-      const payload = {
-        id_tipo_curso: original.id_tipo_curso,
-        id_aula: original.id_aula ?? null,
-        nombre: original.nombre,
-        capacidad_maxima: original.capacidad_maxima,
-        fecha_inicio: original.fecha_inicio,
-        fecha_fin: original.fecha_fin,
-        estado: 'planificado'
-      };
-      const created = await createCurso(payload);
-      return res.status(201).json(created);
-    } catch (err) {
-      console.error('Error clonando curso:', err);
-      return res.status(500).json({ error: 'Error al clonar curso' });
-    }
   }
 };
