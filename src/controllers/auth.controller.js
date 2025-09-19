@@ -10,11 +10,11 @@ async function loginController(req, res) {
     }
 
     const user = await getUserByEmail(email);
-    if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
+    if (!user) return res.status(401).send('Datos incorrectos. Por favor, ingresa un usuario y una contraseña válidos.');
     if (user.estado !== 'activo') return res.status(403).json({ error: 'Usuario no activo' });
 
     const ok = await bcrypt.compare(password, user.password);
-    if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
+    if (!ok) return res.status(401).send('Datos incorrectos. Por favor, ingresa un usuario y una contraseña válidos.');
 
     const token = jwt.sign(
       { id_usuario: user.id_usuario, rol: user.nombre_rol, email: user.email },
