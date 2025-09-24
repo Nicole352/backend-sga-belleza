@@ -47,7 +47,8 @@ async function loginController(req, res) {
         apellido: user.apellido,
         email: user.email,
         rol: user.nombre_rol,
-        estado: user.estado
+        estado: user.estado,
+        needs_password_reset: !!user.password_temporal
       }
     });
   } catch (err) {

@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { pool } = require('../config/database');
+const { authMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -159,7 +160,46 @@ router.post('/crear-desde-solicitud', async (req, res) => {
     
     const id_estudiante = userResult.insertId;
     
-    // 8. Actualizar estado de la solicitud
+    // 8. Crear matrícula automáticamente
+    const codigoMatricula = `MAT-${Date.now()}-${id_estudiante}`;
+    
+    // Obtener el curso asociado al tipo de curso de la solicitud
+    const [cursosDisponibles] = await connection.execute(`
+      SELECT id_curso FROM cursos 
+      WHERE id_tipo_curso = ? AND estado IN ('activo', 'planificado')
+      ORDER BY fecha_inicio ASC LIMIT 1
+    `, [solicitud.id_tipo_curso]);
+    
+    let id_curso = null;
+    if (cursosDisponibles.length > 0) {
+      id_curso = cursosDisponibles[0].id_curso;
+    } else {
+      // Si no hay curso específico, crear uno temporal o usar un valor por defecto
+      console.warn('⚠️ No se encontró curso para el tipo:', solicitud.id_tipo_curso);
+      // Por ahora, continuamos sin curso específico
+    }
+    
+    if (id_curso) {
+      await connection.execute(`
+        INSERT INTO matriculas (
+          codigo_matricula, id_solicitud, id_tipo_curso, id_estudiante, 
+          id_curso, monto_matricula, email_generado, creado_por, estado
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'activa')
+      `, [
+        codigoMatricula,
+        id_solicitud,
+        solicitud.id_tipo_curso,
+        id_estudiante,
+        id_curso,
+        solicitud.monto_matricula || 0,
+        emailEstudiante || `${username}@estudiante.belleza.com`,
+        aprobado_por
+      ]);
+      
+      console.log('✅ Matrícula creada:', codigoMatricula);
+    }
+    
+    // 9. Actualizar estado de la solicitud
     await connection.execute(`
       UPDATE solicitudes_matricula 
       SET estado = 'aprobado', 
@@ -276,6 +316,86 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET /api/estudiantes/mis-cursos - Obtener cursos matriculados del estudiante autenticado
+router.get('/mis-cursos', authMiddleware, async (req, res) => {
+  try {
+    const id_usuario = req.user?.id_usuario;
+    
+    if (!id_usuario) {
+      return res.status(401).json({ error: 'Usuario no autenticado' });
+    }
+
+    // Verificar que el usuario sea estudiante
+    const [userCheck] = await pool.execute(`
+      SELECT u.id_usuario, r.nombre_rol 
+      FROM usuarios u 
+      JOIN roles r ON u.id_rol = r.id_rol 
+      WHERE u.id_usuario = ?
+    `, [id_usuario]);
+    
+    if (userCheck.length === 0 || userCheck[0].nombre_rol !== 'estudiante') {
+      return res.status(403).json({ error: 'Acceso denegado. Solo estudiantes pueden acceder a esta información.' });
+    }
+
+    // Obtener cursos matriculados del estudiante
+    const [cursos] = await pool.execute(`
+      SELECT 
+        c.id_curso,
+        c.codigo_curso,
+        c.nombre,
+        c.fecha_inicio,
+        c.fecha_fin,
+        c.estado as estado_curso,
+        tc.nombre as tipo_curso_nombre,
+        tc.precio_base,
+        m.estado as estado_matricula,
+        m.fecha_matricula,
+        m.codigo_matricula,
+        m.monto_matricula,
+        -- Simular progreso y calificación
+        FLOOR(60 + RAND() * 40) as progreso,
+        ROUND(8 + RAND() * 2, 1) as calificacion_final,
+        -- Calcular tareas pendientes (simulado)
+        FLOOR(RAND() * 3) as tareas_pendientes,
+        -- Próxima clase (simulado)
+        DATE_ADD(COALESCE(c.fecha_inicio, CURDATE()), INTERVAL FLOOR(RAND() * 30) DAY) as proxima_clase
+      FROM matriculas m
+      LEFT JOIN cursos c ON m.id_curso = c.id_curso
+      LEFT JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
+      WHERE m.id_estudiante = ? 
+        AND m.estado = 'activa'
+      ORDER BY m.fecha_matricula DESC
+    `, [id_usuario]);
+
+    // Transformar datos para el frontend
+    const cursosFormateados = cursos.map(curso => ({
+      id_curso: curso.id_curso,
+      codigo_curso: curso.codigo_curso || curso.codigo_matricula,
+      nombre: curso.nombre,
+      fecha_inicio: curso.fecha_inicio,
+      fecha_fin: curso.fecha_fin,
+      estado: curso.estado_curso,
+      tipo_curso: curso.tipo_curso_nombre,
+      precio_base: curso.precio_base || curso.monto_matricula,
+      progreso: curso.progreso, // Ya viene de la consulta SQL
+      calificacion: curso.calificacion_final, // Ya viene de la consulta SQL
+      tareasPendientes: curso.tareas_pendientes, // Ya viene de la consulta SQL
+      estado_matricula: curso.estado_matricula,
+      fecha_matricula: curso.fecha_matricula,
+      proximaClase: curso.proxima_clase
+    }));
+
+    res.json(cursosFormateados);
+    
+  } catch (error) {
+    console.error('Error obteniendo cursos del estudiante:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor',
+      details: error.message 
+    });
+  }
+});
+
 // GET /api/estudiantes/:id - Obtener estudiante por ID
 router.get('/:id', async (req, res) => {
   try {
@@ -360,6 +480,51 @@ router.put('/:id', async (req, res) => {
     
   } catch (error) {
     console.error('Error actualizando estudiante:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor',
+      details: error.message 
+    });
+  }
+});
+
+// GET /api/estudiantes/debug-recientes - Ver estudiantes recientes (TEMPORAL)
+router.get('/debug-recientes', async (req, res) => {
+  try {
+    const [estudiantes] = await pool.execute(`
+      SELECT 
+        u.id_usuario,
+        u.username,
+        u.cedula,
+        u.nombre,
+        u.apellido,
+        u.password_temporal,
+        u.fecha_registro,
+        r.nombre_rol
+      FROM usuarios u
+      JOIN roles r ON u.id_rol = r.id_rol
+      WHERE r.nombre_rol = 'estudiante'
+      ORDER BY u.fecha_registro DESC
+      LIMIT 3
+    `);
+    
+    res.json({
+      message: 'Estudiantes recientes (últimos 3)',
+      estudiantes: estudiantes.map(est => ({
+        id_usuario: est.id_usuario,
+        username: est.username,
+        cedula: est.cedula,
+        nombre: `${est.nombre} ${est.apellido}`,
+        password_temporal: est.password_temporal,
+        fecha_registro: est.fecha_registro,
+        login_info: {
+          username: est.username,
+          password: est.password_temporal || est.cedula
+        }
+      }))
+    });
+    
+  } catch (error) {
+    console.error('Error obteniendo estudiantes recientes:', error);
     res.status(500).json({ 
       error: 'Error interno del servidor',
       details: error.message 
