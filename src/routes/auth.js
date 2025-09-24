@@ -1,5 +1,5 @@
 const express = require('express');
-const { loginController, meController } = require('../controllers/auth.controller');
+const { loginController, meController, resetPasswordController } = require('../controllers/auth.controller');
 const { authMiddleware } = require('../middleware/auth');
 const { loginLimiter } = require('../middleware/rateLimit');
 
@@ -10,5 +10,8 @@ router.post('/login', loginLimiter, loginController);
 
 // GET /api/auth/me
 router.get('/me', authMiddleware, meController);
+
+// POST /api/auth/reset-password
+router.post('/reset-password', authMiddleware, resetPasswordController);
 
 module.exports = router;

@@ -12,6 +12,7 @@ const usersRoutes = require('./routes/users');
 const rolesRoutes = require('./routes/roles');
 const tiposCursosRoutes = require('./routes/tipos-cursos');
 const aulasRoutes = require('./routes/aulas');
+const estudiantesRoutes = require('./routes/estudiantes');
 
 const app = express();
 
@@ -52,5 +53,6 @@ app.use('/api/cursos', cursosRoutes);
 app.use('/api/solicitudes', solicitudesRoutes);
 app.use('/api/tipos-cursos', tiposCursosRoutes);
 app.use('/api/aulas', aulasRoutes);
+app.use('/api/estudiantes', estudiantesRoutes);
 
 module.exports = app;

@@ -23,9 +23,14 @@ async function createAdminController(req, res) {
     const existsCedula = await getUserByCedula(cedula);
     if (existsCedula) return res.status(409).json({ error: 'La cédula ya está registrada' });
 
-    let role = await getRoleByName(roleName || 'administrativo');
+    // Validación estricta: solo rol 'administrativo'
+    if (roleName && String(roleName).toLowerCase() !== 'administrativo') {
+      return res.status(403).json({ error: 'Solo se permite asignar rol administrativo' });
+    }
+
+    let role = await getRoleByName('administrativo');
     if (!role) {
-      const nombreRol = roleName || 'administrativo';
+      const nombreRol = 'administrativo';
       await createRole(nombreRol, `Rol ${nombreRol} creado automáticamente`);
       role = await getRoleByName(nombreRol);
       if (!role) return res.status(500).json({ error: 'No fue posible configurar el rol solicitado' });
@@ -113,13 +118,26 @@ async function updateAdminController(req, res) {
       roleName,
     } = req.body || {};
 
-    // Resolver rol
+    // Resolver rol (estricto solo 'administrativo')
     let id_rol = undefined;
-    if (rolId) {
-      id_rol = Number(rolId) || undefined;
+    const adminRole = await getRoleByName('administrativo');
+    if (!adminRole) {
+      await createRole('administrativo', 'Rol administrativo creado automáticamente');
+    }
+    const ensuredAdminRole = await getRoleByName('administrativo');
+    if (!ensuredAdminRole) return res.status(500).json({ error: 'No se pudo resolver el rol administrativo' });
+
+    if (rolId !== undefined && rolId !== null && String(rolId).trim() !== '') {
+      const parsed = Number(rolId);
+      if (!Number.isFinite(parsed) || parsed !== ensuredAdminRole.id_rol) {
+        return res.status(403).json({ error: 'Solo se permite asignar rol administrativo' });
+      }
+      id_rol = ensuredAdminRole.id_rol;
     } else if (roleName) {
-      const role = await getRoleByName(roleName);
-      if (role) id_rol = role.id_rol;
+      if (String(roleName).toLowerCase() !== 'administrativo') {
+        return res.status(403).json({ error: 'Solo se permite asignar rol administrativo' });
+      }
+      id_rol = ensuredAdminRole.id_rol;
     }
 
     // Foto si viene por multipart

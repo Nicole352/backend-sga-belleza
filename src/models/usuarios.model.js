@@ -12,6 +12,19 @@ async function getUserByEmail(email) {
   return rows[0] || null;
 }
 
+// Obtener usuario por username (para login de estudiantes)
+async function getUserByUsername(username) {
+  const [rows] = await pool.execute(
+    `SELECT u.*, r.nombre_rol
+     FROM usuarios u
+     JOIN roles r ON r.id_rol = u.id_rol
+     WHERE u.username = ?
+     LIMIT 1`,
+    [username]
+  );
+  return rows[0] || null;
+}
+
 async function getUserById(id) {
   const [rows] = await pool.execute(
     `SELECT u.*, r.nombre_rol
@@ -294,19 +307,28 @@ async function updateUserPassword(id_usuario, passwordHash) {
   return user;
 }
 
+// Actualizar contraseña y limpiar password_temporal (uso: primer ingreso estudiante)
+async function setUserPasswordAndClearTemp(id_usuario, passwordHash) {
+  await pool.execute('UPDATE usuarios SET password = ?, password_temporal = NULL WHERE id_usuario = ?', [passwordHash, id_usuario]);
+  const user = await getUserById(id_usuario);
+  return user;
+}
+
 module.exports = {
   getUserByEmail,
+  getUserByUsername,
   getUserById,
   updateLastLogin,
   getUserByCedula,
   getRoleByName,
+  createRole,
+  getAllRoles,
   createAdminUser,
   getAdmins,
   getAllUsers,
   getUserStats,
   getAdminStats,
-  getAllRoles,
-  createRole,
   updateAdminUser,
   updateUserPassword,
+  setUserPasswordAndClearTemp
 };

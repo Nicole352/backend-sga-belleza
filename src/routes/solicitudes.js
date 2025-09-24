@@ -32,7 +32,11 @@ function generarCodigoSolicitud() {
 }
 
 // POST /api/solicitudes
-router.post('/', upload.single('comprobante'), async (req, res) => {
+router.post('/', upload.fields([
+  { name: 'comprobante', maxCount: 1 },
+  { name: 'documento_identificacion', maxCount: 1 },
+  { name: 'documento_estatus_legal', maxCount: 1 }
+]), async (req, res) => {
   const {
     identificacion_solicitante,
     nombre_solicitante,
@@ -42,9 +46,14 @@ router.post('/', upload.single('comprobante'), async (req, res) => {
     fecha_nacimiento_solicitante,
     direccion_solicitante,
     genero_solicitante,
+    horario_preferido,
     id_tipo_curso,
     monto_matricula,
-    metodo_pago
+    metodo_pago,
+    // Nuevos campos del comprobante
+    numero_comprobante,
+    banco_comprobante,
+    fecha_transferencia
   } = req.body;
 
   // Validaciones mínimas
@@ -54,9 +63,31 @@ router.post('/', upload.single('comprobante'), async (req, res) => {
   if (!id_tipo_curso || !monto_matricula || !metodo_pago) {
     return res.status(400).json({ error: 'Faltan datos del curso/pago' });
   }
+  if (!horario_preferido) {
+    return res.status(400).json({ error: 'El horario preferido es obligatorio' });
+  }
+  // Validaciones específicas para transferencia
+  if (metodo_pago === 'transferencia') {
+    if (!numero_comprobante || !numero_comprobante.trim()) {
+      return res.status(400).json({ error: 'El número de comprobante es obligatorio para transferencia' });
+    }
+    if (!banco_comprobante) {
+      return res.status(400).json({ error: 'El banco es obligatorio para transferencia' });
+    }
+    if (!fecha_transferencia) {
+      return res.status(400).json({ error: 'La fecha de transferencia es obligatoria' });
+    }
+  }
+  
   // Comprobante obligatorio para transferencia y efectivo
-  if ((metodo_pago === 'transferencia' || metodo_pago === 'efectivo') && !req.file) {
+  const comprobanteFile = req.files?.comprobante?.[0];
+  if ((metodo_pago === 'transferencia' || metodo_pago === 'efectivo') && !comprobanteFile) {
     return res.status(400).json({ error: 'El comprobante es obligatorio para transferencia o efectivo' });
+  }
+  // Documento de identificación obligatorio
+  const documentoIdentificacionFile = req.files?.documento_identificacion?.[0];
+  if (!documentoIdentificacionFile) {
+    return res.status(400).json({ error: 'El documento de identificación es obligatorio' });
   }
 
   // Validar tipo de curso existente y estado disponible
@@ -74,10 +105,41 @@ router.post('/', upload.single('comprobante'), async (req, res) => {
     return res.status(500).json({ error: 'Error validando tipo de curso' });
   }
 
-  const comprobanteBuffer = req.file ? req.file.buffer : null;
-  const comprobanteMime = req.file ? req.file.mimetype : null;
-  const comprobanteSizeKb = req.file ? Math.ceil(req.file.size / 1024) : null;
-  const comprobanteNombreOriginal = req.file ? req.file.originalname : null;
+  // Validar número de comprobante único (GLOBAL - nunca se puede repetir)
+  if (numero_comprobante && numero_comprobante.trim()) {
+    try {
+      const [existingRows] = await pool.execute(
+        'SELECT id_solicitud FROM solicitudes_matricula WHERE numero_comprobante = ?', 
+        [numero_comprobante.trim().toUpperCase()]
+      );
+      if (existingRows.length > 0) {
+        return res.status(400).json({ 
+          error: 'Este número de comprobante ya fue utilizado en otra solicitud. Cada comprobante debe ser único.' 
+        });
+      }
+    } catch (e) {
+      console.error('Error validando número de comprobante:', e);
+      return res.status(500).json({ error: 'Error validando número de comprobante' });
+    }
+  }
+
+  // Procesar archivos
+  const comprobanteBuffer = comprobanteFile ? comprobanteFile.buffer : null;
+  const comprobanteMime = comprobanteFile ? comprobanteFile.mimetype : null;
+  const comprobanteSizeKb = comprobanteFile ? Math.ceil(comprobanteFile.size / 1024) : null;
+  const comprobanteNombreOriginal = comprobanteFile ? comprobanteFile.originalname : null;
+
+  const documentoIdentificacionBuffer = documentoIdentificacionFile ? documentoIdentificacionFile.buffer : null;
+  const documentoIdentificacionMime = documentoIdentificacionFile ? documentoIdentificacionFile.mimetype : null;
+  const documentoIdentificacionSizeKb = documentoIdentificacionFile ? Math.ceil(documentoIdentificacionFile.size / 1024) : null;
+  const documentoIdentificacionNombreOriginal = documentoIdentificacionFile ? documentoIdentificacionFile.originalname : null;
+
+  const documentoEstatusLegalFile = req.files?.documento_estatus_legal?.[0];
+  const documentoEstatusLegalBuffer = documentoEstatusLegalFile ? documentoEstatusLegalFile.buffer : null;
+  const documentoEstatusLegalMime = documentoEstatusLegalFile ? documentoEstatusLegalFile.mimetype : null;
+  const documentoEstatusLegalSizeKb = documentoEstatusLegalFile ? Math.ceil(documentoEstatusLegalFile.size / 1024) : null;
+  const documentoEstatusLegalNombreOriginal = documentoEstatusLegalFile ? documentoEstatusLegalFile.originalname : null;
+
   const codigo = generarCodigoSolicitud();
 
   try {
@@ -91,14 +153,26 @@ router.post('/', upload.single('comprobante'), async (req, res) => {
       fecha_nacimiento_solicitante,
       direccion_solicitante,
       genero_solicitante,
+      horario_preferido,
       id_tipo_curso,
       monto_matricula,
       metodo_pago,
+      numero_comprobante,
+      banco_comprobante,
+      fecha_transferencia,
       comprobante_pago,
       comprobante_mime,
       comprobante_size_kb,
-      comprobante_nombre_original
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+      comprobante_nombre_original,
+      documento_identificacion,
+      documento_identificacion_mime,
+      documento_identificacion_size_kb,
+      documento_identificacion_nombre_original,
+      documento_estatus_legal,
+      documento_estatus_legal_mime,
+      documento_estatus_legal_size_kb,
+      documento_estatus_legal_nombre_original
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const values = [
       codigo,
@@ -110,13 +184,25 @@ router.post('/', upload.single('comprobante'), async (req, res) => {
       fecha_nacimiento_solicitante || null,
       direccion_solicitante || null,
       genero_solicitante || null,
+      horario_preferido,
       Number(id_tipo_curso),
       Number(monto_matricula),
       metodo_pago,
+      numero_comprobante ? numero_comprobante.trim().toUpperCase() : null,
+      banco_comprobante || null,
+      fecha_transferencia || null,
       comprobanteBuffer,
       comprobanteMime,
       comprobanteSizeKb,
-      comprobanteNombreOriginal
+      comprobanteNombreOriginal,
+      documentoIdentificacionBuffer,
+      documentoIdentificacionMime,
+      documentoIdentificacionSizeKb,
+      documentoIdentificacionNombreOriginal,
+      documentoEstatusLegalBuffer,
+      documentoEstatusLegalMime,
+      documentoEstatusLegalSizeKb,
+      documentoEstatusLegalNombreOriginal
     ];
 
     const [result] = await pool.execute(sql, values);
@@ -181,11 +267,18 @@ router.get('/', async (req, res) => {
         s.identificacion_solicitante,
         s.nombre_solicitante,
         s.apellido_solicitante,
+        s.telefono_solicitante,
         s.email_solicitante,
+        s.fecha_nacimiento_solicitante,
+        s.horario_preferido,
         s.id_tipo_curso,
         tc.nombre AS tipo_curso_nombre,
         s.estado,
-        s.fecha_solicitud
+        s.fecha_solicitud,
+        s.metodo_pago,
+        s.numero_comprobante,
+        s.banco_comprobante,
+        s.fecha_transferencia
       FROM solicitudes_matricula s
       LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = s.id_tipo_curso
       WHERE 1=1
@@ -268,6 +361,64 @@ router.get('/:id/comprobante', async (req, res) => {
   } catch (err) {
     console.error('Error obteniendo comprobante:', err);
     return res.status(500).json({ error: 'Error al obtener el comprobante' });
+  }
+});
+
+// GET /api/solicitudes/:id/documento-identificacion (admin)
+router.get('/:id/documento-identificacion', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID inválido' });
+
+    const [rows] = await pool.execute(
+      `
+      SELECT documento_identificacion, documento_identificacion_mime, documento_identificacion_nombre_original
+      FROM solicitudes_matricula
+      WHERE id_solicitud = ?
+      `,
+      [id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Solicitud no encontrada' });
+    const row = rows[0];
+    if (!row.documento_identificacion) return res.status(404).json({ error: 'No hay documento de identificación para esta solicitud' });
+
+    const mime = row.documento_identificacion_mime || 'application/octet-stream';
+    const filename = row.documento_identificacion_nombre_original || `documento-identificacion-${id}`;
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    return res.send(row.documento_identificacion);
+  } catch (err) {
+    console.error('Error obteniendo documento de identificación:', err);
+    return res.status(500).json({ error: 'Error al obtener el documento de identificación' });
+  }
+});
+
+// GET /api/solicitudes/:id/documento-estatus-legal (admin)
+router.get('/:id/documento-estatus-legal', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID inválido' });
+
+    const [rows] = await pool.execute(
+      `
+      SELECT documento_estatus_legal, documento_estatus_legal_mime, documento_estatus_legal_nombre_original
+      FROM solicitudes_matricula
+      WHERE id_solicitud = ?
+      `,
+      [id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Solicitud no encontrada' });
+    const row = rows[0];
+    if (!row.documento_estatus_legal) return res.status(404).json({ error: 'No hay documento de estatus legal para esta solicitud' });
+
+    const mime = row.documento_estatus_legal_mime || 'application/octet-stream';
+    const filename = row.documento_estatus_legal_nombre_original || `documento-estatus-legal-${id}`;
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    return res.send(row.documento_estatus_legal);
+  } catch (err) {
+    console.error('Error obteniendo documento de estatus legal:', err);
+    return res.status(500).json({ error: 'Error al obtener el documento de estatus legal' });
   }
 });
 
