@@ -69,7 +69,6 @@ async function getCursoById(id) {
 async function createCurso(data) {
   const {
     id_tipo_curso,
-    id_aula = null,
     nombre,
     capacidad_maxima = 20,
     fecha_inicio,
@@ -87,10 +86,10 @@ async function createCurso(data) {
 
   const [result] = await pool.execute(
     `INSERT INTO cursos (
-      codigo_curso, id_tipo_curso, id_aula, nombre,
+      codigo_curso, id_tipo_curso, nombre,
       capacidad_maxima, fecha_inicio, fecha_fin, estado
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [codigo_curso, id_tipo_curso, id_aula, nombre, capacidad_maxima, fecha_inicio, fecha_fin, estado]
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [codigo_curso, id_tipo_curso, nombre, capacidad_maxima, fecha_inicio, fecha_fin, estado]
   );
 
   return getCursoById(result.insertId);
@@ -100,7 +99,6 @@ async function updateCurso(id, data) {
   const {
     codigo_curso,
     id_tipo_curso,
-    id_aula,
     nombre,
     capacidad_maxima,
     fecha_inicio,
@@ -118,10 +116,6 @@ async function updateCurso(id, data) {
   if (id_tipo_curso !== undefined) {
     fields.push('id_tipo_curso = ?');
     values.push(id_tipo_curso);
-  }
-  if (id_aula !== undefined) {
-    fields.push('id_aula = ?');
-    values.push(id_aula);
   }
   if (nombre !== undefined) {
     fields.push('nombre = ?');

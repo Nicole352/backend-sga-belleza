@@ -11,18 +11,18 @@ async function loginController(req, res) {
 
     let user = null;
 
-    // Estudiante: username; Admin/SuperAdmin: email
+    // Estudiante y Docente: username; Admin/SuperAdmin: email
     if (username) {
       user = await getUserByUsername(username);
       if (!user) return res.status(401).send('Datos incorrectos. Por favor, ingresa un usuario y una contraseña válidos.');
-      if (user.nombre_rol !== 'estudiante') {
+      if (user.nombre_rol !== 'estudiante' && user.nombre_rol !== 'docente') {
         return res.status(403).json({ error: 'Este tipo de usuario debe iniciar sesión con correo' });
       }
     } else {
       user = await getUserByEmail(email);
       if (!user) return res.status(401).send('Datos incorrectos. Por favor, ingresa un usuario y una contraseña válidos.');
-      if (user.nombre_rol === 'estudiante') {
-        return res.status(403).json({ error: 'Estudiante debe iniciar sesión con usuario' });
+      if (user.nombre_rol === 'estudiante' || user.nombre_rol === 'docente') {
+        return res.status(403).json({ error: 'Estudiantes y docentes deben iniciar sesión con usuario' });
       }
     }
     if (!user) return res.status(401).send('Datos incorrectos. Por favor, ingresa un usuario y una contraseña válidos.');

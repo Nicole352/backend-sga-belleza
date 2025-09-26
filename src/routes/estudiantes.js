@@ -215,7 +215,7 @@ router.post('/crear-desde-solicitud', async (req, res) => {
       message: 'Estudiante creado exitosamente',
       estudiante: {
         id_usuario: id_estudiante,
-        cedula: solicitud.identificacion_solicitante,
+        identificacion: solicitud.identificacion_solicitante,
         nombre: solicitud.nombre_solicitante,
         apellido: solicitud.apellido_solicitante,
         email: emailEstudiante,
@@ -247,7 +247,7 @@ router.get('/', async (req, res) => {
     let sql = `
       SELECT 
         u.id_usuario,
-        u.cedula,
+        u.cedula as identificacion,
         u.nombre,
         u.apellido,
         u.username,
@@ -407,7 +407,7 @@ router.get('/:id', async (req, res) => {
     const [estudiantes] = await pool.execute(`
       SELECT 
         u.id_usuario,
-        u.cedula,
+        u.cedula as identificacion,
         u.nombre,
         u.apellido,
         u.username,
