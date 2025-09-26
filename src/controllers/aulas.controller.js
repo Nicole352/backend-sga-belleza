@@ -1,39 +1,286 @@
 const { pool } = require('../config/database');
+const AulasModel = require('../models/aulas.model');
 
-exports.listAulas = async (req, res) => {
+exports.getAulas = async (req, res) => {
   try {
-    const estado = req.query.estado;
-    const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 100));
-    let sql = `SELECT id_aula, nombre, capacidad, ubicacion, estado FROM aulas WHERE 1=1`;
-    const params = [];
-    if (estado) { sql += ' AND estado = ?'; params.push(estado); }
-    // Evitar placeholder en LIMIT por compatibilidad
-    sql += ` ORDER BY nombre ASC LIMIT ${limit}`;
-    const [rows] = await pool.execute(sql, params);
-    return res.json(rows);
-  } catch (err) {
-    if (err && (err.code === 'ER_NO_SUCH_TABLE' || /doesn't exist/i.test(err.sqlMessage || ''))) {
-      // Si la tabla no existe, devolvemos lista vacía para no romper el frontend
-      return res.json([]);
+    const filters = {
+      page: req.query.page || 1,
+      limit: req.query.limit || 10,
+      search: req.query.search || '',
+      estado: req.query.estado || ''
+    };
+    
+    const result = await AulasModel.getAll(filters);
+    
+    res.json({
+      success: true,
+      ...result
+    });
+    
+  } catch (error) {
+    console.error('=== ERROR EN GET /api/aulas ===');
+    console.error('Error completo:', error);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor',
+      error: error.message,
+      details: error.stack
+    });
+  }
+};
+
+exports.getAulaById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const [aulas] = await pool.execute(
+      'SELECT * FROM aulas WHERE id_aula = ?',
+      [id]
+    );
+    
+    if (aulas.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Aula no encontrada'
+      });
     }
-    console.error('Error listando aulas:', err);
-    return res.status(500).json({ error: 'Error al listar aulas' });
+    
+    res.json({
+      success: true,
+      aula: aulas[0]
+    });
+    
+  } catch (error) {
+    console.error('Error al obtener aula:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor',
+      error: error.message
+    });
   }
 };
 
 exports.createAula = async (req, res) => {
   try {
-    const { nombre, capacidad, ubicacion, estado } = req.body;
-    if (!nombre) return res.status(400).json({ error: 'nombre es obligatorio' });
-    const sql = `INSERT INTO aulas (nombre, capacidad, ubicacion, estado) VALUES (?, ?, ?, ?)`;
-    const params = [nombre, Number(capacidad) || 20, ubicacion || null, estado || 'disponible'];
-    const [result] = await pool.execute(sql, params);
-    const [rows] = await pool.execute('SELECT id_aula, nombre, capacidad, ubicacion, estado FROM aulas WHERE id_aula = ?', [result.insertId]);
-    return res.status(201).json(rows[0]);
-  } catch (err) {
-    console.error('Error creando aula:', err);
-    let msg = 'Error al crear aula';
-    if (err && err.code === 'ER_DUP_ENTRY') msg = 'El nombre del aula ya existe';
-    return res.status(500).json({ error: msg });
+    const { codigo_aula, nombre, ubicacion, descripcion, estado = 'activa' } = req.body;
+    
+    // Validaciones
+    if (!nombre || nombre.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'El nombre del aula es obligatorio'
+      });
+    }
+    
+    if (!codigo_aula || codigo_aula.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'El código del aula es obligatorio'
+      });
+    }
+    
+    if (!['activa', 'inactiva', 'mantenimiento', 'reservada'].includes(estado)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Estado inválido'
+      });
+    }
+    
+    // Verificar que no exista aula con el mismo nombre
+    const [existingAula] = await pool.execute(
+      'SELECT id_aula FROM aulas WHERE nombre = ?',
+      [nombre.trim()]
+    );
+    
+    if (existingAula.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ya existe un aula con ese nombre'
+      });
+    }
+    
+    // Verificar que no exista aula con el mismo código
+    const [existingCode] = await pool.execute(
+      'SELECT id_aula FROM aulas WHERE codigo_aula = ?',
+      [codigo_aula.trim()]
+    );
+    
+    if (existingCode.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ya existe un aula con ese código'
+      });
+    }
+    
+    // Insertar nueva aula con código del frontend (igual que en cursos)
+    const [result] = await pool.execute(
+      `INSERT INTO aulas (codigo_aula, nombre, ubicacion, descripcion, estado) 
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        codigo_aula.trim(),
+        nombre.trim(),
+        ubicacion ? ubicacion.trim() : null,
+        descripcion ? descripcion.trim() : null,
+        estado
+      ]
+    );
+    
+    // Obtener el aula creada con su código generado
+    const [newAula] = await pool.execute(
+      'SELECT * FROM aulas WHERE id_aula = ?',
+      [result.insertId]
+    );
+    
+    res.status(201).json({
+      success: true,
+      message: 'Aula creada exitosamente',
+      aula: newAula[0]
+    });
+    
+  } catch (error) {
+    console.error('Error al crear aula:', error);
+    
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({
+        success: false,
+        message: 'Ya existe un aula con ese nombre'
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor',
+      error: error.message
+    });
+  }
+};
+
+exports.updateAula = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nombre, ubicacion, descripcion, estado } = req.body;
+    
+    // Validaciones
+    if (!nombre || nombre.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'El nombre del aula es obligatorio'
+      });
+    }
+    
+    if (!['activa', 'inactiva', 'mantenimiento', 'reservada'].includes(estado)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Estado inválido'
+      });
+    }
+    
+    // Verificar que el aula existe
+    const [existingAula] = await pool.execute(
+      'SELECT id_aula FROM aulas WHERE id_aula = ?',
+      [id]
+    );
+    
+    if (existingAula.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Aula no encontrada'
+      });
+    }
+    
+    // Verificar que no exista otra aula con el mismo nombre
+    const [duplicateAula] = await pool.execute(
+      'SELECT id_aula FROM aulas WHERE nombre = ? AND id_aula != ?',
+      [nombre.trim(), id]
+    );
+    
+    if (duplicateAula.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ya existe otra aula con ese nombre'
+      });
+    }
+    
+    // Actualizar aula
+    await pool.execute(
+      `UPDATE aulas 
+       SET nombre = ?, ubicacion = ?, descripcion = ?, estado = ?
+       WHERE id_aula = ?`,
+      [
+        nombre.trim(),
+        ubicacion ? ubicacion.trim() : null,
+        descripcion ? descripcion.trim() : null,
+        estado,
+        id
+      ]
+    );
+    
+    // Obtener aula actualizada
+    const [updatedAula] = await pool.execute(
+      'SELECT * FROM aulas WHERE id_aula = ?',
+      [id]
+    );
+    
+    res.json({
+      success: true,
+      message: 'Aula actualizada exitosamente',
+      aula: updatedAula[0]
+    });
+    
+  } catch (error) {
+    console.error('Error al actualizar aula:', error);
+    
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({
+        success: false,
+        message: 'Ya existe otra aula con ese nombre'
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor',
+      error: error.message
+    });
+  }
+};
+
+exports.deleteAula = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Verificar que el aula existe
+    const [existingAula] = await pool.execute(
+      'SELECT id_aula, nombre FROM aulas WHERE id_aula = ?',
+      [id]
+    );
+    
+    if (existingAula.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Aula no encontrada'
+      });
+    }
+    
+    // TODO: Verificar si el aula está siendo usada en cursos o asignaciones
+    // antes de eliminar (opcional)
+    
+    // Eliminar aula
+    await pool.execute('DELETE FROM aulas WHERE id_aula = ?', [id]);
+    
+    res.json({
+      success: true,
+      message: `Aula "${existingAula[0].nombre}" eliminada exitosamente`
+    });
+    
+  } catch (error) {
+    console.error('Error al eliminar aula:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor',
+      error: error.message
+    });
   }
 };
