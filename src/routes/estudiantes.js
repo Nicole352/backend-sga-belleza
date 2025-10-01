@@ -13,6 +13,9 @@ router.get('/', estudiantesController.getEstudiantes);
 // GET /api/estudiantes/mis-cursos - Obtener cursos matriculados del estudiante autenticado
 router.get('/mis-cursos', authMiddleware, estudiantesController.getMisCursos);
 
+// GET /api/estudiantes/mis-pagos-mensuales - Obtener pagos mensuales del estudiante autenticado
+router.get('/mis-pagos-mensuales', authMiddleware, estudiantesController.getMisPagosMenuales);
+
 // GET /api/estudiantes/:id - Obtener estudiante por ID
 router.get('/:id', estudiantesController.getEstudianteById);
 

@@ -13,6 +13,8 @@ const tiposCursosRoutes = require('./routes/tipos-cursos');
 const aulasRoutes = require('./routes/aulas');
 const estudiantesRoutes = require('./routes/estudiantes');
 const docentesRoutes = require('./routes/docentes');
+const pagosMenualesRoutes = require('./routes/pagos-mensuales');
+const adminPagosRoutes = require('./routes/admin-pagos');
 
 const app = express();
 
@@ -55,5 +57,7 @@ app.use('/api/tipos-cursos', tiposCursosRoutes);
 app.use('/api/aulas', aulasRoutes);
 app.use('/api/estudiantes', estudiantesRoutes);
 app.use('/api/docentes', docentesRoutes);
+app.use('/api/pagos-mensuales', pagosMenualesRoutes);
+app.use('/api/admin/pagos', adminPagosRoutes);
 
 module.exports = app;

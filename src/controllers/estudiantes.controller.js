@@ -175,7 +175,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
     }
     
     if (id_curso) {
-      await connection.execute(`
+      const [matriculaResult] = await connection.execute(`
         INSERT INTO matriculas (
           codigo_matricula, id_solicitud, id_tipo_curso, id_estudiante, 
           id_curso, monto_matricula, email_generado, creado_por, estado
@@ -191,7 +191,103 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         aprobado_por
       ]);
       
-      console.log('✅ Matrícula creada:', codigoMatricula);
+      const id_matricula = matriculaResult.insertId;
+      console.log('✅ Matrícula creada:', codigoMatricula, 'ID:', id_matricula);
+
+      // *** GENERAR CUOTAS MENSUALES AUTOMÁTICAMENTE ***
+      console.log('🔍 Generando cuotas mensuales para matrícula:', id_matricula);
+      
+      // Obtener duración del curso en meses
+      const [tipoCurso] = await connection.execute(`
+        SELECT duracion_meses, precio_base 
+        FROM tipos_cursos 
+        WHERE id_tipo_curso = ?
+      `, [solicitud.id_tipo_curso]);
+
+      console.log('🔍 Tipo de curso encontrado:', tipoCurso);
+
+      if (tipoCurso.length > 0) {
+        const duracionMeses = tipoCurso[0].duracion_meses;
+        const precioMensual = tipoCurso[0].precio_base / duracionMeses; // Dividir precio base entre meses
+        
+        console.log('🔍 Generando cuotas:', {
+          duracionMeses,
+          precioMensual,
+          id_matricula
+        });
+        
+        // Generar cuotas mensuales
+        const fechaInicio = new Date();
+        fechaInicio.setMonth(fechaInicio.getMonth() + 1); // Empezar el próximo mes
+        
+        for (let i = 1; i <= duracionMeses; i++) {
+          const fechaVencimiento = new Date(fechaInicio);
+          fechaVencimiento.setMonth(fechaInicio.getMonth() + (i - 1));
+          fechaVencimiento.setDate(15); // Vencimiento el día 15 de cada mes
+          
+          console.log(`🔍 Creando cuota ${i}:`, {
+            id_matricula,
+            numero_cuota: i,
+            monto: precioMensual,
+            fecha_vencimiento: fechaVencimiento.toISOString().split('T')[0]
+          });
+          
+          // *** CUOTA #1: Copiar datos del pago de la solicitud (YA PAGADA) ***
+          if (i === 1) {
+            console.log('💰 Cuota #1: Copiando datos de pago de la solicitud');
+            await connection.execute(`
+              INSERT INTO pagos_mensuales (
+                id_matricula, 
+                numero_cuota, 
+                monto, 
+                fecha_vencimiento, 
+                fecha_pago,
+                metodo_pago,
+                numero_comprobante,
+                banco_comprobante,
+                fecha_transferencia,
+                comprobante_pago_blob,
+                comprobante_mime,
+                comprobante_size_kb,
+                comprobante_nombre_original,
+                estado
+              ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, 'pagado')
+            `, [
+              id_matricula,
+              i,
+              solicitud.monto_matricula || precioMensual, // Usar monto de solicitud si existe
+              fechaVencimiento.toISOString().split('T')[0],
+              solicitud.metodo_pago,
+              solicitud.numero_comprobante,
+              solicitud.banco_comprobante,
+              solicitud.fecha_transferencia,
+              solicitud.comprobante_pago,
+              solicitud.comprobante_mime,
+              solicitud.comprobante_size_kb,
+              solicitud.comprobante_nombre_original
+            ]);
+            console.log('✅ Cuota #1 creada con estado PAGADO (datos de solicitud copiados)');
+          } else {
+            // Cuotas 2, 3, 4... en estado pendiente
+            await connection.execute(`
+              INSERT INTO pagos_mensuales (
+                id_matricula, numero_cuota, monto, fecha_vencimiento, estado, metodo_pago
+              ) VALUES (?, ?, ?, ?, 'pendiente', 'transferencia')
+            `, [
+              id_matricula,
+              i,
+              precioMensual,
+              fechaVencimiento.toISOString().split('T')[0]
+            ]);
+          }
+        }
+        
+        console.log('✅ Cuotas generadas exitosamente para matrícula:', id_matricula);
+        console.log('✅ Cuota #1: PAGADO (comprobante copiado de solicitud)');
+        console.log(`✅ Cuotas ${duracionMeses > 1 ? '2-' + duracionMeses : ''}: PENDIENTES`);
+      } else {
+        console.log('❌ No se encontró tipo de curso para generar cuotas');
+      }
     }
     
     // 9. Actualizar estado de la solicitud
@@ -459,6 +555,65 @@ exports.getEstudiantesRecientes = async (req, res) => {
     
   } catch (error) {
     console.error('Error obteniendo estudiantes recientes:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor',
+      details: error.message 
+    });
+  }
+};
+
+// Obtener pagos mensuales del estudiante autenticado
+exports.getMisPagosMenuales = async (req, res) => {
+  try {
+    const id_estudiante = req.user?.id_usuario;
+
+    if (!id_estudiante) {
+      return res.status(401).json({ error: 'Usuario no autenticado' });
+    }
+
+    // Verificar que el usuario sea estudiante
+    const [userCheck] = await pool.execute(`
+      SELECT u.id_usuario, r.nombre_rol 
+      FROM usuarios u 
+      JOIN roles r ON u.id_rol = r.id_rol 
+      WHERE u.id_usuario = ?
+    `, [id_estudiante]);
+    
+    if (userCheck.length === 0 || userCheck[0].nombre_rol !== 'estudiante') {
+      return res.status(403).json({ error: 'Acceso denegado. Solo estudiantes pueden acceder a esta información.' });
+    }
+
+    // Obtener pagos mensuales del estudiante
+    const [pagos] = await pool.execute(`
+      SELECT 
+        pm.id_pago,
+        pm.id_matricula,
+        pm.numero_cuota,
+        pm.monto,
+        pm.fecha_vencimiento,
+        pm.fecha_pago,
+        pm.numero_comprobante,
+        pm.banco_comprobante,
+        pm.fecha_transferencia,
+        pm.metodo_pago,
+        pm.estado,
+        pm.observaciones,
+        c.nombre as curso_nombre,
+        c.codigo_curso,
+        tc.nombre as tipo_curso_nombre,
+        m.codigo_matricula
+      FROM pagos_mensuales pm
+      INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
+      INNER JOIN cursos c ON m.id_curso = c.id_curso
+      INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
+      WHERE m.id_estudiante = ?
+      ORDER BY pm.fecha_vencimiento ASC, pm.numero_cuota ASC
+    `, [id_estudiante]);
+
+    res.json(pagos);
+
+  } catch (error) {
+    console.error('Error obteniendo pagos mensuales del estudiante:', error);
     res.status(500).json({ 
       error: 'Error interno del servidor',
       details: error.message 

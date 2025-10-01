@@ -157,10 +157,11 @@ class EstudiantesModel {
       const id_estudiante = userResult.insertId;
       
       // Crear matrícula si hay curso disponible
+      let id_matricula = null;
       if (userData.id_curso) {
         const codigoMatricula = `MAT-${Date.now()}-${id_estudiante}`;
         
-        await connection.execute(`
+        const [matriculaResult] = await connection.execute(`
           INSERT INTO matriculas (
             codigo_matricula, id_solicitud, id_tipo_curso, id_estudiante, 
             id_curso, monto_matricula, email_generado, creado_por, estado
@@ -175,6 +176,113 @@ class EstudiantesModel {
           userData.email || `${userData.username}@estudiante.belleza.com`,
           userData.aprobado_por
         ]);
+        
+        id_matricula = matriculaResult.insertId;
+
+        // Obtener duración del curso en meses
+        const [tipoCurso] = await connection.execute(`
+          SELECT duracion_meses, precio_base 
+          FROM tipos_cursos 
+          WHERE id_tipo_curso = ?
+        `, [solicitudData.id_tipo_curso]);
+
+        console.log('🔍 Debug - Tipo de curso encontrado:', tipoCurso);
+
+        if (tipoCurso.length > 0) {
+          const duracionMeses = tipoCurso[0].duracion_meses;
+          const precioMensual = tipoCurso[0].precio_base / duracionMeses; // Dividir precio base entre meses
+          
+          console.log('🔍 Debug - Generando cuotas:', {
+            duracionMeses,
+            precioMensual,
+            id_matricula
+          });
+          
+          // Generar cuotas mensuales
+          const fechaInicio = new Date();
+          fechaInicio.setMonth(fechaInicio.getMonth() + 1); // Empezar el próximo mes
+          
+          for (let i = 1; i <= duracionMeses; i++) {
+            const fechaVencimiento = new Date(fechaInicio);
+            fechaVencimiento.setMonth(fechaInicio.getMonth() + (i - 1));
+            fechaVencimiento.setDate(15); // Vencimiento el día 15 de cada mes
+            
+            // La primera cuota ya está PAGADA (matrícula verificada por admin)
+            const estadoCuota = i === 1 ? 'pagado' : 'pendiente';
+            
+            console.log(`🔍 Creando cuota ${i}:`, {
+              id_matricula,
+              numero_cuota: i,
+              monto: precioMensual,
+              fecha_vencimiento: fechaVencimiento.toISOString().split('T')[0]
+            });
+            
+            console.log(`🔍 Verificando si es cuota 1: i=${i}, es primera cuota: ${i === 1}`);
+            
+            // Para la primera cuota, incluir datos del comprobante de matrícula
+            if (i === 1) {
+              console.log('🔍 Obteniendo comprobante de solicitud:', solicitudData.id_solicitud);
+              
+              // Obtener el comprobante BLOB de la solicitud
+              const [solicitudComprobante] = await connection.execute(`
+                SELECT comprobante_pago, comprobante_mime, comprobante_size_kb, comprobante_nombre_original,
+                       numero_comprobante, banco_comprobante, fecha_transferencia, metodo_pago
+                FROM solicitudes_matricula
+                WHERE id_solicitud = ?
+              `, [solicitudData.id_solicitud]);
+              
+              const comprobante = solicitudComprobante[0];
+              
+              console.log('✅ Comprobante obtenido:', {
+                tiene_blob: !!comprobante?.comprobante_pago,
+                numero: comprobante?.numero_comprobante,
+                banco: comprobante?.banco_comprobante,
+                mime: comprobante?.comprobante_mime
+              });
+              
+              await connection.execute(`
+                INSERT INTO pagos_mensuales (
+                  id_matricula, numero_cuota, monto, fecha_vencimiento, 
+                  estado, metodo_pago, fecha_pago,
+                  numero_comprobante, banco_comprobante, fecha_transferencia,
+                  comprobante_pago_blob, comprobante_mime, comprobante_size_kb, comprobante_nombre_original,
+                  observaciones
+                ) VALUES (?, ?, ?, ?, 'pagado', ?, NOW(), ?, ?, ?, ?, ?, ?, ?, 'Pago de matrícula verificado por admin')
+              `, [
+                id_matricula,
+                i,
+                precioMensual,
+                fechaVencimiento.toISOString().split('T')[0],
+                comprobante?.metodo_pago || 'transferencia',
+                comprobante?.numero_comprobante || null,
+                comprobante?.banco_comprobante || null,
+                comprobante?.fecha_transferencia || null,
+                comprobante?.comprobante_pago || null,
+                comprobante?.comprobante_mime || null,
+                comprobante?.comprobante_size_kb || null,
+                comprobante?.comprobante_nombre_original || null
+              ]);
+              
+              console.log('✅ Cuota #1 creada con estado PAGADO y comprobante');
+            } else {
+              // Demás cuotas en pendiente
+              await connection.execute(`
+                INSERT INTO pagos_mensuales (
+                  id_matricula, numero_cuota, monto, fecha_vencimiento, estado, metodo_pago
+                ) VALUES (?, ?, ?, ?, 'pendiente', 'transferencia')
+              `, [
+                id_matricula,
+                i,
+                precioMensual,
+                fechaVencimiento.toISOString().split('T')[0]
+              ]);
+            }
+          }
+          
+          console.log('✅ Debug - Cuotas generadas exitosamente');
+        } else {
+          console.log('❌ Debug - No se encontró tipo de curso');
+        }
       }
       
       // Actualizar estado de la solicitud
