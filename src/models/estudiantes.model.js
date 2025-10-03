@@ -345,6 +345,7 @@ class EstudiantesModel {
         c.nombre,
         c.fecha_inicio,
         c.fecha_fin,
+        c.capacidad_maxima,
         c.estado as estado_curso,
         tc.nombre as tipo_curso_nombre,
         tc.precio_base,
@@ -352,6 +353,17 @@ class EstudiantesModel {
         m.fecha_matricula,
         m.codigo_matricula,
         m.monto_matricula,
+        -- Información del aula y horarios
+        a.codigo_aula,
+        a.nombre as aula_nombre,
+        a.ubicacion as aula_ubicacion,
+        aa.hora_inicio,
+        aa.hora_fin,
+        aa.dias,
+        -- Información del docente
+        d.nombres as docente_nombres,
+        d.apellidos as docente_apellidos,
+        d.titulo_profesional as docente_titulo,
         -- Simular progreso y calificación
         FLOOR(60 + RAND() * 40) as progreso,
         ROUND(8 + RAND() * 2, 1) as calificacion_final,
@@ -362,6 +374,9 @@ class EstudiantesModel {
       FROM matriculas m
       LEFT JOIN cursos c ON m.id_curso = c.id_curso
       LEFT JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
+      LEFT JOIN asignaciones_aulas aa ON c.id_curso = aa.id_curso AND aa.estado = 'activa'
+      LEFT JOIN aulas a ON aa.id_aula = a.id_aula
+      LEFT JOIN docentes d ON aa.id_docente = d.id_docente
       WHERE m.id_estudiante = ? 
         AND m.estado = 'activa'
       ORDER BY m.fecha_matricula DESC
@@ -373,6 +388,7 @@ class EstudiantesModel {
       nombre: curso.nombre,
       fecha_inicio: curso.fecha_inicio,
       fecha_fin: curso.fecha_fin,
+      capacidad_maxima: curso.capacidad_maxima,
       estado: curso.estado_curso,
       tipo_curso: curso.tipo_curso_nombre,
       precio_base: curso.precio_base || curso.monto_matricula,
@@ -381,7 +397,28 @@ class EstudiantesModel {
       tareasPendientes: curso.tareas_pendientes,
       estado_matricula: curso.estado_matricula,
       fecha_matricula: curso.fecha_matricula,
-      proximaClase: curso.proxima_clase
+      proximaClase: curso.proxima_clase,
+      // Información del aula
+      aula: {
+        codigo: curso.codigo_aula,
+        nombre: curso.aula_nombre,
+        ubicacion: curso.aula_ubicacion
+      },
+      // Información del horario
+      horario: {
+        hora_inicio: curso.hora_inicio,
+        hora_fin: curso.hora_fin,
+        dias: curso.dias
+      },
+      // Información del docente
+      docente: {
+        nombres: curso.docente_nombres,
+        apellidos: curso.docente_apellidos,
+        titulo: curso.docente_titulo,
+        nombre_completo: curso.docente_nombres && curso.docente_apellidos 
+          ? `${curso.docente_nombres} ${curso.docente_apellidos}`
+          : null
+      }
     }));
   }
 

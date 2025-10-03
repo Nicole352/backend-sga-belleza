@@ -59,8 +59,36 @@ async function loginController(req, res) {
 
 async function meController(req, res) {
   try {
+    const { pool } = require('../config/database');
     const user = await getUserById(req.user.id_usuario);
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    
+    // Si es docente, obtener datos adicionales de la tabla docentes
+    if (user.nombre_rol === 'docente') {
+      const [docentes] = await pool.execute(`
+        SELECT d.nombres, d.apellidos, d.titulo_profesional, d.experiencia_anos
+        FROM docentes d
+        WHERE d.identificacion = ?
+      `, [user.cedula]);
+      
+      if (docentes.length > 0) {
+        return res.json({
+          id_usuario: user.id_usuario,
+          nombre: user.nombre,
+          apellido: user.apellido,
+          nombres: docentes[0].nombres,
+          apellidos: docentes[0].apellidos,
+          titulo_profesional: docentes[0].titulo_profesional,
+          experiencia_anos: docentes[0].experiencia_anos,
+          email: user.email,
+          rol: user.nombre_rol,
+          estado: user.estado,
+          fecha_ultima_conexion: user.fecha_ultima_conexion,
+          needs_password_reset: !!user.password_temporal
+        });
+      }
+    }
+    
     return res.json({
       id_usuario: user.id_usuario,
       nombre: user.nombre,

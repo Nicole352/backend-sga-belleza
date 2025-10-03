@@ -359,66 +359,16 @@ exports.getMisCursos = async (req, res) => {
     }
 
     // Verificar que el usuario sea estudiante
-    const [userCheck] = await pool.execute(`
-      SELECT u.id_usuario, r.nombre_rol 
-      FROM usuarios u 
-      JOIN roles r ON u.id_rol = r.id_rol 
-      WHERE u.id_usuario = ?
-    `, [id_usuario]);
+    const isEstudiante = await EstudiantesModel.isEstudiante(id_usuario);
     
-    if (userCheck.length === 0 || userCheck[0].nombre_rol !== 'estudiante') {
+    if (!isEstudiante) {
       return res.status(403).json({ error: 'Acceso denegado. Solo estudiantes pueden acceder a esta información.' });
     }
 
-    // Obtener cursos matriculados del estudiante
-    const [cursos] = await pool.execute(`
-      SELECT 
-        c.id_curso,
-        c.codigo_curso,
-        c.nombre,
-        c.fecha_inicio,
-        c.fecha_fin,
-        c.estado as estado_curso,
-        tc.nombre as tipo_curso_nombre,
-        tc.precio_base,
-        m.estado as estado_matricula,
-        m.fecha_matricula,
-        m.codigo_matricula,
-        m.monto_matricula,
-        -- Simular progreso y calificación
-        FLOOR(60 + RAND() * 40) as progreso,
-        ROUND(8 + RAND() * 2, 1) as calificacion_final,
-        -- Calcular tareas pendientes (simulado)
-        FLOOR(RAND() * 3) as tareas_pendientes,
-        -- Próxima clase (simulado)
-        DATE_ADD(COALESCE(c.fecha_inicio, CURDATE()), INTERVAL FLOOR(RAND() * 30) DAY) as proxima_clase
-      FROM matriculas m
-      LEFT JOIN cursos c ON m.id_curso = c.id_curso
-      LEFT JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
-      WHERE m.id_estudiante = ? 
-        AND m.estado = 'activa'
-      ORDER BY m.fecha_matricula DESC
-    `, [id_usuario]);
+    // Obtener cursos matriculados usando el modelo (incluye docente, aula y horario)
+    const cursos = await EstudiantesModel.getMisCursos(id_usuario);
 
-    // Transformar datos para el frontend
-    const cursosFormateados = cursos.map(curso => ({
-      id_curso: curso.id_curso,
-      codigo_curso: curso.codigo_curso || curso.codigo_matricula,
-      nombre: curso.nombre,
-      fecha_inicio: curso.fecha_inicio,
-      fecha_fin: curso.fecha_fin,
-      estado: curso.estado_curso,
-      tipo_curso: curso.tipo_curso_nombre,
-      precio_base: curso.precio_base || curso.monto_matricula,
-      progreso: curso.progreso, // Ya viene de la consulta SQL
-      calificacion: curso.calificacion_final, // Ya viene de la consulta SQL
-      tareasPendientes: curso.tareas_pendientes, // Ya viene de la consulta SQL
-      estado_matricula: curso.estado_matricula,
-      fecha_matricula: curso.fecha_matricula,
-      proximaClase: curso.proxima_clase
-    }));
-
-    res.json(cursosFormateados);
+    res.json(cursos);
     
   } catch (error) {
     console.error('Error obteniendo cursos del estudiante:', error);

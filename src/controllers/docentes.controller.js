@@ -567,3 +567,115 @@ exports.getDocentesStats = async (req, res) => {
     });
   }
 };
+
+// =====================================================
+// ENDPOINTS PARA EL PANEL DEL DOCENTE
+// =====================================================
+
+exports.getMisCursos = async (req, res) => {
+  try {
+    const id_usuario = req.user?.id_usuario;
+    
+    if (!id_usuario) {
+      return res.status(401).json({ error: 'Usuario no autenticado' });
+    }
+
+    // Verificar que el usuario sea docente
+    const isDocente = await DocentesModel.isDocente(id_usuario);
+    
+    if (!isDocente) {
+      return res.status(403).json({ error: 'Acceso denegado. Solo docentes pueden acceder a esta información.' });
+    }
+
+    // Obtener ID del docente
+    const id_docente = await DocentesModel.getDocenteIdByUserId(id_usuario);
+    
+    if (!id_docente) {
+      return res.status(404).json({ error: 'Docente no encontrado' });
+    }
+
+    // Obtener cursos asignados
+    const cursos = await DocentesModel.getMisCursos(id_docente);
+
+    res.json(cursos);
+    
+  } catch (error) {
+    console.error('Error obteniendo cursos del docente:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor',
+      details: error.message 
+    });
+  }
+};
+
+exports.getMisEstudiantes = async (req, res) => {
+  try {
+    const id_usuario = req.user?.id_usuario;
+    
+    if (!id_usuario) {
+      return res.status(401).json({ error: 'Usuario no autenticado' });
+    }
+
+    // Verificar que el usuario sea docente
+    const isDocente = await DocentesModel.isDocente(id_usuario);
+    
+    if (!isDocente) {
+      return res.status(403).json({ error: 'Acceso denegado. Solo docentes pueden acceder a esta información.' });
+    }
+
+    // Obtener ID del docente
+    const id_docente = await DocentesModel.getDocenteIdByUserId(id_usuario);
+    
+    if (!id_docente) {
+      return res.status(404).json({ error: 'Docente no encontrado' });
+    }
+
+    // Obtener estudiantes
+    const estudiantes = await DocentesModel.getMisEstudiantes(id_docente);
+
+    res.json(estudiantes);
+    
+  } catch (error) {
+    console.error('Error obteniendo estudiantes del docente:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor',
+      details: error.message 
+    });
+  }
+};
+
+exports.getMiHorario = async (req, res) => {
+  try {
+    const id_usuario = req.user?.id_usuario;
+    
+    if (!id_usuario) {
+      return res.status(401).json({ error: 'Usuario no autenticado' });
+    }
+
+    // Verificar que el usuario sea docente
+    const isDocente = await DocentesModel.isDocente(id_usuario);
+    
+    if (!isDocente) {
+      return res.status(403).json({ error: 'Acceso denegado. Solo docentes pueden acceder a esta información.' });
+    }
+
+    // Obtener ID del docente
+    const id_docente = await DocentesModel.getDocenteIdByUserId(id_usuario);
+    
+    if (!id_docente) {
+      return res.status(404).json({ error: 'Docente no encontrado' });
+    }
+
+    // Obtener horario
+    const horario = await DocentesModel.getMiHorario(id_docente);
+
+    res.json(horario);
+    
+  } catch (error) {
+    console.error('Error obteniendo horario del docente:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor',
+      details: error.message 
+    });
+  }
+};

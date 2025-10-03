@@ -177,6 +177,108 @@ class DocentesModel {
     const [result] = await pool.execute(query, params);
     return result[0].count > 0;
   }
+
+  // Obtener cursos asignados al docente
+  static async getMisCursos(id_docente) {
+    const [cursos] = await pool.execute(`
+      SELECT 
+        c.id_curso,
+        c.codigo_curso,
+        c.nombre,
+        c.fecha_inicio,
+        c.fecha_fin,
+        c.capacidad_maxima,
+        c.estado,
+        a.codigo_aula,
+        a.nombre as aula_nombre,
+        a.ubicacion as aula_ubicacion,
+        aa.hora_inicio,
+        aa.hora_fin,
+        aa.dias,
+        COUNT(DISTINCT m.id_matricula) as total_estudiantes
+      FROM asignaciones_aulas aa
+      INNER JOIN cursos c ON aa.id_curso = c.id_curso
+      LEFT JOIN aulas a ON aa.id_aula = a.id_aula
+      LEFT JOIN matriculas m ON c.id_curso = m.id_curso AND m.estado = 'activa'
+      WHERE aa.id_docente = ? AND aa.estado = 'activa'
+      GROUP BY c.id_curso, c.codigo_curso, c.nombre, c.fecha_inicio, c.fecha_fin, 
+               c.capacidad_maxima, c.estado, a.codigo_aula, a.nombre, a.ubicacion,
+               aa.hora_inicio, aa.hora_fin, aa.dias
+      ORDER BY c.fecha_inicio DESC
+    `, [id_docente]);
+
+    return cursos;
+  }
+
+  // Obtener estudiantes de los cursos del docente
+  static async getMisEstudiantes(id_docente) {
+    const [estudiantes] = await pool.execute(`
+      SELECT DISTINCT
+        u.id_usuario,
+        u.nombre,
+        u.apellido,
+        u.cedula,
+        u.email,
+        u.telefono,
+        c.nombre as curso_nombre,
+        c.codigo_curso,
+        m.fecha_matricula
+      FROM asignaciones_aulas aa
+      INNER JOIN cursos c ON aa.id_curso = c.id_curso
+      INNER JOIN matriculas m ON c.id_curso = m.id_curso AND m.estado = 'activa'
+      INNER JOIN usuarios u ON m.id_estudiante = u.id_usuario
+      WHERE aa.id_docente = ? AND aa.estado = 'activa'
+      ORDER BY u.apellido ASC, u.nombre ASC
+    `, [id_docente]);
+
+    return estudiantes;
+  }
+
+  // Obtener horario semanal del docente
+  static async getMiHorario(id_docente) {
+    const [horarios] = await pool.execute(`
+      SELECT 
+        aa.id_asignacion,
+        c.nombre as curso_nombre,
+        c.codigo_curso,
+        a.nombre as aula_nombre,
+        a.ubicacion as aula_ubicacion,
+        aa.hora_inicio,
+        aa.hora_fin,
+        aa.dias
+      FROM asignaciones_aulas aa
+      INNER JOIN cursos c ON aa.id_curso = c.id_curso
+      INNER JOIN aulas a ON aa.id_aula = a.id_aula
+      WHERE aa.id_docente = ? AND aa.estado = 'activa'
+      ORDER BY aa.hora_inicio ASC
+    `, [id_docente]);
+
+    return horarios;
+  }
+
+  // Verificar si el usuario es docente
+  static async isDocente(id_usuario) {
+    const [result] = await pool.execute(`
+      SELECT COUNT(*) as count
+      FROM usuarios u
+      INNER JOIN roles r ON u.id_rol = r.id_rol
+      WHERE u.id_usuario = ? AND r.nombre_rol = 'docente'
+    `, [id_usuario]);
+
+    return result[0].count > 0;
+  }
+
+  // Obtener ID de docente por ID de usuario
+  static async getDocenteIdByUserId(id_usuario) {
+    const [result] = await pool.execute(`
+      SELECT d.id_docente
+      FROM docentes d
+      INNER JOIN usuarios u ON d.identificacion = u.cedula
+      WHERE u.id_usuario = ?
+    `, [id_usuario]);
+
+    return result.length > 0 ? result[0].id_docente : null;
+  }
 }
 
 module.exports = DocentesModel;
