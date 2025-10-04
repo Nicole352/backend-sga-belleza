@@ -475,6 +475,19 @@ class EstudiantesModel {
     
     return userCheck.length > 0 && userCheck[0].nombre_rol === 'estudiante';
   }
+
+  // Obtener id_estudiante por id_usuario
+  // En este sistema, id_estudiante = id_usuario para estudiantes
+  static async getEstudianteIdByUserId(id_usuario) {
+    const [rows] = await pool.execute(`
+      SELECT u.id_usuario as id_estudiante
+      FROM usuarios u
+      INNER JOIN roles r ON u.id_rol = r.id_rol
+      WHERE u.id_usuario = ? AND r.nombre_rol = 'estudiante'
+    `, [id_usuario]);
+    
+    return rows.length > 0 ? rows[0].id_estudiante : null;
+  }
 }
 
 module.exports = EstudiantesModel;

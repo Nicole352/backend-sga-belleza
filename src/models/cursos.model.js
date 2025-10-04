@@ -51,6 +51,12 @@ async function getCursoById(id) {
       tc.nombre AS tipo_curso_nombre,
       tc.precio_base,
       tc.descripcion AS tipo_descripcion,
+      COALESCE(
+        (SELECT COUNT(*) 
+         FROM matriculas m 
+         WHERE m.id_curso = c.id_curso 
+         AND m.estado = 'activa'), 0
+      ) AS total_estudiantes,
       GREATEST(0, c.capacidad_maxima - COALESCE(
         (SELECT COUNT(*) 
          FROM matriculas m 
