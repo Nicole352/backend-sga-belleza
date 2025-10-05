@@ -85,75 +85,118 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
     
     const solicitud = solicitudes[0];
     
-    // 2. Verificar que no exista ya un usuario con esa cédula
-    const [existingUser] = await connection.execute(
-      'SELECT id_usuario FROM usuarios WHERE cedula = ?',
-      [solicitud.identificacion_solicitante]
-    );
+    // 2. Verificar si es estudiante existente o nuevo
+    let id_estudiante;
+    let username = null;
+    let passwordTemporal = null;
+    let esEstudianteExistente = false;
     
-    if (existingUser.length > 0) {
-      await connection.rollback();
-      return res.status(400).json({ 
-        error: 'Ya existe un usuario con esa cédula' 
-      });
-    }
-    
-    // 3. Obtener el rol de estudiante
-    const [roles] = await connection.execute(
-      'SELECT id_rol FROM roles WHERE nombre_rol = ?',
-      ['estudiante']
-    );
-    
-    let id_rol_estudiante;
-    if (roles.length === 0) {
-      // Crear rol estudiante si no existe
-      const [roleResult] = await connection.execute(
-        'INSERT INTO roles (nombre_rol, descripcion, estado) VALUES (?, ?, ?)',
-        ['estudiante', 'Estudiante del sistema', 'activo']
-      );
-      id_rol_estudiante = roleResult.insertId;
+    if (solicitud.id_estudiante_existente) {
+      // CASO 1: Estudiante YA existe en el sistema (inscripción a nuevo curso)
+      console.log('✅ Estudiante existente detectado, ID:', solicitud.id_estudiante_existente);
+      id_estudiante = solicitud.id_estudiante_existente;
+      esEstudianteExistente = true;
+      
+      // Verificar que el estudiante existe y está activo
+      const [estudianteCheck] = await connection.execute(`
+        SELECT u.id_usuario, u.username, u.estado
+        FROM usuarios u
+        INNER JOIN roles r ON u.id_rol = r.id_rol
+        WHERE u.id_usuario = ? AND r.nombre_rol = 'estudiante'
+      `, [id_estudiante]);
+      
+      if (estudianteCheck.length === 0) {
+        await connection.rollback();
+        return res.status(400).json({ 
+          error: 'Estudiante no encontrado o no válido' 
+        });
+      }
+      
+      if (estudianteCheck[0].estado !== 'activo') {
+        await connection.rollback();
+        return res.status(400).json({ 
+          error: 'El estudiante no está activo en el sistema' 
+        });
+      }
+      
+      username = estudianteCheck[0].username;
+      
     } else {
-      id_rol_estudiante = roles[0].id_rol;
+      // CASO 2: Estudiante NUEVO (flujo original)
+      
+      // Verificar que no exista ya un usuario con esa cédula
+      const [existingUser] = await connection.execute(
+        'SELECT id_usuario FROM usuarios WHERE cedula = ?',
+        [solicitud.identificacion_solicitante]
+      );
+      
+      if (existingUser.length > 0) {
+        await connection.rollback();
+        return res.status(400).json({ 
+          error: 'Ya existe un usuario con esa cédula' 
+        });
+      }
     }
     
-    // 4. Generar username único
-    const username = await generateUniqueUsername(
-      solicitud.nombre_solicitante, 
-      solicitud.apellido_solicitante
-    );
-    
-    // 5. Guardar email personal del solicitante (solo para contacto/notificaciones).
-    //    El login de estudiantes sigue siendo exclusivamente por username.
-    const emailEstudiante = solicitud.email_solicitante || null;
-    
-    // 6. Generar contraseña temporal (documento) con bcrypt
-    const passwordTemporal = solicitud.identificacion_solicitante;
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(passwordTemporal, salt);
-    
-    // 7. Crear usuario estudiante
-    const [userResult] = await connection.execute(`
-      INSERT INTO usuarios (
-        cedula, nombre, apellido, fecha_nacimiento, telefono, email, username,
-        direccion, genero, password, password_temporal, id_rol, estado
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      solicitud.identificacion_solicitante,
-      solicitud.nombre_solicitante,
-      solicitud.apellido_solicitante,
-      solicitud.fecha_nacimiento_solicitante,
-      solicitud.telefono_solicitante,
-      emailEstudiante,
-      username,
-      solicitud.direccion_solicitante,
-      solicitud.genero_solicitante,
-      hashedPassword,
-      passwordTemporal,
-      id_rol_estudiante,
-      'activo'
-    ]);
-    
-    const id_estudiante = userResult.insertId;
+    // 3. Solo crear usuario si es estudiante NUEVO
+    if (!esEstudianteExistente) {
+      // Obtener el rol de estudiante
+      const [roles] = await connection.execute(
+        'SELECT id_rol FROM roles WHERE nombre_rol = ?',
+        ['estudiante']
+      );
+      
+      let id_rol_estudiante;
+      if (roles.length === 0) {
+        // Crear rol estudiante si no existe
+        const [roleResult] = await connection.execute(
+          'INSERT INTO roles (nombre_rol, descripcion, estado) VALUES (?, ?, ?)',
+          ['estudiante', 'Estudiante del sistema', 'activo']
+        );
+        id_rol_estudiante = roleResult.insertId;
+      } else {
+        id_rol_estudiante = roles[0].id_rol;
+      }
+      
+      // 4. Generar username único
+      username = await generateUniqueUsername(
+        solicitud.nombre_solicitante, 
+        solicitud.apellido_solicitante
+      );
+      
+      // 5. Guardar email personal del solicitante
+      const emailEstudiante = solicitud.email_solicitante || null;
+      
+      // 6. Generar contraseña temporal (documento) con bcrypt
+      passwordTemporal = solicitud.identificacion_solicitante;
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(passwordTemporal, salt);
+      
+      // 7. Crear usuario estudiante
+      const [userResult] = await connection.execute(`
+        INSERT INTO usuarios (
+          cedula, nombre, apellido, fecha_nacimiento, telefono, email, username,
+          direccion, genero, password, password_temporal, id_rol, estado
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        solicitud.identificacion_solicitante,
+        solicitud.nombre_solicitante,
+        solicitud.apellido_solicitante,
+        solicitud.fecha_nacimiento_solicitante,
+        solicitud.telefono_solicitante,
+        emailEstudiante,
+        username,
+        solicitud.direccion_solicitante,
+        solicitud.genero_solicitante,
+        hashedPassword,
+        passwordTemporal,
+        id_rol_estudiante,
+        'activo'
+      ]);
+      
+      id_estudiante = userResult.insertId;
+      console.log('✅ Nuevo estudiante creado, ID:', id_estudiante);
+    }
     
     // 8. Crear matrícula automáticamente
     const codigoMatricula = `MAT-${Date.now()}-${id_estudiante}`;
@@ -175,6 +218,19 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
     }
     
     if (id_curso) {
+      // Obtener email del estudiante (existente o nuevo)
+      let emailParaMatricula;
+      if (esEstudianteExistente) {
+        const [estudianteData] = await connection.execute(
+          'SELECT email FROM usuarios WHERE id_usuario = ?',
+          [id_estudiante]
+        );
+        emailParaMatricula = estudianteData[0]?.email || `${username}@estudiante.belleza.com`;
+      } else {
+        const emailEstudiante = solicitud.email_solicitante || null;
+        emailParaMatricula = emailEstudiante || `${username}@estudiante.belleza.com`;
+      }
+      
       const [matriculaResult] = await connection.execute(`
         INSERT INTO matriculas (
           codigo_matricula, id_solicitud, id_tipo_curso, id_estudiante, 
@@ -187,7 +243,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         id_estudiante,
         id_curso,
         solicitud.monto_matricula || 0,
-        emailEstudiante || `${username}@estudiante.belleza.com`,
+        emailParaMatricula,
         aprobado_por
       ]);
       
@@ -246,12 +302,13 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
                 numero_comprobante,
                 banco_comprobante,
                 fecha_transferencia,
+                recibido_por,
                 comprobante_pago_blob,
                 comprobante_mime,
                 comprobante_size_kb,
                 comprobante_nombre_original,
                 estado
-              ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, 'pagado')
+              ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pagado')
             `, [
               id_matricula,
               i,
@@ -261,6 +318,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
               solicitud.numero_comprobante,
               solicitud.banco_comprobante,
               solicitud.fecha_transferencia,
+              solicitud.recibido_por,
               solicitud.comprobante_pago,
               solicitud.comprobante_mime,
               solicitud.comprobante_size_kb,
@@ -301,19 +359,34 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
     
     await connection.commit();
     
-    res.json({
-      success: true,
-      message: 'Estudiante creado exitosamente',
-      estudiante: {
-        id_usuario: id_estudiante,
-        identificacion: solicitud.identificacion_solicitante,
-        nombre: solicitud.nombre_solicitante,
-        apellido: solicitud.apellido_solicitante,
-        email: emailEstudiante,
-        username: username,
-        password_temporal: passwordTemporal
-      }
-    });
+    // Respuesta diferente según si es nuevo o existente
+    if (esEstudianteExistente) {
+      res.json({
+        success: true,
+        message: 'Nueva matrícula creada para estudiante existente',
+        tipo: 'estudiante_existente',
+        estudiante: {
+          id_usuario: id_estudiante,
+          identificacion: solicitud.identificacion_solicitante,
+          username: username
+        }
+      });
+    } else {
+      res.json({
+        success: true,
+        message: 'Estudiante creado exitosamente',
+        tipo: 'estudiante_nuevo',
+        estudiante: {
+          id_usuario: id_estudiante,
+          identificacion: solicitud.identificacion_solicitante,
+          nombre: solicitud.nombre_solicitante,
+          apellido: solicitud.apellido_solicitante,
+          email: solicitud.email_solicitante,
+          username: username,
+          password_temporal: passwordTemporal
+        }
+      });
+    }
     
   } catch (error) {
     await connection.rollback();
@@ -564,6 +637,85 @@ exports.getMisPagosMenuales = async (req, res) => {
 
   } catch (error) {
     console.error('Error obteniendo pagos mensuales del estudiante:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor',
+      details: error.message 
+    });
+  }
+};
+
+// Verificar si estudiante existe por cédula/pasaporte
+exports.verificarEstudiante = async (req, res) => {
+  try {
+    const { identificacion } = req.query;
+    
+    if (!identificacion || !identificacion.trim()) {
+      return res.status(400).json({ error: 'Identificación es requerida' });
+    }
+
+    // Buscar estudiante por cédula en tabla usuarios con rol estudiante
+    const [usuarios] = await pool.execute(`
+      SELECT 
+        u.id_usuario,
+        u.cedula as identificacion,
+        u.nombre,
+        u.apellido,
+        u.email,
+        u.telefono,
+        u.fecha_nacimiento,
+        u.genero,
+        u.direccion,
+        u.estado,
+        r.nombre_rol
+      FROM usuarios u
+      INNER JOIN roles r ON u.id_rol = r.id_rol
+      WHERE r.nombre_rol = 'estudiante' 
+        AND u.cedula = ?
+        AND u.estado = 'activo'
+    `, [identificacion.trim().toUpperCase()]);
+
+    if (usuarios.length === 0) {
+      return res.json({ 
+        existe: false,
+        mensaje: 'Estudiante no encontrado en el sistema'
+      });
+    }
+
+    const estudiante = usuarios[0];
+
+    // Obtener cursos matriculados
+    const [cursos] = await pool.execute(`
+      SELECT 
+        c.nombre as curso_nombre,
+        tc.nombre as tipo_curso_nombre,
+        m.estado as estado_matricula,
+        m.fecha_matricula
+      FROM matriculas m
+      INNER JOIN cursos c ON m.id_curso = c.id_curso
+      INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
+      WHERE m.id_estudiante = ?
+      ORDER BY m.fecha_matricula DESC
+    `, [estudiante.id_usuario]);
+
+    return res.json({
+      existe: true,
+      estudiante: {
+        id_usuario: estudiante.id_usuario,
+        identificacion: estudiante.identificacion,
+        nombre: estudiante.nombre,
+        apellido: estudiante.apellido,
+        email: estudiante.email,
+        telefono: estudiante.telefono,
+        fecha_nacimiento: estudiante.fecha_nacimiento,
+        genero: estudiante.genero,
+        direccion: estudiante.direccion
+      },
+      cursos_matriculados: cursos,
+      mensaje: 'Estudiante encontrado en el sistema'
+    });
+
+  } catch (error) {
+    console.error('Error verificando estudiante:', error);
     res.status(500).json({ 
       error: 'Error interno del servidor',
       details: error.message 

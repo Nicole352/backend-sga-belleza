@@ -226,7 +226,7 @@ class EstudiantesModel {
               // Obtener el comprobante BLOB de la solicitud
               const [solicitudComprobante] = await connection.execute(`
                 SELECT comprobante_pago, comprobante_mime, comprobante_size_kb, comprobante_nombre_original,
-                       numero_comprobante, banco_comprobante, fecha_transferencia, metodo_pago
+                       numero_comprobante, banco_comprobante, fecha_transferencia, recibido_por, metodo_pago
                 FROM solicitudes_matricula
                 WHERE id_solicitud = ?
               `, [solicitudData.id_solicitud]);
@@ -237,30 +237,42 @@ class EstudiantesModel {
                 tiene_blob: !!comprobante?.comprobante_pago,
                 numero: comprobante?.numero_comprobante,
                 banco: comprobante?.banco_comprobante,
+                metodo_pago: comprobante?.metodo_pago,
+                recibido_por: comprobante?.recibido_por,
                 mime: comprobante?.comprobante_mime
               });
+
+              console.log('🔍 VALORES QUE SE VAN A INSERTAR:');
+              console.log('  - metodo_pago:', comprobante?.metodo_pago || 'transferencia');
+              console.log('  - numero_comprobante:', comprobante?.numero_comprobante || null);
+              console.log('  - banco_comprobante:', comprobante?.banco_comprobante || null);
+              console.log('  - fecha_transferencia:', comprobante?.fecha_transferencia || null);
+              console.log('  - recibido_por:', comprobante?.recibido_por || null);
               
               await connection.execute(`
                 INSERT INTO pagos_mensuales (
                   id_matricula, numero_cuota, monto, fecha_vencimiento, 
                   estado, metodo_pago, fecha_pago,
-                  numero_comprobante, banco_comprobante, fecha_transferencia,
+                  numero_comprobante, banco_comprobante, fecha_transferencia, recibido_por,
                   comprobante_pago_blob, comprobante_mime, comprobante_size_kb, comprobante_nombre_original,
                   observaciones
-                ) VALUES (?, ?, ?, ?, 'pagado', ?, NOW(), ?, ?, ?, ?, ?, ?, ?, 'Pago de matrícula verificado por admin')
+                ) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?)
               `, [
                 id_matricula,
                 i,
                 precioMensual,
                 fechaVencimiento.toISOString().split('T')[0],
+                'pagado',
                 comprobante?.metodo_pago || 'transferencia',
                 comprobante?.numero_comprobante || null,
                 comprobante?.banco_comprobante || null,
                 comprobante?.fecha_transferencia || null,
+                comprobante?.recibido_por || null,
                 comprobante?.comprobante_pago || null,
                 comprobante?.comprobante_mime || null,
                 comprobante?.comprobante_size_kb || null,
-                comprobante?.comprobante_nombre_original || null
+                comprobante?.comprobante_nombre_original || null,
+                'Pago de matrícula verificado por admin'
               ]);
               
               console.log('✅ Cuota #1 creada con estado PAGADO y comprobante');

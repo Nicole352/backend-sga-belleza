@@ -27,12 +27,42 @@ exports.createSolicitud = async (req, res) => {
     // Nuevos campos del comprobante
     numero_comprobante,
     banco_comprobante,
-    fecha_transferencia
+    fecha_transferencia,
+    // Campo para pago en efectivo
+    recibido_por,
+    // Campo para estudiantes existentes
+    id_estudiante_existente
   } = req.body;
 
-  // Validaciones mínimas
-  if (!identificacion_solicitante || !nombre_solicitante || !apellido_solicitante || !email_solicitante) {
-    return res.status(400).json({ error: 'Faltan campos obligatorios del solicitante' });
+  // Función para convertir fecha a formato MySQL (YYYY-MM-DD)
+  const convertirFecha = (fecha) => {
+    if (!fecha) return null;
+    
+    // Si ya está en formato YYYY-MM-DD, retornar
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      return fecha;
+    }
+    
+    // Si está en formato DD/MM/YYYY, convertir
+    const match = fecha.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (match) {
+      const [_, dd, mm, yyyy] = match;
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    
+    return null;
+  };
+
+  // Validaciones mínimas (más flexibles si es estudiante existente)
+  if (!identificacion_solicitante) {
+    return res.status(400).json({ error: 'La identificación es obligatoria' });
+  }
+  
+  // Si NO es estudiante existente, validar campos completos
+  if (!id_estudiante_existente) {
+    if (!nombre_solicitante || !apellido_solicitante || !email_solicitante) {
+      return res.status(400).json({ error: 'Faltan campos obligatorios del solicitante' });
+    }
   }
   if (!id_tipo_curso || !monto_matricula || !metodo_pago) {
     return res.status(400).json({ error: 'Faltan datos del curso/pago' });
@@ -52,15 +82,25 @@ exports.createSolicitud = async (req, res) => {
       return res.status(400).json({ error: 'La fecha de transferencia es obligatoria' });
     }
   }
+
+  // Validaciones específicas para efectivo
+  if (metodo_pago === 'efectivo') {
+    if (!numero_comprobante || !numero_comprobante.trim()) {
+      return res.status(400).json({ error: 'El número de comprobante/factura es obligatorio para efectivo' });
+    }
+    if (!recibido_por || !recibido_por.trim()) {
+      return res.status(400).json({ error: 'El nombre de quien recibió el pago es obligatorio para efectivo' });
+    }
+  }
   
   // Comprobante obligatorio para transferencia y efectivo
   const comprobanteFile = req.files?.comprobante?.[0];
   if ((metodo_pago === 'transferencia' || metodo_pago === 'efectivo') && !comprobanteFile) {
     return res.status(400).json({ error: 'El comprobante es obligatorio para transferencia o efectivo' });
   }
-  // Documento de identificación obligatorio
+  // Documento de identificación obligatorio solo para nuevos estudiantes
   const documentoIdentificacionFile = req.files?.documento_identificacion?.[0];
-  if (!documentoIdentificacionFile) {
+  if (!id_estudiante_existente && !documentoIdentificacionFile) {
     return res.status(400).json({ error: 'El documento de identificación es obligatorio' });
   }
 
@@ -77,6 +117,34 @@ exports.createSolicitud = async (req, res) => {
   } catch (e) {
     console.error('Error validando tipo de curso:', e);
     return res.status(500).json({ error: 'Error validando tipo de curso' });
+  }
+
+  // VALIDAR CUPOS DISPONIBLES Y BUSCAR CURSO ACTIVO CON HORARIO
+  let cursoSeleccionado = null;
+  try {
+    const [cursosDisponibles] = await pool.execute(
+      `SELECT id_curso, codigo_curso, nombre, horario, capacidad_maxima, cupos_disponibles 
+       FROM cursos 
+       WHERE id_tipo_curso = ? 
+       AND horario = ? 
+       AND estado = 'activo' 
+       AND cupos_disponibles > 0
+       ORDER BY fecha_inicio ASC
+       LIMIT 1`,
+      [id_tipo_curso, horario_preferido]
+    );
+
+    if (!cursosDisponibles.length) {
+      return res.status(400).json({ 
+        error: `No hay cupos disponibles para el horario ${horario_preferido}. Por favor, intenta con otro horario o contacta con la institución.` 
+      });
+    }
+
+    cursoSeleccionado = cursosDisponibles[0];
+    console.log(`✅ Curso seleccionado: ${cursoSeleccionado.nombre} (${cursoSeleccionado.horario}) - Cupos: ${cursoSeleccionado.cupos_disponibles}/${cursoSeleccionado.capacidad_maxima}`);
+  } catch (e) {
+    console.error('Error validando cupos disponibles:', e);
+    return res.status(500).json({ error: 'Error verificando disponibilidad de cupos' });
   }
 
   // Validar número de comprobante único (GLOBAL - nunca se puede repetir)
@@ -116,7 +184,13 @@ exports.createSolicitud = async (req, res) => {
 
   const codigo = generarCodigoSolicitud();
 
+  // USAR TRANSACCIÓN PARA GARANTIZAR CONSISTENCIA (insertar solicitud + restar cupo)
+  const connection = await pool.getConnection();
+  
   try {
+    await connection.beginTransaction();
+
+    // 1. INSERTAR SOLICITUD CON id_curso
     const sql = `INSERT INTO solicitudes_matricula (
       codigo_solicitud,
       identificacion_solicitante,
@@ -129,11 +203,13 @@ exports.createSolicitud = async (req, res) => {
       genero_solicitante,
       horario_preferido,
       id_tipo_curso,
+      id_curso,
       monto_matricula,
       metodo_pago,
       numero_comprobante,
       banco_comprobante,
       fecha_transferencia,
+      recibido_por,
       comprobante_pago,
       comprobante_mime,
       comprobante_size_kb,
@@ -145,26 +221,29 @@ exports.createSolicitud = async (req, res) => {
       documento_estatus_legal,
       documento_estatus_legal_mime,
       documento_estatus_legal_size_kb,
-      documento_estatus_legal_nombre_original
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+      documento_estatus_legal_nombre_original,
+      id_estudiante_existente
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const values = [
       codigo,
       identificacion_solicitante,
-      nombre_solicitante,
-      apellido_solicitante,
+      nombre_solicitante || null,
+      apellido_solicitante || null,
       telefono_solicitante || null,
-      email_solicitante,
-      fecha_nacimiento_solicitante || null,
+      email_solicitante || null,
+      convertirFecha(fecha_nacimiento_solicitante),
       direccion_solicitante || null,
       genero_solicitante || null,
       horario_preferido,
       Number(id_tipo_curso),
+      cursoSeleccionado.id_curso, // ID del curso seleccionado con cupos disponibles
       Number(monto_matricula),
       metodo_pago,
       numero_comprobante ? numero_comprobante.trim().toUpperCase() : null,
       banco_comprobante || null,
-      fecha_transferencia || null,
+      convertirFecha(fecha_transferencia),
+      recibido_por ? recibido_por.trim().toUpperCase() : null,
       comprobanteBuffer,
       comprobanteMime,
       comprobanteSizeKb,
@@ -176,17 +255,41 @@ exports.createSolicitud = async (req, res) => {
       documentoEstatusLegalBuffer,
       documentoEstatusLegalMime,
       documentoEstatusLegalSizeKb,
-      documentoEstatusLegalNombreOriginal
+      documentoEstatusLegalNombreOriginal,
+      id_estudiante_existente ? Number(id_estudiante_existente) : null
     ];
 
-    const [result] = await pool.execute(sql, values);
+    const [result] = await connection.execute(sql, values);
+
+    // 2. RESTAR 1 CUPO DEL CURSO SELECCIONADO
+    await connection.execute(
+      'UPDATE cursos SET cupos_disponibles = cupos_disponibles - 1 WHERE id_curso = ?',
+      [cursoSeleccionado.id_curso]
+    );
+
+    console.log(`📉 Cupo restado del curso ${cursoSeleccionado.codigo_curso}. Cupos restantes: ${cursoSeleccionado.cupos_disponibles - 1}`);
+
+    // 3. COMMIT DE LA TRANSACCIÓN
+    await connection.commit();
+    connection.release();
 
     return res.status(201).json({
       ok: true,
       id_solicitud: result.insertId,
-      codigo_solicitud: codigo
+      codigo_solicitud: codigo,
+      curso: {
+        id_curso: cursoSeleccionado.id_curso,
+        nombre: cursoSeleccionado.nombre,
+        horario: cursoSeleccionado.horario,
+        cupos_restantes: cursoSeleccionado.cupos_disponibles - 1
+      }
     });
   } catch (error) {
+    // ROLLBACK en caso de error
+    if (connection) {
+      await connection.rollback();
+      connection.release();
+    }
     console.error('Error al crear solicitud:', error);
     // Errores de FK u otros
     return res.status(500).json({ error: 'Error al registrar la solicitud' });
@@ -337,6 +440,8 @@ exports.getDocumentoEstatusLegal = async (req, res) => {
 };
 
 exports.updateDecision = async (req, res) => {
+  const connection = await pool.getConnection();
+  
   try {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ error: 'ID inválido' });
@@ -347,6 +452,24 @@ exports.updateDecision = async (req, res) => {
       return res.status(400).json({ error: 'Estado inválido' });
     }
 
+    await connection.beginTransaction();
+
+    // 1. Obtener información de la solicitud (incluyendo id_curso)
+    const [solicitudRows] = await connection.execute(
+      'SELECT id_curso, estado FROM solicitudes_matricula WHERE id_solicitud = ?',
+      [id]
+    );
+
+    if (!solicitudRows.length) {
+      await connection.rollback();
+      connection.release();
+      return res.status(404).json({ error: 'Solicitud no encontrada' });
+    }
+
+    const solicitud = solicitudRows[0];
+    const estadoAnterior = solicitud.estado;
+
+    // 2. Actualizar estado de la solicitud
     const sql = `
       UPDATE solicitudes_matricula
       SET estado = ?,
@@ -357,13 +480,26 @@ exports.updateDecision = async (req, res) => {
     `;
     const params = [estado, observaciones || null, verificado_por || null, id];
 
-    const [result] = await pool.execute(sql, params);
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ error: 'Solicitud no encontrada' });
+    await connection.execute(sql, params);
+
+    // 3. SI SE RECHAZA Y TIENE id_curso → SUMAR 1 CUPO DE VUELTA
+    if (estado === 'rechazado' && solicitud.id_curso && estadoAnterior === 'pendiente') {
+      await connection.execute(
+        'UPDATE cursos SET cupos_disponibles = cupos_disponibles + 1 WHERE id_curso = ?',
+        [solicitud.id_curso]
+      );
+      console.log(`📈 Cupo devuelto al curso ID ${solicitud.id_curso} por rechazo de solicitud ${id}`);
     }
+
+    await connection.commit();
+    connection.release();
 
     return res.json({ ok: true });
   } catch (err) {
+    if (connection) {
+      await connection.rollback();
+      connection.release();
+    }
     console.error('Error actualizando decisión:', err);
     return res.status(500).json({ error: 'Error al actualizar la solicitud' });
   }

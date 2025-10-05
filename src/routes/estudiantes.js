@@ -7,6 +7,9 @@ const router = express.Router();
 // POST /api/estudiantes/crear-desde-solicitud
 router.post('/crear-desde-solicitud', estudiantesController.createEstudianteFromSolicitud);
 
+// GET /api/estudiantes/verificar - Verificar si estudiante existe por identificación
+router.get('/verificar', estudiantesController.verificarEstudiante);
+
 // GET /api/estudiantes - Obtener todos los estudiantes
 router.get('/', estudiantesController.getEstudiantes);
 

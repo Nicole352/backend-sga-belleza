@@ -1,8 +1,11 @@
 const express = require('express');
-const { listCursosController, getCursoController, createCursoController, updateCursoController, deleteCursoController } = require('../controllers/cursos.controller');
+const { listCursosController, getCursosDisponiblesController, getCursoController, createCursoController, updateCursoController, deleteCursoController } = require('../controllers/cursos.controller');
 const { pollingLimiter, generalLimiter } = require('../middleware/rateLimit');
 
 const router = express.Router();
+
+// GET /api/cursos/disponibles - DEBE IR ANTES de /:id para evitar conflictos
+router.get('/disponibles', generalLimiter, getCursosDisponiblesController);
 
 // GET /api/cursos?estado=activo&tipo=<id_tipo_curso>&page=1&limit=10
 router.get('/', generalLimiter, listCursosController);

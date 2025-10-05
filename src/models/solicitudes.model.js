@@ -19,7 +19,8 @@ class SolicitudesModel {
       metodo_pago,
       numero_comprobante,
       banco_comprobante,
-      fecha_transferencia
+      fecha_transferencia,
+      recibido_por
     } = solicitudData;
 
     const {
@@ -54,6 +55,7 @@ class SolicitudesModel {
       numero_comprobante,
       banco_comprobante,
       fecha_transferencia,
+      recibido_por,
       comprobante_pago,
       comprobante_mime,
       comprobante_size_kb,
@@ -66,7 +68,7 @@ class SolicitudesModel {
       documento_estatus_legal_mime,
       documento_estatus_legal_size_kb,
       documento_estatus_legal_nombre_original
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const values = [
       codigo_solicitud,
@@ -85,6 +87,7 @@ class SolicitudesModel {
       numero_comprobante ? numero_comprobante.trim().toUpperCase() : null,
       banco_comprobante || null,
       fecha_transferencia || null,
+      recibido_por ? recibido_por.trim().toUpperCase() : null,
       comprobanteBuffer,
       comprobanteMime,
       comprobanteSizeKb,
@@ -126,7 +129,9 @@ class SolicitudesModel {
         s.metodo_pago,
         s.numero_comprobante,
         s.banco_comprobante,
-        s.fecha_transferencia
+        s.fecha_transferencia,
+        s.recibido_por,
+        s.id_estudiante_existente
       FROM solicitudes_matricula s
       LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = s.id_tipo_curso
       WHERE 1=1

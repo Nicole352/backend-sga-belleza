@@ -1,4 +1,5 @@
 const { listCursos, getCursoById, createCurso, updateCurso, deleteCurso } = require('../models/cursos.model');
+const { pool } = require('../config/database');
 
 // GET /api/cursos
 async function listCursosController(req, res) {
@@ -13,6 +14,36 @@ async function listCursosController(req, res) {
   } catch (err) {
     console.error('Error listando cursos:', err);
     return res.status(500).json({ error: 'Error al listar cursos' });
+  }
+}
+
+// GET /api/cursos/disponibles - Obtener cursos con cupos disponibles agrupados por tipo y horario
+async function getCursosDisponiblesController(req, res) {
+  try {
+    const [cursos] = await pool.execute(`
+      SELECT 
+        tc.id_tipo_curso,
+        tc.nombre AS tipo_curso_nombre,
+        tc.card_key,
+        c.horario,
+        COUNT(DISTINCT c.id_curso) AS cursos_activos,
+        COALESCE(SUM(c.cupos_disponibles), 0) AS cupos_totales,
+        COALESCE(SUM(c.capacidad_maxima), 0) AS capacidad_total
+      FROM tipos_cursos tc
+      INNER JOIN cursos c ON c.id_tipo_curso = tc.id_tipo_curso 
+        AND c.estado = 'activo'
+        AND c.horario IS NOT NULL
+      WHERE tc.estado = 'activo'
+      GROUP BY tc.id_tipo_curso, tc.nombre, tc.card_key, c.horario
+      HAVING cursos_activos > 0
+      ORDER BY tc.nombre, c.horario
+    `);
+
+    console.log('📊 Endpoint /disponibles devuelve:', JSON.stringify(cursos, null, 2));
+    return res.json(cursos);
+  } catch (err) {
+    console.error('Error obteniendo cursos disponibles:', err);
+    return res.status(500).json({ error: 'Error al obtener cursos disponibles' });
   }
 }
 
@@ -33,6 +64,7 @@ async function getCursoController(req, res) {
 
 module.exports = {
   listCursosController,
+  getCursosDisponiblesController,
   getCursoController,
   async createCursoController(req, res) {
     try {

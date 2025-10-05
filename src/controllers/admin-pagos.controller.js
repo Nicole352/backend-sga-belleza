@@ -16,6 +16,7 @@ exports.getAllPagos = async (req, res) => {
         pm.numero_comprobante,
         pm.banco_comprobante,
         pm.fecha_transferencia,
+        pm.recibido_por,
         pm.estado,
         pm.observaciones,
         pm.verificado_por,
@@ -61,6 +62,15 @@ exports.getAllPagos = async (req, res) => {
     sql += ` ORDER BY pm.fecha_vencimiento DESC, pm.id_pago DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
 
     const [pagos] = await pool.execute(sql, params);
+
+    console.log('📊 Pagos obtenidos:', pagos.length);
+    if (pagos.length > 0) {
+      console.log('🔍 Primer pago:', {
+        estudiante: pagos[0].estudiante_nombre,
+        recibido_por: pagos[0].recibido_por,
+        metodo_pago: pagos[0].metodo_pago
+      });
+    }
 
     res.json(pagos);
   } catch (error) {
