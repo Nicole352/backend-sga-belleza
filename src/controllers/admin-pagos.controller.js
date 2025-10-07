@@ -1,4 +1,6 @@
 const { pool } = require('../config/database');
+const { enviarComprobantePagoMensual } = require('../services/emailService');
+const { generarComprobantePagoMensual } = require('../services/pdfService');
 
 // Obtener todos los pagos con información de estudiantes
 exports.getAllPagos = async (req, res) => {
@@ -183,6 +185,80 @@ exports.verificarPago = async (req, res) => {
     `, [verificado_por, id]);
 
     console.log(`✅ Pago ${id} verificado por usuario ${verificado_por}`);
+
+    // ENVIAR EMAIL CON PDF DEL COMPROBANTE AL ESTUDIANTE (asíncrono)
+    // ⚠️ IMPORTANTE: NO enviar email para cuota #1 (ya se envió con email de bienvenida)
+    setImmediate(async () => {
+      try {
+        // Obtener datos completos del pago para el PDF y email
+        const [pagoCompleto] = await pool.execute(`
+          SELECT 
+            pm.id_pago,
+            pm.numero_cuota,
+            pm.monto,
+            pm.fecha_pago,
+            pm.metodo_pago,
+            pm.fecha_vencimiento,
+            u.nombre as estudiante_nombres,
+            u.apellido as estudiante_apellidos,
+            u.cedula as estudiante_cedula,
+            u.email as estudiante_email,
+            c.nombre as curso_nombre
+          FROM pagos_mensuales pm
+          INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
+          INNER JOIN usuarios u ON m.id_estudiante = u.id_usuario
+          INNER JOIN cursos c ON m.id_curso = c.id_curso
+          WHERE pm.id_pago = ?
+        `, [id]);
+
+        console.log('🔍 Datos del pago obtenidos:', pagoCompleto);
+
+        if (pagoCompleto.length > 0) {
+          const pago = pagoCompleto[0];
+          
+          // ⚠️ NO ENVIAR EMAIL PARA CUOTA #1 (ya se envió con el email de bienvenida)
+          if (pago.numero_cuota === 1) {
+            console.log('⏭️ Cuota #1 detectada - Email ya enviado con bienvenida, omitiendo envío duplicado');
+            return;
+          }
+          
+          console.log('📧 Enviando email a:', pago.estudiante_email);
+          
+          const datosEstudiante = {
+            nombres: pago.estudiante_nombres,
+            apellidos: pago.estudiante_apellidos,
+            cedula: pago.estudiante_cedula,
+            email: pago.estudiante_email
+          };
+
+          const datosPago = {
+            id_pago_mensual: pago.id_pago,
+            monto: pago.monto,
+            fecha_pago: pago.fecha_pago,
+            metodo_pago: pago.metodo_pago,
+            mes_pago: pago.fecha_vencimiento // Usar fecha_vencimiento como mes_pago
+          };
+
+          const datosCurso = {
+            nombre_curso: pago.curso_nombre
+          };
+
+          console.log('📄 Generando PDF del comprobante...');
+          // Generar PDF del comprobante
+          const pdfBuffer = await generarComprobantePagoMensual(datosEstudiante, datosPago, datosCurso);
+
+          console.log('📧 Enviando email con PDF adjunto...');
+          // Enviar email con PDF adjunto
+          await enviarComprobantePagoMensual(datosEstudiante, datosPago, pdfBuffer);
+          
+          console.log('✅ Email con comprobante PDF enviado a:', pago.estudiante_email);
+        } else {
+          console.log('❌ No se encontró el pago con ID:', id);
+        }
+      } catch (emailError) {
+        console.error('❌ Error enviando email con comprobante (no afecta la verificación):', emailError);
+      }
+    });
 
     res.json({ 
       success: true, 

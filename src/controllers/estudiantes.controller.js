@@ -1,6 +1,8 @@
 const { pool } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const EstudiantesModel = require('../models/estudiantes.model');
+const { enviarEmailBienvenidaEstudiante } = require('../services/emailService');
+const { generarComprobantePagoMensual } = require('../services/pdfService');
 
 // Función para generar username único
 async function generateUniqueUsername(nombre, apellido) {
@@ -273,13 +275,22 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         });
         
         // Generar cuotas mensuales
-        const fechaInicio = new Date();
-        fechaInicio.setMonth(fechaInicio.getMonth() + 1); // Empezar el próximo mes
+        const fechaAprobacion = new Date(); // Fecha actual de aprobación
+        const diaAprobacion = fechaAprobacion.getDate(); // Guardar el día de aprobación
         
         for (let i = 1; i <= duracionMeses; i++) {
-          const fechaVencimiento = new Date(fechaInicio);
-          fechaVencimiento.setMonth(fechaInicio.getMonth() + (i - 1));
-          fechaVencimiento.setDate(15); // Vencimiento el día 15 de cada mes
+          const fechaVencimiento = new Date(fechaAprobacion);
+          
+          // Cuota #1: Mes actual (ya pagada al inscribirse)
+          // Cuotas 2+: Meses siguientes
+          if (i === 1) {
+            // Cuota #1: Vencimiento en el mismo día del mes actual
+            fechaVencimiento.setDate(diaAprobacion);
+          } else {
+            // Cuotas 2, 3, 4...: Mismo día de meses siguientes
+            fechaVencimiento.setMonth(fechaAprobacion.getMonth() + (i - 1));
+            fechaVencimiento.setDate(diaAprobacion);
+          }
           
           console.log(`🔍 Creando cuota ${i}:`, {
             id_matricula,
@@ -288,7 +299,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
             fecha_vencimiento: fechaVencimiento.toISOString().split('T')[0]
           });
           
-          // *** CUOTA #1: Copiar datos del pago de la solicitud (YA PAGADA) ***
+          // *** CUOTA #1: Copiar datos del pago de la solicitud (YA VERIFICADA) ***
           if (i === 1) {
             console.log('💰 Cuota #1: Copiando datos de pago de la solicitud');
             await connection.execute(`
@@ -307,8 +318,10 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
                 comprobante_mime,
                 comprobante_size_kb,
                 comprobante_nombre_original,
+                verificado_por,
+                fecha_verificacion,
                 estado
-              ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pagado')
+              ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'verificado')
             `, [
               id_matricula,
               i,
@@ -322,9 +335,10 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
               solicitud.comprobante_pago,
               solicitud.comprobante_mime,
               solicitud.comprobante_size_kb,
-              solicitud.comprobante_nombre_original
+              solicitud.comprobante_nombre_original,
+              aprobado_por // El admin que aprobó la matrícula también verifica el pago
             ]);
-            console.log('✅ Cuota #1 creada con estado PAGADO (datos de solicitud copiados)');
+            console.log('✅ Cuota #1 creada con estado VERIFICADO (datos de solicitud copiados, verificada automáticamente)');
           } else {
             // Cuotas 2, 3, 4... en estado pendiente
             await connection.execute(`
@@ -341,7 +355,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         }
         
         console.log('✅ Cuotas generadas exitosamente para matrícula:', id_matricula);
-        console.log('✅ Cuota #1: PAGADO (comprobante copiado de solicitud)');
+        console.log('✅ Cuota #1: VERIFICADO (comprobante copiado de solicitud, verificada automáticamente)');
         console.log(`✅ Cuotas ${duracionMeses > 1 ? '2-' + duracionMeses : ''}: PENDIENTES`);
       } else {
         console.log('❌ No se encontró tipo de curso para generar cuotas');
@@ -358,6 +372,83 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
     `, [aprobado_por, id_solicitud]);
     
     await connection.commit();
+    
+    // 10. ENVIAR EMAIL DE BIENVENIDA CON CREDENCIALES Y PDF DEL PRIMER PAGO (solo para estudiantes nuevos, asíncrono)
+    if (!esEstudianteExistente && passwordTemporal) {
+      setImmediate(async () => {
+        try {
+          const datosEstudiante = {
+            nombres: solicitud.nombre_solicitante,
+            apellidos: solicitud.apellido_solicitante,
+            cedula: solicitud.identificacion_solicitante,
+            email: solicitud.email_solicitante
+          };
+
+          const credenciales = {
+            username: username,
+            password: passwordTemporal
+          };
+
+          // Generar PDF del comprobante del primer pago
+          let pdfComprobante = null;
+          try {
+            // Obtener datos del primer pago (cuota #1 que se creó automáticamente como VERIFICADA)
+            const [primerPago] = await pool.execute(`
+              SELECT 
+                pm.id_pago as id_pago_mensual,
+                pm.monto,
+                pm.fecha_pago,
+                pm.metodo_pago,
+                pm.numero_cuota,
+                pm.numero_comprobante,
+                pm.banco_comprobante,
+                pm.fecha_transferencia,
+                DATE_FORMAT(pm.fecha_pago, '%Y-%m') as mes_pago,
+                c.nombre as nombre_curso
+              FROM pagos_mensuales pm
+              INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
+              INNER JOIN cursos c ON m.id_curso = c.id_curso
+              WHERE m.id_estudiante = ? 
+                AND pm.numero_cuota = 1
+                AND pm.estado = 'verificado'
+              ORDER BY pm.fecha_pago DESC
+              LIMIT 1
+            `, [id_estudiante]);
+
+            if (primerPago.length > 0) {
+              const datosPago = primerPago[0];
+              const datosCurso = {
+                nombre_curso: datosPago.nombre_curso
+              };
+
+              // Generar PDF del comprobante
+              pdfComprobante = await generarComprobantePagoMensual(datosEstudiante, datosPago, datosCurso);
+              console.log('✅ PDF del comprobante del primer pago generado');
+              console.log('📄 Datos del PDF:', {
+                estudiante: `${datosEstudiante.nombres} ${datosEstudiante.apellidos}`,
+                monto: datosPago.monto,
+                cuota: datosPago.numero_cuota,
+                comprobante: datosPago.numero_comprobante
+              });
+            } else {
+              console.log('⚠️ No se encontró el primer pago para generar PDF');
+            }
+          } catch (pdfError) {
+            console.error('❌ Error generando PDF del comprobante (continuando sin PDF):', pdfError);
+          }
+
+          // Enviar email de bienvenida con credenciales y PDF del primer pago
+          await enviarEmailBienvenidaEstudiante(datosEstudiante, credenciales, pdfComprobante);
+          console.log('✅ Email de bienvenida enviado a:', solicitud.email_solicitante);
+          if (pdfComprobante) {
+            console.log('✅ PDF del primer pago incluido en el email');
+          }
+          
+        } catch (emailError) {
+          console.error('❌ Error enviando email de bienvenida (no afecta la creación):', emailError);
+        }
+      });
+    }
     
     // Respuesta diferente según si es nuevo o existente
     if (esEstudianteExistente) {

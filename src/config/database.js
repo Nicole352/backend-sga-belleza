@@ -8,8 +8,13 @@ const dbConfig = {
     database: process.env.DB_NAME,
     port: process.env.DB_PORT,
     waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
+    connectionLimit: 50,              // Aumentado de 10 a 50 (5x más usuarios)
+    queueLimit: 0,
+    connectTimeout: 10000,            // Timeout de conexión: 10 segundos
+    idleTimeout: 60000,               // Cerrar conexiones inactivas después de 60 seg
+    maxIdle: 10,                      // Máximo 10 conexiones inactivas
+    enableKeepAlive: true,            // Mantener conexiones vivas
+    keepAliveInitialDelay: 0
 };
 
 // Crear pool de conexiones

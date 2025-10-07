@@ -1,6 +1,11 @@
 const { listCursos, getCursoById, createCurso, updateCurso, deleteCurso } = require('../models/cursos.model');
 const { pool } = require('../config/database');
 
+// Caché simple para cursos disponibles (30 segundos)
+let cursosDisponiblesCache = null;
+let cacheTimestamp = 0;
+const CACHE_DURATION = 30000; // 30 segundos
+
 // GET /api/cursos
 async function listCursosController(req, res) {
   try {
@@ -20,6 +25,15 @@ async function listCursosController(req, res) {
 // GET /api/cursos/disponibles - Obtener cursos con cupos disponibles agrupados por tipo y horario
 async function getCursosDisponiblesController(req, res) {
   try {
+    const now = Date.now();
+    
+    // Si el caché es válido, devolver datos cacheados
+    if (cursosDisponiblesCache && (now - cacheTimestamp) < CACHE_DURATION) {
+      console.log('✅ Devolviendo cursos desde caché');
+      return res.json(cursosDisponiblesCache);
+    }
+
+    // Si no hay caché o expiró, consultar BD
     const [cursos] = await pool.execute(`
       SELECT 
         tc.id_tipo_curso,
@@ -39,7 +53,11 @@ async function getCursosDisponiblesController(req, res) {
       ORDER BY tc.nombre, c.horario
     `);
 
-    console.log('📊 Endpoint /disponibles devuelve:', JSON.stringify(cursos, null, 2));
+    // Actualizar caché
+    cursosDisponiblesCache = cursos;
+    cacheTimestamp = now;
+
+    console.log('📊 Endpoint /disponibles devuelve (desde BD):', JSON.stringify(cursos, null, 2));
     return res.json(cursos);
   } catch (err) {
     console.error('Error obteniendo cursos disponibles:', err);

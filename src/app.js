@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const compression = require('compression');
 
 // Routes
 const cursosRoutes = require('./routes/cursos');
@@ -27,6 +28,9 @@ const app = express();
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
+
+// Compresión GZIP para todas las respuestas (reduce 70% el tamaño)
+app.use(compression());
 
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 

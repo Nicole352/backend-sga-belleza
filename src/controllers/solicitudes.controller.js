@@ -1,5 +1,6 @@
 const { pool } = require('../config/database');
 const SolicitudesModel = require('../models/solicitudes.model');
+const { enviarNotificacionNuevaMatricula } = require('../services/emailService');
 
 // Util: generar código de solicitud
 function generarCodigoSolicitud() {
@@ -272,6 +273,35 @@ exports.createSolicitud = async (req, res) => {
     // 3. COMMIT DE LA TRANSACCIÓN
     await connection.commit();
     connection.release();
+
+    // 4. ENVIAR EMAIL DE NOTIFICACIÓN AL ADMIN (asíncrono, no bloquea la respuesta)
+    setImmediate(async () => {
+      try {
+        // Obtener nombre del tipo de curso para el email
+        const [tipoCursoRows] = await pool.execute(
+          'SELECT nombre FROM tipos_cursos WHERE id_tipo_curso = ?',
+          [id_tipo_curso]
+        );
+        const nombreCurso = tipoCursoRows[0]?.nombre || 'Curso no especificado';
+
+        const datosEmail = {
+          codigo_solicitud: codigo,
+          nombres: nombre_solicitante || 'N/A',
+          apellidos: apellido_solicitante || 'N/A',
+          email: email_solicitante || 'N/A',
+          telefono: telefono_solicitante || 'N/A',
+          nombre_curso: nombreCurso,
+          metodo_pago: metodo_pago,
+          monto_matricula: monto_matricula,
+          fecha_solicitud: new Date()
+        };
+
+        await enviarNotificacionNuevaMatricula(datosEmail);
+        console.log('✅ Email de notificación enviado al admin');
+      } catch (emailError) {
+        console.error('❌ Error enviando email de notificación (no afecta la solicitud):', emailError);
+      }
+    });
 
     return res.status(201).json({
       ok: true,

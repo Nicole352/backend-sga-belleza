@@ -22,10 +22,10 @@ const strictLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Rate limiting para polling (más permisivo)
+// Rate limiting para polling (MÁS ESTRICTO - evita colapso)
 const pollingLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minuto
-  max: 60, // máximo 60 requests por minuto (1 por segundo)
+  max: 10, // máximo 10 requests por minuto (1 cada 6 segundos)
   message: {
     error: 'Demasiadas solicitudes de polling, reduce la frecuencia'
   },
