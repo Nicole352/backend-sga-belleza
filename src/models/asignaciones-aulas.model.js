@@ -150,9 +150,9 @@ class AsignacionesAulasModel {
     return asignaciones.length > 0 ? asignaciones[0] : null;
   }
 
-  // Verificar conflictos de horario
+  // Verificar conflictos de horario (solo conflictos reales, no uso de la misma aula)
   static async verificarConflictos(id_aula, hora_inicio, hora_fin, dias, exclude_id = null) {
-    const diasArray = dias.split(',');
+    const diasArray = dias.split(',').map(d => d.trim());
     const diasConditions = diasArray.map(() => `
       (FIND_IN_SET(?, aa.dias) > 0)
     `).join(' OR ');
@@ -174,15 +174,27 @@ class AsignacionesAulasModel {
         AND aa.estado = 'activa'
         AND c.estado IN ('planificado', 'activo')
         AND (
-          (? BETWEEN aa.hora_inicio AND aa.hora_fin) OR
-          (? BETWEEN aa.hora_inicio AND aa.hora_fin) OR
-          (aa.hora_inicio BETWEEN ? AND ?) OR
-          (aa.hora_fin BETWEEN ? AND ?)
+          -- Verificar solapamiento real de horarios (no solo uso de aula)
+          -- Conflicto si: hora_inicio nueva está dentro del rango existente
+          (TIME(?) > TIME(aa.hora_inicio) AND TIME(?) < TIME(aa.hora_fin)) OR
+          -- Conflicto si: hora_fin nueva está dentro del rango existente  
+          (TIME(?) > TIME(aa.hora_inicio) AND TIME(?) < TIME(aa.hora_fin)) OR
+          -- Conflicto si: el rango nuevo contiene completamente el existente
+          (TIME(?) <= TIME(aa.hora_inicio) AND TIME(?) >= TIME(aa.hora_fin)) OR
+          -- Conflicto si: el rango existente contiene completamente el nuevo
+          (TIME(aa.hora_inicio) <= TIME(?) AND TIME(aa.hora_fin) >= TIME(?))
         )
         AND (${diasConditions})
     `;
     
-    const params = [id_aula, hora_inicio, hora_fin, hora_inicio, hora_fin, hora_inicio, hora_fin, ...diasArray];
+    const params = [
+      id_aula, 
+      hora_inicio, hora_inicio, // Para primera condición
+      hora_fin, hora_fin,       // Para segunda condición  
+      hora_inicio, hora_fin,    // Para tercera condición
+      hora_inicio, hora_fin,    // Para cuarta condición
+      ...diasArray
+    ];
     
     if (exclude_id) {
       sql += ' AND aa.id_asignacion != ?';
@@ -245,8 +257,9 @@ class AsignacionesAulasModel {
     if (conflictos.length > 0) {
       const conflicto = conflictos[0];
       throw new Error(
-        `Conflicto de horario: El aula ya está asignada al curso "${conflicto.curso_nombre}" ` +
-        `con el docente ${conflicto.docente} en el horario ${conflicto.hora_inicio}-${conflicto.hora_fin}`
+        `Conflicto de horario: El aula ya está ocupada por el curso "${conflicto.curso_nombre}" ` +
+        `con el docente ${conflicto.docente} en el horario ${conflicto.hora_inicio}-${conflicto.hora_fin}. ` +
+        `La misma aula puede usarse para otros cursos en horarios diferentes.`
       );
     }
 
@@ -279,8 +292,9 @@ class AsignacionesAulasModel {
       if (conflictos.length > 0) {
         const conflicto = conflictos[0];
         throw new Error(
-          `Conflicto de horario: El aula ya está asignada al curso "${conflicto.curso_nombre}" ` +
-          `con el docente ${conflicto.docente} en el horario ${conflicto.hora_inicio}-${conflicto.hora_fin}`
+          `Conflicto de horario: El aula ya está ocupada por el curso "${conflicto.curso_nombre}" ` +
+          `con el docente ${conflicto.docente} en el horario ${conflicto.hora_inicio}-${conflicto.hora_fin}. ` +
+          `La misma aula puede usarse para otros cursos en horarios diferentes.`
         );
       }
     }
