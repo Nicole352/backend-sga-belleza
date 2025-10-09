@@ -57,7 +57,10 @@ class PagosMenualesModel {
         pm.estado,
         pm.observaciones,
         c.nombre as curso_nombre,
-        tc.nombre as tipo_curso_nombre
+        tc.nombre as tipo_curso_nombre,
+        tc.modalidad_pago,
+        tc.numero_clases,
+        tc.precio_por_clase
       FROM pagos_mensuales pm
       INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
       INNER JOIN cursos c ON m.id_curso = c.id_curso
@@ -94,11 +97,15 @@ class PagosMenualesModel {
     try {
       await connection.beginTransaction();
 
-      // Obtener información de la cuota actual y matrícula
+      // Obtener información completa de la cuota actual, matrícula y tipo de curso
       const [pagoInfo] = await connection.execute(`
-        SELECT pm.id_pago, pm.estado, pm.monto, pm.numero_cuota, pm.id_matricula, m.id_estudiante
+        SELECT 
+          pm.id_pago, pm.estado, pm.monto, pm.numero_cuota, pm.id_matricula, 
+          m.id_estudiante, m.id_tipo_curso,
+          tc.modalidad_pago, tc.numero_clases, tc.precio_por_clase
         FROM pagos_mensuales pm
         INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
+        INNER JOIN tipos_cursos tc ON m.id_tipo_curso = tc.id_tipo_curso
         WHERE pm.id_pago = ? AND m.id_estudiante = ? AND pm.estado IN ('pendiente', 'vencido')
       `, [id_pago, id_estudiante]);
 
@@ -109,23 +116,60 @@ class PagosMenualesModel {
       const cuotaActual = pagoInfo[0];
       const montoPagado = parseFloat(pagoData.monto_pagado) || cuotaActual.monto;
       const montoCuota = parseFloat(cuotaActual.monto);
+      const modalidadPago = cuotaActual.modalidad_pago || 'mensual';
 
-      // Calcular cuántas cuotas cubre el monto pagado
-      const numeroCuotasACubrir = Math.floor(montoPagado / montoCuota);
-      
       console.log(`💰 Monto pagado: $${montoPagado}, Monto por cuota: $${montoCuota}`);
+      console.log(`📊 Modalidad de pago: ${modalidadPago}`);
+
+      // Lógica diferente según modalidad de pago
+      if (modalidadPago === 'clases') {
+        // ========================================
+        // MODALIDAD POR CLASES - PAGO INDIVIDUAL
+        // ========================================
+        console.log('🎯 Procesando pago por CLASE individual');
+        
+        // Para cursos por clases, solo se paga UNA clase a la vez
+        // No se permite pagar múltiples clases de una vez
+        if (Math.abs(montoPagado - montoCuota) > 0.01) {
+          throw new Error(`Para cursos por clases, debe pagar exactamente $${montoCuota.toFixed(2)} por esta clase`);
+        }
+
+        // Procesar solo esta cuota específica
+        const numeroCuotasACubrir = 1;
+        const cuotasPendientes = [cuotaActual];
+        
+      } else {
+        // ========================================
+        // MODALIDAD MENSUAL - MÚLTIPLES CUOTAS
+        // ========================================
+        console.log('📅 Procesando pago MENSUAL (puede cubrir múltiples cuotas)');
+        
+        // Calcular cuántas cuotas cubre el monto pagado
+        var numeroCuotasACubrir = Math.floor(montoPagado / montoCuota);
+      }
+      
       console.log(`📊 Cuotas a cubrir: ${numeroCuotasACubrir}`);
 
-      // Obtener las siguientes cuotas pendientes desde la cuota actual
-      const [cuotasPendientes] = await connection.execute(`
-        SELECT id_pago, numero_cuota, monto
-        FROM pagos_mensuales
-        WHERE id_matricula = ? 
-          AND numero_cuota >= ?
-          AND estado IN ('pendiente', 'vencido')
-        ORDER BY numero_cuota ASC
-        LIMIT ${numeroCuotasACubrir}
-      `, [cuotaActual.id_matricula, cuotaActual.numero_cuota]);
+      // Obtener cuotas pendientes según modalidad
+      let cuotasPendientes;
+      
+      if (modalidadPago === 'clases') {
+        // Para clases: solo la cuota específica seleccionada
+        cuotasPendientes = [cuotaActual];
+      } else {
+        // Para mensual: obtener múltiples cuotas desde la actual
+        const [cuotasResult] = await connection.execute(`
+          SELECT id_pago, numero_cuota, monto
+          FROM pagos_mensuales
+          WHERE id_matricula = ? 
+            AND numero_cuota >= ?
+            AND estado IN ('pendiente', 'vencido')
+          ORDER BY numero_cuota ASC
+          LIMIT ${numeroCuotasACubrir}
+        `, [cuotaActual.id_matricula, cuotaActual.numero_cuota]);
+        
+        cuotasPendientes = cuotasResult;
+      }
 
       if (cuotasPendientes.length === 0) {
         throw new Error('No hay cuotas pendientes para procesar');
@@ -152,10 +196,17 @@ class PagosMenualesModel {
         const esPrimera = i === 0;
 
         let observacionesFinal = pagoData.observaciones || '';
-        if (esPrimera) {
-          observacionesFinal = `Monto pagado: $${montoPagado.toFixed(2)} (cubre ${numeroCuotasACubrir} cuota(s))${observacionesFinal ? '\n' + observacionesFinal : ''}`;
+        
+        if (modalidadPago === 'clases') {
+          // Observaciones para cursos por clases
+          observacionesFinal = `Pago de clase #${cuota.numero_cuota} - $${montoPagado.toFixed(2)}${observacionesFinal ? '\n' + observacionesFinal : ''}`;
         } else {
-          observacionesFinal = `Cubierto por pago de cuota #${cuotaActual.numero_cuota} ($${montoPagado.toFixed(2)})`;
+          // Observaciones para cursos mensuales (lógica original)
+          if (esPrimera) {
+            observacionesFinal = `Monto pagado: $${montoPagado.toFixed(2)} (cubre ${numeroCuotasACubrir} cuota(s))${observacionesFinal ? '\n' + observacionesFinal : ''}`;
+          } else {
+            observacionesFinal = `Cubierto por pago de cuota #${cuotaActual.numero_cuota} ($${montoPagado.toFixed(2)})`;
+          }
         }
 
         const updateQuery = `
@@ -192,10 +243,20 @@ class PagosMenualesModel {
       }
 
       await connection.commit();
+      
+      // Mensaje específico según modalidad
+      let mensaje;
+      if (modalidadPago === 'clases') {
+        mensaje = `Pago de clase procesado exitosamente. Clase #${cuotaActual.numero_cuota} pagada.`;
+      } else {
+        mensaje = `Pago procesado exitosamente. ${numeroCuotasACubrir} cuota(s) marcada(s) como pagado.`;
+      }
+      
       return { 
         success: true, 
-        message: `Pago procesado exitosamente. ${numeroCuotasACubrir} cuota(s) marcada(s) como pagado.`,
-        cuotas_cubiertas: numeroCuotasACubrir
+        message: mensaje,
+        cuotas_cubiertas: numeroCuotasACubrir,
+        modalidad_pago: modalidadPago
       };
 
     } catch (error) {

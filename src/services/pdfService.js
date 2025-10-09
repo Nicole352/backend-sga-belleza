@@ -20,7 +20,7 @@ async function descargarLogo() {
 /**
  * Generar PDF de comprobante de pago mensual - DISEÑO PROFESIONAL MEJORADO
  */
-async function generarComprobantePagoMensual(estudiante, pago, curso) {
+async function generarComprobantePagoMensual(estudiante, pago, curso, clasesPagadas = null) {
   return new Promise(async (resolve, reject) => {
     try {
       const doc = new PDFDocument({ 
@@ -184,12 +184,26 @@ async function generarComprobantePagoMensual(estudiante, pago, curso) {
 
       yPosition += 28;
 
-      const detallesPago = [
-        { label: 'Mes Pagado', value: new Date(pago.mes_pago).toLocaleDateString('es-EC', { month: 'long', year: 'numeric' }).toUpperCase() },
-        { label: 'Fecha de Pago', value: new Date(pago.fecha_pago).toLocaleDateString('es-EC', { day: '2-digit', month: 'long', year: 'numeric' }) },
-        { label: 'Método de Pago', value: pago.metodo_pago.toUpperCase() },
-        { label: 'Estado', value: '✓ APROBADO', color: colors.success }
-      ];
+      // Detalles del pago según modalidad
+      let detallesPago;
+      
+      if (pago.modalidad_pago === 'clases') {
+        // Para cursos por clases
+        detallesPago = [
+          { label: 'Clase Pagada', value: `CLASE ${pago.numero_cuota}` },
+          { label: 'Fecha de Pago', value: new Date(pago.fecha_pago).toLocaleDateString('es-EC', { day: '2-digit', month: 'long', year: 'numeric' }) },
+          { label: 'Método de Pago', value: pago.metodo_pago.toUpperCase() },
+          { label: 'Estado', value: '✓ APROBADO', color: colors.success }
+        ];
+      } else {
+        // Para cursos mensuales
+        detallesPago = [
+          { label: 'Mes Pagado', value: new Date(pago.mes_pago).toLocaleDateString('es-EC', { month: 'long', year: 'numeric' }).toUpperCase() },
+          { label: 'Fecha de Pago', value: new Date(pago.fecha_pago).toLocaleDateString('es-EC', { day: '2-digit', month: 'long', year: 'numeric' }) },
+          { label: 'Método de Pago', value: pago.metodo_pago.toUpperCase() },
+          { label: 'Estado', value: '✓ APROBADO', color: colors.success }
+        ];
+      }
 
       detallesPago.forEach(item => {
         doc.fontSize(9)
@@ -206,6 +220,46 @@ async function generarComprobantePagoMensual(estudiante, pago, curso) {
       });
 
       yPosition += 15;
+
+      // ==================== PROGRESO DE CLASES (solo para cursos por clases) ====================
+      if (clasesPagadas && clasesPagadas.length > 0) {
+        doc.moveTo(margin, yPosition)
+           .lineTo(doc.page.width - margin, yPosition)
+           .strokeColor(colors.border)
+           .lineWidth(1)
+           .stroke();
+
+        yPosition += 20;
+
+        doc.fontSize(16)
+           .fillColor(colors.text)
+           .font('Helvetica-Bold')
+           .text('Progreso de Clases', margin, yPosition);
+
+        yPosition += 28;
+
+        clasesPagadas.forEach((clase, index) => {
+          // Icono de check y texto de clase
+          doc.fontSize(11)
+             .fillColor(colors.success)
+             .font('Helvetica-Bold')
+             .text('✅', margin, yPosition);
+          
+          doc.fontSize(11)
+             .fillColor(colors.text)
+             .font('Helvetica-Bold')
+             .text(`Clase ${clase.numero}: Pagada`, margin + 20, yPosition);
+          
+          doc.fontSize(11)
+             .fillColor(colors.primary)
+             .font('Helvetica-Bold')
+             .text(`($${clase.monto.toFixed(2)})`, doc.page.width - margin - 80, yPosition);
+          
+          yPosition += 20;
+        });
+
+        yPosition += 10;
+      }
 
       // ==================== MONTO TOTAL DESTACADO ====================
       doc.moveTo(margin, yPosition)

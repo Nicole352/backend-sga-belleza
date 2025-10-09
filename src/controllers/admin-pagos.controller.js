@@ -28,11 +28,15 @@ exports.getAllPagos = async (req, res) => {
         u.cedula as estudiante_cedula,
         c.id_curso,
         c.nombre as curso_nombre,
-        m.codigo_matricula
+        m.codigo_matricula,
+        tc.modalidad_pago,
+        tc.numero_clases,
+        tc.precio_por_clase
       FROM pagos_mensuales pm
       INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
       INNER JOIN usuarios u ON m.id_estudiante = u.id_usuario
       INNER JOIN cursos c ON m.id_curso = c.id_curso
+      INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
       WHERE 1=1
     `;
 
@@ -203,11 +207,14 @@ exports.verificarPago = async (req, res) => {
             u.apellido as estudiante_apellidos,
             u.cedula as estudiante_cedula,
             u.email as estudiante_email,
-            c.nombre as curso_nombre
+            c.nombre as curso_nombre,
+            tc.modalidad_pago,
+            m.id_matricula
           FROM pagos_mensuales pm
           INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
           INNER JOIN usuarios u ON m.id_estudiante = u.id_usuario
           INNER JOIN cursos c ON m.id_curso = c.id_curso
+          INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
           WHERE pm.id_pago = ?
         `, [id]);
 
@@ -233,19 +240,40 @@ exports.verificarPago = async (req, res) => {
 
           const datosPago = {
             id_pago_mensual: pago.id_pago,
+            numero_cuota: pago.numero_cuota,
             monto: pago.monto,
             fecha_pago: pago.fecha_pago,
             metodo_pago: pago.metodo_pago,
-            mes_pago: pago.fecha_vencimiento // Usar fecha_vencimiento como mes_pago
+            mes_pago: pago.fecha_vencimiento, // Usar fecha_vencimiento como mes_pago
+            modalidad_pago: pago.modalidad_pago
           };
 
           const datosCurso = {
             nombre_curso: pago.curso_nombre
           };
 
+          // Si es modalidad por clases, obtener progreso de clases pagadas
+          let clasesPagadas = null;
+          if (pago.modalidad_pago === 'clases') {
+            const [clasesResult] = await pool.execute(`
+              SELECT numero_cuota, monto, fecha_pago
+              FROM pagos_mensuales 
+              WHERE id_matricula = ? AND estado IN ('pagado', 'verificado')
+              ORDER BY numero_cuota ASC
+            `, [pago.id_matricula]);
+            
+            clasesPagadas = clasesResult.map(clase => ({
+              numero: clase.numero_cuota,
+              monto: parseFloat(clase.monto),
+              fecha: clase.fecha_pago
+            }));
+            
+            console.log('🔍 Clases pagadas encontradas:', clasesPagadas);
+          }
+
           console.log('📄 Generando PDF del comprobante...');
           // Generar PDF del comprobante
-          const pdfBuffer = await generarComprobantePagoMensual(datosEstudiante, datosPago, datosCurso);
+          const pdfBuffer = await generarComprobantePagoMensual(datosEstudiante, datosPago, datosCurso, clasesPagadas);
 
           console.log('📧 Enviando email con PDF adjunto...');
           // Enviar email con PDF adjunto

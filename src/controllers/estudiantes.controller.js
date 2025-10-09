@@ -252,12 +252,18 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
       const id_matricula = matriculaResult.insertId;
       console.log('✅ Matrícula creada:', codigoMatricula, 'ID:', id_matricula);
 
-      // *** GENERAR CUOTAS MENSUALES AUTOMÁTICAMENTE ***
-      console.log('🔍 Generando cuotas mensuales para matrícula:', id_matricula);
+      // *** GENERAR CUOTAS AUTOMÁTICAMENTE (MENSUAL O POR CLASES) ***
+      console.log('🔍 Generando cuotas para matrícula:', id_matricula);
       
-      // Obtener duración del curso en meses
+      // Obtener información completa del tipo de curso
       const [tipoCurso] = await connection.execute(`
-        SELECT duracion_meses, precio_base 
+        SELECT 
+          duracion_meses, 
+          precio_base,
+          modalidad_pago,
+          numero_clases,
+          precio_por_clase,
+          matricula_incluye_primera_clase
         FROM tipos_cursos 
         WHERE id_tipo_curso = ?
       `, [solicitud.id_tipo_curso]);
@@ -265,98 +271,130 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
       console.log('🔍 Tipo de curso encontrado:', tipoCurso);
 
       if (tipoCurso.length > 0) {
-        const duracionMeses = tipoCurso[0].duracion_meses;
-        const precioMensual = tipoCurso[0].precio_base / duracionMeses; // Dividir precio base entre meses
+        const tipoCursoData = tipoCurso[0];
+        const modalidadPago = tipoCursoData.modalidad_pago || 'mensual';
         
-        console.log('🔍 Generando cuotas:', {
-          duracionMeses,
-          precioMensual,
-          id_matricula
-        });
+        console.log('🔍 Debug - Modalidad de pago:', modalidadPago);
         
-        // Generar cuotas mensuales
-        const fechaAprobacion = new Date(); // Fecha actual de aprobación
-        const diaAprobacion = fechaAprobacion.getDate(); // Guardar el día de aprobación
-        
-        for (let i = 1; i <= duracionMeses; i++) {
-          const fechaVencimiento = new Date(fechaAprobacion);
+        if (modalidadPago === 'clases') {
+          // ========================================
+          // MODALIDAD POR CLASES
+          // ========================================
+          const numeroClases = tipoCursoData.numero_clases;
+          const precioPorClase = parseFloat(tipoCursoData.precio_por_clase);
           
-          // Cuota #1: Mes actual (ya pagada al inscribirse)
-          // Cuotas 2+: Meses siguientes
-          if (i === 1) {
-            // Cuota #1: Vencimiento en el mismo día del mes actual
-            fechaVencimiento.setDate(diaAprobacion);
-          } else {
-            // Cuotas 2, 3, 4...: Mismo día de meses siguientes
-            fechaVencimiento.setMonth(fechaAprobacion.getMonth() + (i - 1));
-            fechaVencimiento.setDate(diaAprobacion);
-          }
-          
-          console.log(`🔍 Creando cuota ${i}:`, {
-            id_matricula,
-            numero_cuota: i,
-            monto: precioMensual,
-            fecha_vencimiento: fechaVencimiento.toISOString().split('T')[0]
+          console.log('🔍 Debug - Generando cuotas por CLASES:', {
+            numeroClases,
+            precioPorClase,
+            id_matricula
           });
           
-          // *** CUOTA #1: Copiar datos del pago de la solicitud (YA VERIFICADA) ***
-          if (i === 1) {
-            console.log('💰 Cuota #1: Copiando datos de pago de la solicitud');
-            await connection.execute(`
-              INSERT INTO pagos_mensuales (
-                id_matricula, 
-                numero_cuota, 
-                monto, 
-                fecha_vencimiento, 
-                fecha_pago,
-                metodo_pago,
-                numero_comprobante,
-                banco_comprobante,
-                fecha_transferencia,
-                recibido_por,
-                comprobante_pago_blob,
-                comprobante_mime,
-                comprobante_size_kb,
-                comprobante_nombre_original,
-                verificado_por,
-                fecha_verificacion,
-                estado
-              ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'verificado')
-            `, [
+          // Generar cuotas por clases
+          const fechaInicio = new Date();
+          
+          for (let i = 1; i <= numeroClases; i++) {
+            // Fecha de vencimiento: cada 7 días (clases semanales)
+            const fechaVencimiento = new Date(fechaInicio);
+            fechaVencimiento.setDate(fechaInicio.getDate() + (i - 1) * 7);
+            
+            // Monto: primera clase = $50 (matrícula), resto = precio por clase
+            const montoCuota = i === 1 ? 50.00 : precioPorClase;
+            
+            console.log(`🔍 Creando cuota clase ${i}:`, {
               id_matricula,
-              i,
-              solicitud.monto_matricula || precioMensual, // Usar monto de solicitud si existe
-              fechaVencimiento.toISOString().split('T')[0],
-              solicitud.metodo_pago,
-              solicitud.numero_comprobante,
-              solicitud.banco_comprobante,
-              solicitud.fecha_transferencia,
-              solicitud.recibido_por,
-              solicitud.comprobante_pago,
-              solicitud.comprobante_mime,
-              solicitud.comprobante_size_kb,
-              solicitud.comprobante_nombre_original,
-              aprobado_por // El admin que aprobó la matrícula también verifica el pago
-            ]);
-            console.log('✅ Cuota #1 creada con estado VERIFICADO (datos de solicitud copiados, verificada automáticamente)');
-          } else {
-            // Cuotas 2, 3, 4... en estado pendiente
-            await connection.execute(`
-              INSERT INTO pagos_mensuales (
-                id_matricula, numero_cuota, monto, fecha_vencimiento, estado, metodo_pago
-              ) VALUES (?, ?, ?, ?, 'pendiente', 'transferencia')
-            `, [
-              id_matricula,
-              i,
-              precioMensual,
-              fechaVencimiento.toISOString().split('T')[0]
-            ]);
+              numero_cuota: i,
+              monto: montoCuota,
+              fecha_vencimiento: fechaVencimiento.toISOString().split('T')[0]
+            });
+            
+            if (i === 1) {
+              // Primera clase VERIFICADA (matrícula pagada)
+              await connection.execute(`
+                INSERT INTO pagos_mensuales (
+                  id_matricula, numero_cuota, monto, fecha_vencimiento, 
+                  fecha_pago, metodo_pago, numero_comprobante, banco_comprobante, 
+                  fecha_transferencia, recibido_por, comprobante_pago_blob, 
+                  comprobante_mime, comprobante_size_kb, comprobante_nombre_original,
+                  verificado_por, fecha_verificacion, estado, observaciones
+                ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'verificado', ?)
+              `, [
+                id_matricula, i, montoCuota, fechaVencimiento.toISOString().split('T')[0],
+                solicitud.metodo_pago, solicitud.numero_comprobante, solicitud.banco_comprobante,
+                solicitud.fecha_transferencia, solicitud.recibido_por, solicitud.comprobante_pago,
+                solicitud.comprobante_mime, solicitud.comprobante_size_kb, solicitud.comprobante_nombre_original,
+                aprobado_por, `Matrícula pagada - Clase ${i} de ${numeroClases}`
+              ]);
+              console.log(`✅ Cuota clase #${i} creada con estado VERIFICADO`);
+            } else {
+              // Demás clases en pendiente
+              await connection.execute(`
+                INSERT INTO pagos_mensuales (
+                  id_matricula, numero_cuota, monto, fecha_vencimiento, estado, metodo_pago, observaciones
+                ) VALUES (?, ?, ?, ?, 'pendiente', 'transferencia', ?)
+              `, [
+                id_matricula, i, montoCuota, fechaVencimiento.toISOString().split('T')[0],
+                `Clase ${i} de ${numeroClases} - Pago individual por clase`
+              ]);
+              console.log(`✅ Cuota clase #${i} creada con estado PENDIENTE`);
+            }
           }
+          
+          console.log(`✅ ${numeroClases} clases generadas exitosamente para matrícula: ${id_matricula}`);
+          
+        } else {
+          // ========================================
+          // MODALIDAD MENSUAL (LÓGICA ORIGINAL)
+          // ========================================
+          const duracionMeses = tipoCursoData.duracion_meses;
+          const precioMensual = tipoCursoData.precio_base / duracionMeses;
+          
+          console.log('🔍 Debug - Generando cuotas MENSUALES:', {
+            duracionMeses,
+            precioMensual,
+            id_matricula
+          });
+          
+          const fechaAprobacion = new Date();
+          const diaAprobacion = fechaAprobacion.getDate();
+          
+          for (let i = 1; i <= duracionMeses; i++) {
+            const fechaVencimiento = new Date(fechaAprobacion);
+            
+            if (i === 1) {
+              fechaVencimiento.setDate(diaAprobacion);
+            } else {
+              fechaVencimiento.setMonth(fechaAprobacion.getMonth() + (i - 1));
+              fechaVencimiento.setDate(diaAprobacion);
+            }
+            
+            if (i === 1) {
+              await connection.execute(`
+                INSERT INTO pagos_mensuales (
+                  id_matricula, numero_cuota, monto, fecha_vencimiento, 
+                  fecha_pago, metodo_pago, numero_comprobante, banco_comprobante,
+                  fecha_transferencia, recibido_por, comprobante_pago_blob,
+                  comprobante_mime, comprobante_size_kb, comprobante_nombre_original,
+                  verificado_por, fecha_verificacion, estado
+                ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'verificado')
+              `, [
+                id_matricula, i, solicitud.monto_matricula || precioMensual,
+                fechaVencimiento.toISOString().split('T')[0],
+                solicitud.metodo_pago, solicitud.numero_comprobante, solicitud.banco_comprobante,
+                solicitud.fecha_transferencia, solicitud.recibido_por, solicitud.comprobante_pago,
+                solicitud.comprobante_mime, solicitud.comprobante_size_kb, solicitud.comprobante_nombre_original,
+                aprobado_por
+              ]);
+            } else {
+              await connection.execute(`
+                INSERT INTO pagos_mensuales (
+                  id_matricula, numero_cuota, monto, fecha_vencimiento, estado, metodo_pago
+                ) VALUES (?, ?, ?, ?, 'pendiente', 'transferencia')
+              `, [id_matricula, i, precioMensual, fechaVencimiento.toISOString().split('T')[0]]);
+            }
+          }
+          
+          console.log('✅ Cuotas mensuales generadas exitosamente para matrícula:', id_matricula);
         }
-        
-        console.log('✅ Cuotas generadas exitosamente para matrícula:', id_matricula);
-        console.log('✅ Cuota #1: VERIFICADO (comprobante copiado de solicitud, verificada automáticamente)');
-        console.log(`✅ Cuotas ${duracionMeses > 1 ? '2-' + duracionMeses : ''}: PENDIENTES`);
       } else {
         console.log('❌ No se encontró tipo de curso para generar cuotas');
       }
