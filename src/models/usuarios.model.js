@@ -314,6 +314,167 @@ async function setUserPasswordAndClearTemp(id_usuario, passwordHash) {
   return user;
 }
 
+// ========================================
+// FUNCIONES PARA CONTROL DE USUARIOS
+// ========================================
+
+// Obtener lista paginada de usuarios con filtros
+async function getAllUsersWithFilters({ search = '', rol = 'todos', estado = 'todos', page = 1, limit = 10 }) {
+  // Asegurar que page y limit sean números válidos
+  const pageNum = parseInt(page) || 1;
+  const limitNum = parseInt(limit) || 10;
+  const offset = (pageNum - 1) * limitNum;
+  
+  let whereConditions = [];
+  let params = [];
+
+  // Búsqueda por nombre, username o email
+  if (search) {
+    whereConditions.push('(u.nombre LIKE ? OR u.apellido LIKE ? OR u.username LIKE ? OR u.email LIKE ?)');
+    const searchParam = `%${search}%`;
+    params.push(searchParam, searchParam, searchParam, searchParam);
+  }
+
+  // Filtro por rol
+  if (rol !== 'todos') {
+    whereConditions.push('r.nombre_rol = ?');
+    params.push(rol);
+  }
+
+  // Filtro por estado
+  if (estado !== 'todos') {
+    whereConditions.push('u.estado = ?');
+    params.push(estado);
+  }
+
+  const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
+
+  // Consulta para obtener usuarios
+  const query = `SELECT u.id_usuario, u.cedula, u.nombre, u.apellido, u.email, u.username, u.telefono, u.estado, u.fecha_ultima_conexion, u.fecha_registro, r.nombre_rol FROM usuarios u JOIN roles r ON r.id_rol = u.id_rol ${whereClause} ORDER BY u.fecha_ultima_conexion DESC LIMIT ? OFFSET ?`;
+
+  const queryParams = [...params, limitNum, offset];
+  console.log('Query params:', queryParams);
+  console.log('Types:', queryParams.map(p => typeof p));
+  
+  const [rows] = await pool.query(query, queryParams);
+
+  // Consulta para obtener total de registros
+  const countQuery = `
+    SELECT COUNT(*) as total
+    FROM usuarios u
+    JOIN roles r ON r.id_rol = u.id_rol
+    ${whereClause}
+  `;
+
+  const [countRows] = await pool.query(countQuery, params);
+  const total = countRows[0].total;
+
+  return {
+    usuarios: rows,
+    total,
+    page: pageNum,
+    totalPages: Math.ceil(total / limitNum)
+  };
+}
+
+// Obtener estadísticas de usuarios para Control de Usuarios
+async function getControlUsuariosStats() {
+  // Total de usuarios
+  const [totalRows] = await pool.execute('SELECT COUNT(*) as total FROM usuarios');
+  
+  // Usuarios activos
+  const [activosRows] = await pool.execute('SELECT COUNT(*) as total FROM usuarios WHERE estado = "activo"');
+  
+  // Usuarios inactivos
+  const [inactivosRows] = await pool.execute('SELECT COUNT(*) as total FROM usuarios WHERE estado = "inactivo"');
+  
+  // Por rol
+  const [adminRows] = await pool.execute(
+    `SELECT COUNT(*) as total FROM usuarios u 
+     JOIN roles r ON r.id_rol = u.id_rol 
+     WHERE r.nombre_rol = 'administrativo'`
+  );
+  
+  const [docenteRows] = await pool.execute(
+    `SELECT COUNT(*) as total FROM usuarios u 
+     JOIN roles r ON r.id_rol = u.id_rol 
+     WHERE r.nombre_rol = 'docente'`
+  );
+  
+  const [estudianteRows] = await pool.execute(
+    `SELECT COUNT(*) as total FROM usuarios u 
+     JOIN roles r ON r.id_rol = u.id_rol 
+     WHERE r.nombre_rol = 'estudiante'`
+  );
+
+  return {
+    totalUsuarios: totalRows[0].total,
+    usuariosActivos: activosRows[0].total,
+    usuariosInactivos: inactivosRows[0].total,
+    totalAdministradores: adminRows[0].total,
+    totalDocentes: docenteRows[0].total,
+    totalEstudiantes: estudianteRows[0].total
+  };
+}
+
+// Cambiar estado de un usuario
+async function changeUserStatus(id_usuario, nuevoEstado) {
+  await pool.execute(
+    'UPDATE usuarios SET estado = ? WHERE id_usuario = ?',
+    [nuevoEstado, id_usuario]
+  );
+  const user = await getUserById(id_usuario);
+  return user;
+}
+
+// Resetear contraseña de un usuario (genera nueva contraseña temporal)
+async function resetUserPassword(id_usuario, nuevaPasswordTemporal, passwordHash) {
+  await pool.execute(
+    'UPDATE usuarios SET password = ?, password_temporal = ?, needs_password_reset = TRUE WHERE id_usuario = ?',
+    [passwordHash, nuevaPasswordTemporal, id_usuario]
+  );
+  const user = await getUserById(id_usuario);
+  return user;
+}
+
+// Obtener últimas sesiones de un usuario
+async function getUserSessions(id_usuario, limit = 10) {
+  const [rows] = await pool.execute(
+    `SELECT 
+      id_sesion,
+      ip_address,
+      user_agent,
+      fecha_inicio,
+      fecha_expiracion,
+      activa
+    FROM sesiones_usuario
+    WHERE id_usuario = ?
+    ORDER BY fecha_inicio DESC
+    LIMIT ?`,
+    [id_usuario, limit]
+  );
+  return rows;
+}
+
+// Obtener últimas acciones de un usuario desde auditoría
+async function getUserActions(id_usuario, limit = 20) {
+  const [rows] = await pool.execute(
+    `SELECT 
+      id_auditoria,
+      tabla_afectada,
+      operacion,
+      id_registro,
+      ip_address,
+      fecha_operacion
+    FROM auditoria_sistema
+    WHERE usuario_id = ?
+    ORDER BY fecha_operacion DESC
+    LIMIT ?`,
+    [id_usuario, limit]
+  );
+  return rows;
+}
+
 module.exports = {
   getUserByEmail,
   getUserByUsername,
@@ -330,5 +491,12 @@ module.exports = {
   getAdminStats,
   updateAdminUser,
   updateUserPassword,
-  setUserPasswordAndClearTemp
+  setUserPasswordAndClearTemp,
+  // Funciones para Control de Usuarios
+  getAllUsersWithFilters,
+  getControlUsuariosStats,
+  changeUserStatus,
+  resetUserPassword,
+  getUserSessions,
+  getUserActions
 };

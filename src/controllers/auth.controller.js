@@ -1,6 +1,29 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { getUserByEmail, getUserByUsername, getUserById, updateLastLogin, setUserPasswordAndClearTemp } = require('../models/usuarios.model');
+const { pool } = require('../config/database');
+
+// Función para registrar sesión
+async function registrarSesion(id_usuario, token, req) {
+  try {
+    const id_sesion = crypto.randomBytes(64).toString('hex');
+    const ip_address = req.ip || req.connection.remoteAddress || 'unknown';
+    const user_agent = req.headers['user-agent'] || 'unknown';
+    const fecha_expiracion = new Date(Date.now() + 8 * 60 * 60 * 1000); // 8 horas
+
+    await pool.execute(
+      `INSERT INTO sesiones_usuario (id_sesion, id_usuario, ip_address, user_agent, fecha_expiracion, activa) 
+       VALUES (?, ?, ?, ?, ?, TRUE)`,
+      [id_sesion, id_usuario, ip_address, user_agent, fecha_expiracion]
+    );
+
+    console.log(`✅ Sesión registrada para usuario ${id_usuario}`);
+  } catch (error) {
+    console.error('Error al registrar sesión:', error);
+    // No lanzamos error para no interrumpir el login
+  }
+}
 
 async function loginController(req, res) {
   try {
@@ -38,6 +61,9 @@ async function loginController(req, res) {
     );
 
     await updateLastLogin(user.id_usuario);
+    
+    // Registrar sesión
+    await registrarSesion(user.id_usuario, token, req);
 
     return res.json({
       token,

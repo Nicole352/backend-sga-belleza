@@ -3,6 +3,9 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 
+// Middleware de auditoría
+const { auditoriaMiddleware } = require('./middleware/auditoria.middleware');
+
 // Routes
 const cursosRoutes = require('./routes/cursos');
 const solicitudesRoutes = require('./routes/solicitudes');
@@ -22,6 +25,8 @@ const tareasRoutes = require('./routes/tareas');
 const entregasRoutes = require('./routes/entregas');
 const calificacionesRoutes = require('./routes/calificaciones');
 const reportesRoutes = require('./routes/reportes');
+const usuariosRoutes = require('./routes/usuarios');
+const auditoriaRoutes = require('./routes/auditoria');
 
 const app = express();
 
@@ -45,6 +50,9 @@ app.use(cors({
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Middleware de auditoría (debe ir después de body parsing)
+app.use(auditoriaMiddleware);
 
 
 // Health check
@@ -75,5 +83,7 @@ app.use('/api/tareas', tareasRoutes);
 app.use('/api/entregas', entregasRoutes);
 app.use('/api/calificaciones', calificacionesRoutes);
 app.use('/api/reportes', reportesRoutes);
+app.use('/api/usuarios', usuariosRoutes);
+app.use('/api/auditoria', auditoriaRoutes);
 
 module.exports = app;

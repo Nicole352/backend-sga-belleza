@@ -1,6 +1,7 @@
 const { pool } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const DocentesModel = require('../models/docentes.model');
+const { registrarAuditoria } = require('../utils/auditoria');
 
 // =====================================================
 // FUNCIONES AUXILIARES PARA GENERACIÓN DE USERNAME
@@ -324,6 +325,39 @@ exports.createDocente = async (req, res) => {
     ]);
     
     await connection.commit();
+    
+    // Registrar auditoría - Creación de docente
+    await registrarAuditoria(
+      'docentes',
+      'INSERT',
+      docenteResult.insertId,
+      req.user?.id_usuario || userResult.insertId,
+      null,
+      {
+        identificacion: identificacion.trim(),
+        nombres: nombres.trim(),
+        apellidos: apellidos.trim(),
+        titulo_profesional: titulo_profesional.trim()
+      },
+      req
+    );
+    
+    // Registrar auditoría - Creación de usuario
+    await registrarAuditoria(
+      'usuarios',
+      'INSERT',
+      userResult.insertId,
+      req.user?.id_usuario || userResult.insertId,
+      null,
+      {
+        cedula: identificacion.trim(),
+        nombre: nombres.trim(),
+        apellido: apellidos.trim(),
+        username: username,
+        rol: 'docente'
+      },
+      req
+    );
     
     res.status(201).json({
       success: true,

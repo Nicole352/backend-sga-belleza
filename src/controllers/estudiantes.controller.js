@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const EstudiantesModel = require('../models/estudiantes.model');
 const { enviarEmailBienvenidaEstudiante } = require('../services/emailService');
 const { generarComprobantePagoMensual } = require('../services/pdfService');
+const { registrarAuditoria } = require('../utils/auditoria');
 
 // Función para generar username único
 async function generateUniqueUsername(nombre, apellido) {
@@ -410,6 +411,37 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
     `, [aprobado_por, id_solicitud]);
     
     await connection.commit();
+    
+    // Registrar auditoría - Creación de estudiante (solo si es nuevo)
+    if (!esEstudianteExistente) {
+      await registrarAuditoria(
+        'usuarios',
+        'INSERT',
+        id_estudiante,
+        aprobado_por,
+        null,
+        {
+          cedula: solicitud.identificacion_solicitante,
+          nombre: solicitud.nombre_solicitante,
+          apellido: solicitud.apellido_solicitante,
+          username: username,
+          rol: 'estudiante',
+          desde_solicitud: id_solicitud
+        },
+        req
+      );
+    }
+    
+    // Registrar auditoría - Aprobación de solicitud
+    await registrarAuditoria(
+      'solicitudes_matricula',
+      'UPDATE',
+      id_solicitud,
+      aprobado_por,
+      { estado: 'pendiente' },
+      { estado: 'aprobado', verificado_por: aprobado_por },
+      req
+    );
     
     // 10. ENVIAR EMAIL DE BIENVENIDA CON CREDENCIALES Y PDF DEL PRIMER PAGO (solo para estudiantes nuevos, asíncrono)
     if (!esEstudianteExistente && passwordTemporal) {
