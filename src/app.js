@@ -21,6 +21,7 @@ const modulosRoutes = require('./routes/modulos');
 const tareasRoutes = require('./routes/tareas');
 const entregasRoutes = require('./routes/entregas');
 const calificacionesRoutes = require('./routes/calificaciones');
+const reportesRoutes = require('./routes/reportes');
 
 const app = express();
 
@@ -73,5 +74,6 @@ app.use('/api/modulos', modulosRoutes);
 app.use('/api/tareas', tareasRoutes);
 app.use('/api/entregas', entregasRoutes);
 app.use('/api/calificaciones', calificacionesRoutes);
+app.use('/api/reportes', reportesRoutes);
 
 module.exports = app;

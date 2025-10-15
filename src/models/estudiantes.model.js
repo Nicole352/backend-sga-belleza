@@ -179,6 +179,12 @@ class EstudiantesModel {
         
         id_matricula = matriculaResult.insertId;
 
+        // Insertar en estudiante_curso para reportes
+        await connection.execute(`
+          INSERT INTO estudiante_curso (id_estudiante, id_curso, fecha_inscripcion, estado)
+          VALUES (?, ?, NOW(), 'activo')
+        `, [id_estudiante, userData.id_curso]);
+
         // Obtener información completa del tipo de curso
         const [tipoCurso] = await connection.execute(`
           SELECT 
