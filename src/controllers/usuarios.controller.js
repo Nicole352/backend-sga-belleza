@@ -77,6 +77,45 @@ async function getUsuarioById(req, res) {
     // Ocultar password en la respuesta
     delete usuario.password;
 
+    // Si es estudiante, agregar información académica
+    if (usuario.nombre_rol === 'estudiante') {
+      console.log(`🎓 Estudiante - id_usuario: ${id}`);
+
+      // Contar cursos matriculados
+      const [cursosMatriculados] = await pool.query(
+        `SELECT COUNT(DISTINCT m.id_curso) as total
+         FROM matriculas m
+         WHERE m.id_estudiante = ? AND m.estado = 'activa'`,
+        [id]
+      );
+
+      // Contar pagos completados (pagado o verificado)
+      const [pagosCompletados] = await pool.query(
+        `SELECT COUNT(*) as total
+         FROM pagos_mensuales pm
+         INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
+         WHERE m.id_estudiante = ? AND pm.estado IN ('pagado', 'verificado')`,
+        [id]
+      );
+
+      // Contar pagos pendientes
+      const [pagosPendientes] = await pool.query(
+        `SELECT COUNT(*) as total
+         FROM pagos_mensuales pm
+         INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
+         WHERE m.id_estudiante = ? AND pm.estado = 'pendiente'`,
+        [id]
+      );
+
+      console.log(`📚 Cursos matriculados:`, cursosMatriculados[0]);
+      console.log(`✅ Pagos completados:`, pagosCompletados[0]);
+      console.log(`⏳ Pagos pendientes:`, pagosPendientes[0]);
+
+      usuario.cursos_matriculados = cursosMatriculados[0]?.total || 0;
+      usuario.pagos_completados = pagosCompletados[0]?.total || 0;
+      usuario.pagos_pendientes = pagosPendientes[0]?.total || 0;
+    }
+
     // Si es docente, agregar información académica
     if (usuario.nombre_rol === 'docente') {
       // Obtener id_docente usando el modelo de docentes

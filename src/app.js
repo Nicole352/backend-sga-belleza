@@ -87,6 +87,7 @@ app.use('/api/entregas', entregasRoutes);
 app.use('/api/calificaciones', calificacionesRoutes);
 app.use('/api/reportes', reportesRoutes);
 app.use('/api/usuarios', usuariosRoutes);
+app.use('/api/usuarios-actividad', require('./routes/usuarios-actividad'));
 app.use('/api/auditoria', auditoriaRoutes);
 
 // Inicializar tipos de reportes al cargar el módulo

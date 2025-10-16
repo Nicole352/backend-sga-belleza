@@ -59,7 +59,8 @@ exports.pagarCuota = async (req, res) => {
       monto_pagado,
       numero_comprobante, 
       banco_comprobante, 
-      fecha_transferencia, 
+      fecha_transferencia,
+      recibido_por,
       observaciones 
     } = req.body;
 
@@ -85,21 +86,32 @@ exports.pagarCuota = async (req, res) => {
       return res.status(403).json({ error: 'Cuota no encontrada o no pertenece al estudiante' });
     }
 
-    // Validaciones básicas
-    if (!metodo_pago || !numero_comprobante || !banco_comprobante || !fecha_transferencia) {
-      return res.status(400).json({
-        success: false,
-        message: 'Faltan campos obligatorios: método de pago, número de comprobante, banco y fecha de transferencia'
-      });
-    }
-
     // Validar que el método de pago sea válido
-    const metodosValidos = ['transferencia', 'efectivo', 'payphone'];
+    const metodosValidos = ['transferencia', 'efectivo'];
     if (!metodosValidos.includes(metodo_pago)) {
       return res.status(400).json({
         success: false,
-        message: 'Método de pago no válido. Debe ser: transferencia, efectivo o payphone'
+        message: 'Método de pago no válido. Debe ser: transferencia o efectivo'
       });
+    }
+
+    // Validaciones específicas por método de pago
+    if (metodo_pago === 'transferencia') {
+      if (!numero_comprobante || !banco_comprobante || !fecha_transferencia) {
+        return res.status(400).json({
+          success: false,
+          message: 'Para transferencias se requiere: número de comprobante, banco y fecha'
+        });
+      }
+    }
+
+    if (metodo_pago === 'efectivo') {
+      if (!numero_comprobante) {
+        return res.status(400).json({
+          success: false,
+          message: 'Para pagos en efectivo se requiere el número de factura/comprobante'
+        });
+      }
     }
 
     // Validar número de comprobante único si es transferencia
@@ -130,6 +142,7 @@ exports.pagarCuota = async (req, res) => {
       numero_comprobante,
       banco_comprobante,
       fecha_transferencia,
+      recibido_por: metodo_pago === 'efectivo' ? recibido_por : null,
       observaciones
     };
 
