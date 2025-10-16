@@ -253,6 +253,13 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
       const id_matricula = matriculaResult.insertId;
       console.log('✅ Matrícula creada:', codigoMatricula, 'ID:', id_matricula);
 
+      // *** INSERTAR EN ESTUDIANTE_CURSO PARA REPORTES ***
+      await connection.execute(`
+        INSERT INTO estudiante_curso (id_estudiante, id_curso, fecha_inscripcion, estado)
+        VALUES (?, ?, NOW(), 'activo')
+      `, [id_estudiante, id_curso]);
+      console.log('✅ Estudiante agregado a estudiante_curso para reportes');
+
       // *** GENERAR CUOTAS AUTOMÁTICAMENTE (MENSUAL O POR CLASES) ***
       console.log('🔍 Generando cuotas para matrícula:', id_matricula);
       

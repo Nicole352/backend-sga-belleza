@@ -63,6 +63,7 @@ async function getUsuariosStats(req, res) {
 async function getUsuarioById(req, res) {
   try {
     const { id } = req.params;
+    const { pool } = require('../config/database');
 
     const usuario = await usuariosModel.getUserById(id);
 
@@ -75,6 +76,46 @@ async function getUsuarioById(req, res) {
 
     // Ocultar password en la respuesta
     delete usuario.password;
+
+    // Si es docente, agregar información académica
+    if (usuario.nombre_rol === 'docente') {
+      // Obtener id_docente usando el modelo de docentes
+      const DocentesModel = require('../models/docentes.model');
+      const id_docente = await DocentesModel.getDocenteIdByUserId(id);
+
+      console.log(`🔍 Docente - id_usuario: ${id}, id_docente: ${id_docente}`);
+
+      if (id_docente) {
+
+        // Contar cursos asignados (a través de asignaciones_aulas activas)
+        const [cursosAsignados] = await pool.query(
+          `SELECT COUNT(DISTINCT aa.id_curso) as total
+           FROM asignaciones_aulas aa
+           WHERE aa.id_docente = ? AND aa.estado = 'activa'`,
+          [id_docente]
+        );
+
+        console.log(`📚 Cursos asignados:`, cursosAsignados[0]);
+
+        // Contar estudiantes activos en esos cursos
+        const [estudiantesActivos] = await pool.query(
+          `SELECT COUNT(DISTINCT ec.id_estudiante) as total
+           FROM asignaciones_aulas aa
+           JOIN estudiante_curso ec ON ec.id_curso = aa.id_curso
+           WHERE aa.id_docente = ? 
+           AND aa.estado = 'activa'
+           AND ec.estado IN ('inscrito', 'activo')`,
+          [id_docente]
+        );
+
+        console.log(`👥 Estudiantes activos:`, estudiantesActivos[0]);
+
+        usuario.cursos_asignados = cursosAsignados[0]?.total || 0;
+        usuario.estudiantes_activos = estudiantesActivos[0]?.total || 0;
+      } else {
+        console.log(`❌ No se encontró id_docente para usuario ${id}`);
+      }
+    }
 
     res.json({
       success: true,
@@ -233,7 +274,7 @@ async function getSesiones(req, res) {
 
     // Obtener sesiones de la tabla sesiones_usuario
     const [sesiones] = await pool.query(
-      `SELECT id_sesion, ip_address, user_agent, fecha_inicio, fecha_expiracion, activa
+      `SELECT id_sesion, ip_address, user_agent, fecha_inicio, fecha_expiracion, fecha_cierre, activa
        FROM sesiones_usuario
        WHERE id_usuario = ?
        ORDER BY fecha_inicio DESC
@@ -256,7 +297,7 @@ async function getSesiones(req, res) {
 }
 
 // ========================================
-// GET /api/usuarios/:id/acciones - Últimas acciones
+// GET /api/usuarios/:id/acciones - Últimas acciones con descripciones legibles
 // ========================================
 async function getAcciones(req, res) {
   try {
@@ -274,18 +315,324 @@ async function getAcciones(req, res) {
     }
 
     // Obtener acciones de la tabla auditoria_sistema
+    // Incluye acciones donde el usuario es quien realiza la acción O donde es el afectado (ej: cambio de contraseña)
     const [acciones] = await pool.query(
-      `SELECT id_auditoria, tabla_afectada, operacion, id_registro, ip_address, fecha_operacion
+      `SELECT id_auditoria, tabla_afectada, operacion, id_registro, ip_address, fecha_operacion, datos_nuevos
        FROM auditoria_sistema
-       WHERE usuario_id = ?
+       WHERE usuario_id = ? OR (tabla_afectada = 'usuarios' AND id_registro = ?)
        ORDER BY fecha_operacion DESC
        LIMIT ?`,
-      [id, parseInt(limit)]
+      [id, id, parseInt(limit)]
     );
+
+    // Generar descripciones legibles para cada acción
+    const accionesConDescripcion = await Promise.all(acciones.map(async (accion) => {
+      let descripcion = '';
+      let detalles = '';
+
+      try {
+        switch (accion.tabla_afectada) {
+          // ========== ENTREGAS DE TAREAS ==========
+          case 'entregas_tareas':
+            if (accion.operacion === 'INSERT') {
+              const [tarea] = await pool.query(`
+                SELECT t.titulo, m.nombre as modulo, c.nombre as curso
+                FROM entregas_tareas et
+                JOIN tareas_modulo t ON et.id_tarea = t.id_tarea
+                JOIN modulos_curso m ON t.id_modulo = m.id_modulo
+                JOIN cursos c ON m.id_curso = c.id_curso
+                WHERE et.id_entrega = ?
+              `, [accion.id_registro]);
+              if (tarea.length > 0) {
+                descripcion = `Subió tarea "${tarea[0].titulo}"`;
+                detalles = `Módulo: ${tarea[0].modulo} - Curso: ${tarea[0].curso}`;
+              } else {
+                descripcion = 'Subió una tarea';
+              }
+            }
+            break;
+
+          // ========== MÓDULOS ==========
+          case 'modulos_curso':
+            if (accion.operacion === 'INSERT') {
+              const [modulo] = await pool.query(`
+                SELECT m.nombre, c.nombre as curso
+                FROM modulos_curso m
+                JOIN cursos c ON m.id_curso = c.id_curso
+                WHERE m.id_modulo = ?
+              `, [accion.id_registro]);
+              if (modulo.length > 0) {
+                descripcion = `Creó módulo "${modulo[0].nombre}"`;
+                detalles = `En el curso: ${modulo[0].curso}`;
+              } else {
+                descripcion = 'Creó un módulo';
+                detalles = 'Nuevo módulo académico';
+              }
+            } else if (accion.operacion === 'DELETE') {
+              descripcion = 'Eliminó un módulo';
+              detalles = 'Módulo académico eliminado';
+            } else if (accion.operacion === 'UPDATE') {
+              descripcion = 'Actualizó un módulo';
+              detalles = 'Modificación de módulo académico';
+            }
+            break;
+
+          // ========== TAREAS ==========
+          case 'tareas_modulo':
+            if (accion.operacion === 'INSERT') {
+              const [tarea] = await pool.query(`
+                SELECT t.titulo, m.nombre as modulo
+                FROM tareas_modulo t
+                JOIN modulos_curso m ON t.id_modulo = m.id_modulo
+                WHERE t.id_tarea = ?
+              `, [accion.id_registro]);
+              if (tarea.length > 0) {
+                descripcion = `Creó tarea "${tarea[0].titulo}"`;
+                detalles = `En el módulo: ${tarea[0].modulo}`;
+              } else {
+                descripcion = 'Creó una tarea';
+                detalles = 'Nueva tarea para estudiantes';
+              }
+            } else if (accion.operacion === 'DELETE') {
+              descripcion = 'Eliminó una tarea';
+              detalles = 'Tarea eliminada del módulo';
+            } else if (accion.operacion === 'UPDATE') {
+              descripcion = 'Actualizó una tarea';
+              detalles = 'Modificación de tarea existente';
+            }
+            break;
+
+          // ========== CALIFICACIONES ==========
+          case 'calificaciones_tareas':
+            if (accion.operacion === 'INSERT') {
+              const [calif] = await pool.query(`
+                SELECT c.nota, t.titulo, u.nombre, u.apellido
+                FROM calificaciones_tareas c
+                JOIN entregas_tareas et ON c.id_entrega = et.id_entrega
+                JOIN tareas_modulo t ON et.id_tarea = t.id_tarea
+                JOIN usuarios u ON et.id_estudiante = u.id_usuario
+                WHERE c.id_calificacion = ?
+              `, [accion.id_registro]);
+              if (calif.length > 0) {
+                descripcion = `Calificó tarea de ${calif[0].nombre} ${calif[0].apellido}`;
+                detalles = `Nota: ${calif[0].nota}/20 - Tarea: "${calif[0].titulo}"`;
+              } else {
+                descripcion = 'Calificó una tarea';
+                detalles = 'Evaluación de estudiante';
+              }
+            }
+            break;
+
+          // ========== USUARIOS ==========
+          case 'usuarios':
+            if (accion.operacion === 'INSERT') {
+              const [user] = await pool.query(`
+                SELECT nombre, apellido, username, email FROM usuarios WHERE id_usuario = ?
+              `, [accion.id_registro]);
+              if (user.length > 0) {
+                descripcion = `Creó usuario ${user[0].nombre} ${user[0].apellido}`;
+                detalles = `Username: ${user[0].username || user[0].email || 'No especificado'}`;
+              } else {
+                descripcion = 'Creó un usuario';
+                detalles = 'Nuevo usuario en el sistema';
+              }
+            } else if (accion.operacion === 'UPDATE') {
+              // Verificar si es cambio de contraseña
+              let datosNuevos = {};
+              if (accion.datos_nuevos) {
+                try {
+                  datosNuevos = typeof accion.datos_nuevos === 'string' 
+                    ? JSON.parse(accion.datos_nuevos) 
+                    : accion.datos_nuevos;
+                } catch (err) {
+                  console.error('Error parseando datos_nuevos:', err);
+                  datosNuevos = {};
+                }
+              }
+              
+              // Verificar si es cambio de contraseña
+              if (datosNuevos.password_changed) {
+                const [user] = await pool.query(`
+                  SELECT nombre, apellido, username, email FROM usuarios WHERE id_usuario = ?
+                `, [accion.id_registro]);
+                
+                if (user.length > 0) {
+                  if (accion.id_registro === parseInt(id)) {
+                    descripcion = 'Cambió su contraseña';
+                  } else {
+                    descripcion = `${user[0].nombre} ${user[0].apellido} cambió su contraseña`;
+                  }
+                  detalles = `Usuario: ${user[0].username || user[0].email} - Contraseña actualizada exitosamente`;
+                } else {
+                  descripcion = 'Cambió su contraseña';
+                  detalles = 'Contraseña actualizada exitosamente';
+                }
+              } else {
+                // Actualización general de perfil
+                const [user] = await pool.query(`
+                  SELECT nombre, apellido FROM usuarios WHERE id_usuario = ?
+                `, [accion.id_registro]);
+                
+                if (accion.id_registro === parseInt(id)) {
+                  descripcion = 'Actualizó su perfil';
+                  detalles = 'Modificación de información personal';
+                } else if (user.length > 0) {
+                  descripcion = `Actualizó usuario ${user[0].nombre} ${user[0].apellido}`;
+                  detalles = 'Modificación de información del usuario';
+                } else {
+                  descripcion = 'Actualizó un usuario';
+                  detalles = 'Modificación de información';
+                }
+              }
+            }
+            break;
+
+          // ========== MATRÍCULAS ==========
+          case 'matriculas':
+            if (accion.operacion === 'INSERT') {
+              const [mat] = await pool.query(`
+                SELECT u.nombre, u.apellido, c.nombre as curso
+                FROM matriculas m
+                JOIN usuarios u ON m.id_estudiante = u.id_usuario
+                JOIN cursos c ON m.id_curso = c.id_curso
+                WHERE m.id_matricula = ?
+              `, [accion.id_registro]);
+              if (mat.length > 0) {
+                descripcion = `Aprobó matrícula de ${mat[0].nombre} ${mat[0].apellido}`;
+                detalles = `Curso: ${mat[0].curso}`;
+              } else {
+                descripcion = 'Aprobó una matrícula';
+              }
+            }
+            break;
+
+          // ========== PAGOS ==========
+          case 'pagos_mensuales':
+            if (accion.operacion === 'UPDATE') {
+              const [pago] = await pool.query(`
+                SELECT u.nombre, u.apellido, pm.numero_cuota, pm.monto
+                FROM pagos_mensuales pm
+                JOIN matriculas m ON pm.id_matricula = m.id_matricula
+                JOIN usuarios u ON m.id_estudiante = u.id_usuario
+                WHERE pm.id_pago = ?
+              `, [accion.id_registro]);
+              if (pago.length > 0) {
+                descripcion = `Verificó pago de ${pago[0].nombre} ${pago[0].apellido}`;
+                detalles = `Cuota #${pago[0].numero_cuota} - $${pago[0].monto}`;
+              } else {
+                descripcion = 'Verificó un pago';
+              }
+            }
+            break;
+
+          // ========== ESTUDIANTE_CURSO ==========
+          case 'estudiante_curso':
+            if (accion.operacion === 'INSERT') {
+              const [inscripcion] = await pool.query(`
+                SELECT c.nombre as curso
+                FROM estudiante_curso ec
+                JOIN cursos c ON ec.id_curso = c.id_curso
+                WHERE ec.id_inscripcion = ?
+              `, [accion.id_registro]);
+              if (inscripcion.length > 0) {
+                descripcion = `Se inscribió al curso "${inscripcion[0].curso}"`;
+              } else {
+                descripcion = 'Se inscribió a un curso';
+              }
+            }
+            break;
+
+          // ========== CURSOS ==========
+          case 'cursos':
+            if (accion.operacion === 'INSERT') {
+              const [curso] = await pool.query(`
+                SELECT c.nombre, c.horario, tc.nombre as tipo_curso
+                FROM cursos c
+                JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
+                WHERE c.id_curso = ?
+              `, [accion.id_registro]);
+              if (curso.length > 0) {
+                descripcion = `Creó curso "${curso[0].nombre}"`;
+                detalles = `Tipo: ${curso[0].tipo_curso} - Horario: ${curso[0].horario}`;
+              } else {
+                descripcion = 'Creó un curso';
+                detalles = 'Nuevo curso académico';
+              }
+            } else if (accion.operacion === 'UPDATE') {
+              const [curso] = await pool.query(`
+                SELECT c.nombre FROM cursos c WHERE c.id_curso = ?
+              `, [accion.id_registro]);
+              if (curso.length > 0) {
+                descripcion = `Actualizó curso "${curso[0].nombre}"`;
+                detalles = 'Modificación de curso existente';
+              } else {
+                descripcion = 'Actualizó un curso';
+                detalles = 'Modificación de curso';
+              }
+            } else if (accion.operacion === 'DELETE') {
+              descripcion = 'Eliminó un curso';
+              detalles = 'Curso eliminado del sistema';
+            }
+            break;
+
+          // ========== DOCENTES ==========
+          case 'docentes':
+            if (accion.operacion === 'INSERT') {
+              const [docente] = await pool.query(`
+                SELECT nombres, apellidos, titulo_profesional
+                FROM docentes
+                WHERE id_docente = ?
+              `, [accion.id_registro]);
+              if (docente.length > 0) {
+                descripcion = `Registró docente ${docente[0].nombres} ${docente[0].apellidos}`;
+                detalles = `Título: ${docente[0].titulo_profesional || 'No especificado'}`;
+              } else {
+                descripcion = 'Registró un docente';
+                detalles = 'Nuevo docente en el sistema';
+              }
+            } else if (accion.operacion === 'UPDATE') {
+              const [docente] = await pool.query(`
+                SELECT nombres, apellidos FROM docentes WHERE id_docente = ?
+              `, [accion.id_registro]);
+              if (docente.length > 0) {
+                descripcion = `Actualizó docente ${docente[0].nombres} ${docente[0].apellidos}`;
+                detalles = 'Modificación de información del docente';
+              } else {
+                descripcion = 'Actualizó un docente';
+                detalles = 'Modificación de información';
+              }
+            } else if (accion.operacion === 'DELETE') {
+              descripcion = 'Eliminó un docente';
+              detalles = 'Docente eliminado del sistema';
+            }
+            break;
+
+          // ========== DEFAULT ==========
+          default:
+            descripcion = `${accion.operacion} en ${accion.tabla_afectada}`;
+            detalles = `ID: ${accion.id_registro}`;
+        }
+      } catch (err) {
+        console.error('Error generando descripción:', err);
+        descripcion = `${accion.operacion} en ${accion.tabla_afectada}`;
+        detalles = `ID: ${accion.id_registro}`;
+      }
+
+      return {
+        id_auditoria: accion.id_auditoria,
+        tabla_afectada: accion.tabla_afectada,
+        operacion: accion.operacion,
+        id_registro: accion.id_registro,
+        descripcion,
+        detalles,
+        ip_address: accion.ip_address,
+        fecha_operacion: accion.fecha_operacion
+      };
+    }));
 
     res.json({
       success: true,
-      acciones
+      acciones: accionesConDescripcion
     });
   } catch (error) {
     console.error('Error al obtener acciones:', error);

@@ -131,8 +131,9 @@ const ReportesModel = {
         INNER JOIN usuarios u ON m.id_estudiante = u.id_usuario
         INNER JOIN cursos c ON m.id_curso = c.id_curso
         INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
+        INNER JOIN estudiante_curso ec ON ec.id_estudiante = u.id_usuario AND ec.id_curso = c.id_curso
         LEFT JOIN usuarios verificador ON pm.verificado_por = verificador.id_usuario
-        WHERE 1=1
+        WHERE u.id_rol = (SELECT id_rol FROM roles WHERE nombre_rol = 'estudiante')
       `;
 
       const params = [];

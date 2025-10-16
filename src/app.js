@@ -6,6 +6,9 @@ const compression = require('compression');
 // Middleware de auditoría
 const { auditoriaMiddleware } = require('./middleware/auditoria.middleware');
 
+// Utilidad de inicialización
+const inicializarTiposReportes = require('./utils/inicializarTiposReportes');
+
 // Routes
 const cursosRoutes = require('./routes/cursos');
 const solicitudesRoutes = require('./routes/solicitudes');
@@ -85,5 +88,11 @@ app.use('/api/calificaciones', calificacionesRoutes);
 app.use('/api/reportes', reportesRoutes);
 app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/auditoria', auditoriaRoutes);
+
+// Inicializar tipos de reportes al cargar el módulo
+// Se ejecutará automáticamente cuando el servidor inicie
+inicializarTiposReportes().catch(err => {
+  console.error('Error en inicialización de tipos de reportes:', err);
+});
 
 module.exports = app;

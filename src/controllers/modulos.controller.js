@@ -1,5 +1,6 @@
 const ModulosModel = require('../models/modulos.model');
 const DocentesModel = require('../models/docentes.model');
+const { registrarAuditoria } = require('../utils/auditoria');
 
 // GET /api/modulos/curso/:id_curso - Obtener módulos de un curso
 async function getModulosByCurso(req, res) {
@@ -86,6 +87,17 @@ async function createModulo(req, res) {
     });
 
     const modulo = await ModulosModel.getById(id_modulo);
+
+    // Registrar auditoría
+    await registrarAuditoria({
+      tabla_afectada: 'modulos_curso',
+      operacion: 'INSERT',
+      id_registro: id_modulo,
+      usuario_id: req.user?.id_usuario,
+      datos_nuevos: req.body,
+      ip_address: req.ip || '0.0.0.0',
+      user_agent: req.get('user-agent') || 'unknown'
+    });
 
     return res.status(201).json({
       success: true,

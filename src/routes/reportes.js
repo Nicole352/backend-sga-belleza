@@ -52,4 +52,22 @@ router.get('/cursos/excel', reportesController.descargarExcelCursos);
 // Obtener lista de cursos para filtros
 router.get('/cursos-filtro', reportesController.getCursosParaFiltro);
 
+// ========================================
+// SISTEMA DE REPORTES CON TABLAS
+// ========================================
+
+// Obtener tipos de reportes disponibles
+router.get('/tipos', reportesController.getTiposReportes);
+
+// Obtener historial de reportes generados
+router.get('/historial', reportesController.getHistorialReportes);
+
+// Obtener estadísticas de reportes
+router.get('/estadisticas', reportesController.getEstadisticasReportes);
+
+// Descargar reportes con historial (versión 2)
+router.get('/estudiantes/excel-v2', reportesController.descargarExcelEstudiantesV2);
+router.get('/financiero/excel-v2', reportesController.descargarExcelFinancieroV2);
+router.get('/cursos/excel-v2', reportesController.descargarExcelCursosV2);
+
 module.exports = router;

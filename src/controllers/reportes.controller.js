@@ -1,4 +1,5 @@
 const ReportesModel = require('../models/reportes.model');
+const TiposReportesModel = require('../models/tiposReportes.model');
 const { generarPDFEstudiantes, generarPDFFinanciero, generarPDFCursos } = require('../services/reportesPdfService');
 const { generarExcelEstudiantes, generarExcelFinanciero, generarExcelCursos } = require('../services/reportesExcelService');
 
@@ -494,6 +495,293 @@ const ReportesController = {
       res.status(500).json({
         success: false,
         message: 'Error al generar Excel de cursos',
+        error: error.message
+      });
+    }
+  },
+
+  // ========================================
+  // NUEVAS FUNCIONES CON SISTEMA DE TABLAS
+  // ========================================
+
+  /**
+   * OBTENER TODOS LOS TIPOS DE REPORTES DISPONIBLES
+   * GET /api/reportes/tipos
+   */
+  async getTiposReportes(req, res) {
+    try {
+      const tipos = await TiposReportesModel.getAllTiposReportes();
+
+      res.json({
+        success: true,
+        data: tipos
+      });
+    } catch (error) {
+      console.error('❌ Error en getTiposReportes:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener tipos de reportes',
+        error: error.message
+      });
+    }
+  },
+
+  /**
+   * OBTENER HISTORIAL DE REPORTES GENERADOS
+   * GET /api/reportes/historial
+   */
+  async getHistorialReportes(req, res) {
+    try {
+      const { idTipoReporte, limite = 50 } = req.query;
+      const idUsuario = req.user?.id_usuario; // Del middleware de autenticación
+
+      const historial = await TiposReportesModel.getHistorialReportes({
+        idUsuario,
+        idTipoReporte: idTipoReporte || null,
+        limite: parseInt(limite)
+      });
+
+      res.json({
+        success: true,
+        data: historial
+      });
+    } catch (error) {
+      console.error('❌ Error en getHistorialReportes:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener historial de reportes',
+        error: error.message
+      });
+    }
+  },
+
+  /**
+   * DESCARGAR EXCEL DE ESTUDIANTES CON HISTORIAL
+   * GET /api/reportes/estudiantes/excel-v2
+   */
+  async descargarExcelEstudiantesV2(req, res) {
+    try {
+      const { fechaInicio, fechaFin, estado, idCurso } = req.query;
+      const idUsuario = req.user?.id_usuario;
+
+      if (!fechaInicio || !fechaFin) {
+        return res.status(400).json({
+          success: false,
+          message: 'Las fechas son obligatorias'
+        });
+      }
+
+      // Parámetros del reporte
+      const parametros = {
+        fechaInicio,
+        fechaFin,
+        estado: estado || 'todos',
+        idCurso: idCurso || null
+      };
+
+      // Buscar en caché (reportes generados en los últimos 30 minutos)
+      const reporteEnCache = await TiposReportesModel.buscarReporteEnCache({
+        idTipoReporte: 1, // ID del reporte de estudiantes
+        parametros,
+        minutosValidez: 30
+      });
+
+      if (reporteEnCache) {
+        console.log('✅ Reporte encontrado en caché');
+        // TODO: Aquí deberías leer el archivo del sistema de archivos
+        // Por ahora, regeneramos
+      }
+
+      // Obtener datos
+      const datos = await ReportesModel.getReporteEstudiantes(parametros);
+      const estadisticas = await ReportesModel.getEstadisticasEstudiantes({
+        fechaInicio,
+        fechaFin
+      });
+
+      // Obtener nombre del curso
+      let nombreCurso = null;
+      if (idCurso) {
+        const cursoEncontrado = datos.find(d => d.id_curso == idCurso);
+        nombreCurso = cursoEncontrado ? cursoEncontrado.nombre_curso : null;
+      }
+
+      // Generar Excel
+      const excelBuffer = await generarExcelEstudiantes(datos, {
+        fechaInicio,
+        fechaFin,
+        estado: estado || 'todos',
+        nombreCurso
+      }, estadisticas);
+
+      // Nombre del archivo
+      const nombreArchivo = `Reporte_Estudiantes_${fechaInicio}_${fechaFin}.xlsx`;
+
+      // Guardar en historial
+      await TiposReportesModel.guardarReporteGenerado({
+        idTipoReporte: 1, // Reporte de Estudiantes
+        idGeneradoPor: idUsuario,
+        archivoGenerado: nombreArchivo,
+        formatoGenerado: 'xlsx',
+        parametros
+      });
+
+      // Enviar Excel
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${nombreArchivo}"`);
+      res.setHeader('Content-Length', excelBuffer.length);
+      res.send(excelBuffer);
+    } catch (error) {
+      console.error('❌ Error en descargarExcelEstudiantesV2:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al generar Excel de estudiantes',
+        error: error.message
+      });
+    }
+  },
+
+  /**
+   * DESCARGAR EXCEL FINANCIERO CON HISTORIAL
+   * GET /api/reportes/financiero/excel-v2
+   */
+  async descargarExcelFinancieroV2(req, res) {
+    try {
+      const { fechaInicio, fechaFin, tipoPago, estadoPago } = req.query;
+      const idUsuario = req.user?.id_usuario;
+
+      if (!fechaInicio || !fechaFin) {
+        return res.status(400).json({
+          success: false,
+          message: 'Las fechas son obligatorias'
+        });
+      }
+
+      const parametros = {
+        fechaInicio,
+        fechaFin,
+        tipoPago: tipoPago || 'todos',
+        estadoPago: estadoPago || 'todos'
+      };
+
+      // Obtener datos
+      const datos = await ReportesModel.getReporteFinanciero(parametros);
+      const estadisticas = await ReportesModel.getEstadisticasFinancieras({
+        fechaInicio,
+        fechaFin
+      });
+
+      // Generar Excel
+      const excelBuffer = await generarExcelFinanciero(datos, parametros, estadisticas);
+
+      // Nombre del archivo
+      const nombreArchivo = `Reporte_Financiero_${fechaInicio}_${fechaFin}.xlsx`;
+
+      // Guardar en historial
+      await TiposReportesModel.guardarReporteGenerado({
+        idTipoReporte: 2, // Reporte Financiero
+        idGeneradoPor: idUsuario,
+        archivoGenerado: nombreArchivo,
+        formatoGenerado: 'xlsx',
+        parametros
+      });
+
+      // Enviar Excel
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${nombreArchivo}"`);
+      res.setHeader('Content-Length', excelBuffer.length);
+      res.send(excelBuffer);
+    } catch (error) {
+      console.error('❌ Error en descargarExcelFinancieroV2:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al generar Excel financiero',
+        error: error.message
+      });
+    }
+  },
+
+  /**
+   * DESCARGAR EXCEL DE CURSOS CON HISTORIAL
+   * GET /api/reportes/cursos/excel-v2
+   */
+  async descargarExcelCursosV2(req, res) {
+    try {
+      const { fechaInicio, fechaFin } = req.query;
+      const idUsuario = req.user?.id_usuario;
+
+      if (!fechaInicio || !fechaFin) {
+        return res.status(400).json({
+          success: false,
+          message: 'Las fechas son obligatorias'
+        });
+      }
+
+      const parametros = { fechaInicio, fechaFin };
+
+      // Obtener datos
+      const datos = await ReportesModel.getReporteCursos(parametros);
+      const estadisticas = await ReportesModel.getEstadisticasCursos(parametros);
+
+      // Generar Excel
+      const excelBuffer = await generarExcelCursos(datos, parametros, estadisticas);
+
+      // Nombre del archivo
+      const nombreArchivo = `Reporte_Cursos_${fechaInicio}_${fechaFin}.xlsx`;
+
+      // Guardar en historial
+      await TiposReportesModel.guardarReporteGenerado({
+        idTipoReporte: 3, // Reporte de Cursos
+        idGeneradoPor: idUsuario,
+        archivoGenerado: nombreArchivo,
+        formatoGenerado: 'xlsx',
+        parametros
+      });
+
+      // Enviar Excel
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${nombreArchivo}"`);
+      res.setHeader('Content-Length', excelBuffer.length);
+      res.send(excelBuffer);
+    } catch (error) {
+      console.error('❌ Error en descargarExcelCursosV2:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al generar Excel de cursos',
+        error: error.message
+      });
+    }
+  },
+
+  /**
+   * OBTENER ESTADÍSTICAS DE REPORTES GENERADOS
+   * GET /api/reportes/estadisticas
+   */
+  async getEstadisticasReportes(req, res) {
+    try {
+      const { fechaInicio, fechaFin } = req.query;
+
+      if (!fechaInicio || !fechaFin) {
+        return res.status(400).json({
+          success: false,
+          message: 'Las fechas son obligatorias'
+        });
+      }
+
+      const estadisticas = await TiposReportesModel.getEstadisticasReportes({
+        fechaInicio,
+        fechaFin
+      });
+
+      res.json({
+        success: true,
+        data: estadisticas
+      });
+    } catch (error) {
+      console.error('❌ Error en getEstadisticasReportes:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener estadísticas de reportes',
         error: error.message
       });
     }

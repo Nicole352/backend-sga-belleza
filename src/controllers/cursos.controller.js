@@ -1,7 +1,8 @@
 const { listCursos, getCursoById, createCurso, updateCurso, deleteCurso } = require('../models/cursos.model');
 const { pool } = require('../config/database');
+const { registrarAuditoria } = require('../utils/auditoria');
 
-// Caché simple para cursos disponibles (30 segundos)
+// Caché simple para cursos disponibles (30 segundos) 
 let cursosDisponiblesCache = null;
 let cacheTimestamp = 0;
 const CACHE_DURATION = 30000; // 30 segundos
@@ -80,44 +81,81 @@ async function getCursoController(req, res) {
   }
 }
 
+// POST /api/cursos
+async function createCursoController(req, res) {
+  try {
+    const result = await createCurso(req.body || {});
+    
+    // Registrar auditoría
+    await registrarAuditoria({
+      tabla_afectada: 'cursos',
+      operacion: 'INSERT',
+      id_registro: result.id_curso,
+      usuario_id: req.user?.id_usuario,
+      datos_nuevos: req.body,
+      ip_address: req.ip || '0.0.0.0',
+      user_agent: req.get('user-agent') || 'unknown'
+    });
+    
+    return res.status(201).json(result);
+  } catch (err) {
+    console.error('Error creando curso:', err);
+    return res.status(400).json({ error: err.message || 'Error al crear curso' });
+  }
+}
+
+// PUT /api/cursos/:id
+async function updateCursoController(req, res) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID inválido' });
+    
+    // Obtener datos anteriores
+    const cursoAnterior = await getCursoById(id);
+    
+    const affected = await updateCurso(id, req.body || {});
+    if (affected === 0) return res.status(404).json({ error: 'Curso no encontrado o sin cambios' });
+    
+    // Registrar auditoría
+    await registrarAuditoria({
+      tabla_afectada: 'cursos',
+      operacion: 'UPDATE',
+      id_registro: id,
+      usuario_id: req.user?.id_usuario,
+      datos_anteriores: cursoAnterior,
+      datos_nuevos: req.body,
+      ip_address: req.ip || '0.0.0.0',
+      user_agent: req.get('user-agent') || 'unknown'
+    });
+    
+    // Devolver el curso actualizado en lugar de solo { ok: true }
+    const updatedCurso = await getCursoById(id);
+    return res.json(updatedCurso);
+  } catch (err) {
+    console.error('Error actualizando curso:', err);
+    return res.status(400).json({ error: err.message || 'Error al actualizar curso' });
+  }
+}
+
+// DELETE /api/cursos/:id
+async function deleteCursoController(req, res) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'ID inválido' });
+    const affected = await deleteCurso(id);
+    if (affected === 0) return res.status(404).json({ error: 'Curso no encontrado' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Error eliminando curso:', err);
+    return res.status(400).json({ error: err.message || 'Error al eliminar curso' });
+  }
+}
+
 module.exports = {
   listCursosController,
   getCursosDisponiblesController,
   getCursoController,
-  async createCursoController(req, res) {
-    try {
-      const result = await createCurso(req.body || {});
-      return res.status(201).json(result);
-    } catch (err) {
-      console.error('Error creando curso:', err);
-      return res.status(400).json({ error: err.message || 'Error al crear curso' });
-    }
-  },
-  async updateCursoController(req, res) {
-    try {
-      const id = Number(req.params.id);
-      if (!id) return res.status(400).json({ error: 'ID inválido' });
-      const affected = await updateCurso(id, req.body || {});
-      if (affected === 0) return res.status(404).json({ error: 'Curso no encontrado o sin cambios' });
-      
-      // Devolver el curso actualizado en lugar de solo { ok: true }
-      const updatedCurso = await getCursoById(id);
-      return res.json(updatedCurso);
-    } catch (err) {
-      console.error('Error actualizando curso:', err);
-      return res.status(400).json({ error: err.message || 'Error al actualizar curso' });
-    }
-  },
-  async deleteCursoController(req, res) {
-    try {
-      const id = Number(req.params.id);
-      if (!id) return res.status(400).json({ error: 'ID inválido' });
-      const affected = await deleteCurso(id);
-      if (affected === 0) return res.status(404).json({ error: 'Curso no encontrado' });
-      return res.json({ ok: true });
-    } catch (err) {
-      console.error('Error eliminando curso:', err);
-      return res.status(500).json({ error: 'Error al eliminar curso' });
-    }
-  }
+  createCursoController,
+  updateCursoController,
+  deleteCursoController
 };

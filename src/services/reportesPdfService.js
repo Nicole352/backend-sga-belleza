@@ -275,7 +275,8 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
   return new Promise(async (resolve, reject) => {
     try {
       const doc = new PDFDocument({ 
-        size: 'A4', 
+        size: 'A4',
+        layout: 'landscape', // Orientación horizontal para más espacio
         margin: 40,
         bufferPages: true
       });
@@ -357,103 +358,115 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
       doc.moveDown(0.5);
 
       const tableTop = doc.y;
+      // Anchos optimizados para orientación horizontal (landscape)
       const colWidths = {
-        cedula: 70,
-        nombre: 110,
-        curso: 90,
-        monto: 50,
-        fecha: 65,
-        metodo: 60,
-        estado: 65
+        cedula: 95,
+        nombre: 160,
+        curso: 130,
+        monto: 70,
+        fecha: 90,
+        metodo: 110,
+        estado: 90
       };
 
       let xPos = 40;
 
-      // Header
-      doc.rect(40, tableTop, doc.page.width - 80, 25)
+      // Header con mejor diseño
+      doc.rect(30, tableTop, doc.page.width - 60, 28)
          .fillAndStroke(colors.primary, colors.primary);
 
-      doc.fontSize(9)
-         .fillColor(colors.dark)
+      doc.fontSize(10)
+         .fillColor('#000000')
          .font('Helvetica-Bold');
 
-      doc.text('IDENTIFICACIÓN', xPos + 5, tableTop + 8, { width: colWidths.cedula });
+      xPos = 30;
+      doc.text('IDENTIFICACIÓN', xPos + 5, tableTop + 9, { width: colWidths.cedula, align: 'left' });
       xPos += colWidths.cedula;
-      doc.text('NOMBRE', xPos + 5, tableTop + 8, { width: colWidths.nombre });
+      doc.text('NOMBRE', xPos + 5, tableTop + 9, { width: colWidths.nombre, align: 'left' });
       xPos += colWidths.nombre;
-      doc.text('CURSO', xPos + 5, tableTop + 8, { width: colWidths.curso });
+      doc.text('CURSO', xPos + 5, tableTop + 9, { width: colWidths.curso, align: 'left' });
       xPos += colWidths.curso;
-      doc.text('MONTO', xPos + 5, tableTop + 8, { width: colWidths.monto });
+      doc.text('MONTO', xPos + 5, tableTop + 9, { width: colWidths.monto, align: 'right' });
       xPos += colWidths.monto;
-      doc.text('FECHA', xPos + 5, tableTop + 8, { width: colWidths.fecha });
+      doc.text('FECHA', xPos + 5, tableTop + 9, { width: colWidths.fecha, align: 'center' });
       xPos += colWidths.fecha;
-      doc.text('MÉTODO', xPos + 5, tableTop + 8, { width: colWidths.metodo });
+      doc.text('MÉTODO', xPos + 5, tableTop + 9, { width: colWidths.metodo, align: 'left' });
       xPos += colWidths.metodo;
-      doc.text('ESTADO', xPos + 5, tableTop + 8, { width: colWidths.estado });
+      doc.text('ESTADO', xPos + 5, tableTop + 9, { width: colWidths.estado, align: 'center' });
 
-      let yPos = tableTop + 30;
+      let yPos = tableTop + 33;
 
-      // Filas
+      // Filas con mejor espaciado
       datos.forEach((pago, index) => {
         if (yPos > doc.page.height - 100) {
           doc.addPage();
-          yPos = 40;
+          yPos = 50;
         }
 
+        // Fondo alternado para mejor legibilidad (altura aumentada para 2 líneas)
         if (index % 2 === 0) {
-          doc.rect(40, yPos - 5, doc.page.width - 80, 20)
-             .fillColor('#f9f9f9')
+          doc.rect(30, yPos - 6, doc.page.width - 60, 32)
+             .fillColor('#f5f5f5')
              .fill();
         }
 
-        xPos = 40;
+        xPos = 30;
 
-        doc.fontSize(8)
+        doc.fontSize(9)
            .fillColor(colors.text)
            .font('Helvetica');
 
         // Cédula
-        doc.text(pago.cedula_estudiante || 'N/A', xPos + 5, yPos, { width: colWidths.cedula });
+        doc.text(pago.cedula_estudiante || 'N/A', xPos + 5, yPos + 6, { width: colWidths.cedula, align: 'left' });
         xPos += colWidths.cedula;
 
-        // Nombre
-        const nombreEstudiante = `${pago.nombre_estudiante} ${pago.apellido_estudiante}`;
-        doc.text(nombreEstudiante, xPos + 5, yPos, { width: colWidths.nombre });
+        // Nombre en dos líneas (nombre arriba, apellido abajo)
+        doc.fontSize(8)
+           .font('Helvetica-Bold')
+           .text(pago.nombre_estudiante || 'N/A', xPos + 5, yPos + 2, { width: colWidths.nombre, align: 'left' });
+        doc.fontSize(8)
+           .font('Helvetica')
+           .text(pago.apellido_estudiante || '', xPos + 5, yPos + 12, { width: colWidths.nombre, align: 'left' });
         xPos += colWidths.nombre;
 
-        // Curso
-        doc.text(pago.nombre_curso || 'N/A', xPos + 5, yPos, { width: colWidths.curso });
+        // Curso (centrado verticalmente)
+        doc.fontSize(9)
+           .fillColor(colors.text)
+           .font('Helvetica');
+        const cursoNombre = pago.nombre_curso || 'N/A';
+        const cursoCorto = cursoNombre.length > 18 ? cursoNombre.substring(0, 15) + '...' : cursoNombre;
+        doc.text(cursoCorto, xPos + 5, yPos + 6, { width: colWidths.curso, align: 'left' });
         xPos += colWidths.curso;
 
-        // Monto
-        doc.text(formatearMoneda(pago.monto), xPos + 5, yPos, { width: colWidths.monto });
+        // Monto (alineado a la derecha, centrado verticalmente)
+        doc.text(formatearMoneda(pago.monto), xPos + 5, yPos + 6, { width: colWidths.monto - 10, align: 'right' });
         xPos += colWidths.monto;
 
-        // Fecha - usar fecha_pago si existe, sino fecha_vencimiento
+        // Fecha (centrado verticalmente)
         let fechaMostrar = 'N/A';
         if (pago.fecha_pago) {
           fechaMostrar = new Date(pago.fecha_pago).toLocaleDateString('es-ES');
         } else if (pago.fecha_vencimiento) {
           fechaMostrar = new Date(pago.fecha_vencimiento).toLocaleDateString('es-ES');
         }
-        doc.text(fechaMostrar, xPos + 5, yPos, { width: colWidths.fecha });
+        doc.text(fechaMostrar, xPos, yPos + 6, { width: colWidths.fecha, align: 'center' });
         xPos += colWidths.fecha;
 
-        // Método
+        // Método (centrado verticalmente)
         const metodoPago = pago.metodo_pago ? pago.metodo_pago.toUpperCase() : 'PENDIENTE';
-        doc.text(metodoPago, xPos + 5, yPos, { width: colWidths.metodo });
+        doc.text(metodoPago, xPos + 5, yPos + 6, { width: colWidths.metodo, align: 'left' });
         xPos += colWidths.metodo;
 
-        // Estado con color
+        // Estado con color (centrado verticalmente)
         let estadoColor = colors.text;
         if (pago.estado_pago === 'verificado') estadoColor = colors.success;
         if (pago.estado_pago === 'pendiente') estadoColor = colors.error;
 
         doc.fillColor(estadoColor)
            .font('Helvetica-Bold')
-           .text(pago.estado_pago.toUpperCase(), xPos + 5, yPos, { width: colWidths.estado });
+           .text(pago.estado_pago.toUpperCase(), xPos, yPos + 6, { width: colWidths.estado, align: 'center' });
 
-        yPos += 20;
+        yPos += 32;
       });
 
       // FOOTER

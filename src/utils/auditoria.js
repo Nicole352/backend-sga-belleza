@@ -2,18 +2,28 @@ const { pool } = require('../config/database');
 
 /**
  * Registra una acción en la tabla de auditoría
- * @param {string} tabla_afectada - Nombre de la tabla afectada
- * @param {string} operacion - INSERT, UPDATE o DELETE
- * @param {number} id_registro - ID del registro afectado
- * @param {number} usuario_id - ID del usuario que realizó la acción
- * @param {object} datos_anteriores - Datos antes del cambio (para UPDATE/DELETE)
- * @param {object} datos_nuevos - Datos después del cambio (para INSERT/UPDATE)
- * @param {object} req - Request de Express (para obtener IP y user agent)
+ * @param {object} params - Parámetros de auditoría
+ * @param {string} params.tabla_afectada - Nombre de la tabla afectada
+ * @param {string} params.operacion - INSERT, UPDATE o DELETE
+ * @param {number} params.id_registro - ID del registro afectado
+ * @param {number} params.usuario_id - ID del usuario que realizó la acción
+ * @param {object} params.datos_anteriores - Datos antes del cambio (para UPDATE/DELETE)
+ * @param {object} params.datos_nuevos - Datos después del cambio (para INSERT/UPDATE)
+ * @param {string} params.ip_address - Dirección IP del usuario
+ * @param {string} params.user_agent - User agent del navegador
  */
-async function registrarAuditoria(tabla_afectada, operacion, id_registro, usuario_id, datos_anteriores = null, datos_nuevos = null, req = null) {
+async function registrarAuditoria(params) {
   try {
-    const ip_address = req ? (req.ip || req.connection.remoteAddress || 'unknown') : 'system';
-    const user_agent = req ? (req.headers['user-agent'] || 'unknown') : 'system';
+    const {
+      tabla_afectada,
+      operacion,
+      id_registro,
+      usuario_id,
+      datos_anteriores = null,
+      datos_nuevos = null,
+      ip_address = '0.0.0.0',
+      user_agent = 'unknown'
+    } = params;
 
     await pool.execute(
       `INSERT INTO auditoria_sistema 
@@ -23,7 +33,7 @@ async function registrarAuditoria(tabla_afectada, operacion, id_registro, usuari
         tabla_afectada,
         operacion,
         id_registro,
-        usuario_id,
+        usuario_id || null,
         datos_anteriores ? JSON.stringify(datos_anteriores) : null,
         datos_nuevos ? JSON.stringify(datos_nuevos) : null,
         ip_address,
@@ -31,7 +41,7 @@ async function registrarAuditoria(tabla_afectada, operacion, id_registro, usuari
       ]
     );
 
-    console.log(`📝 Auditoría: ${operacion} en ${tabla_afectada} (ID: ${id_registro}) por usuario ${usuario_id}`);
+    console.log(`📝 Auditoría: ${operacion} en ${tabla_afectada} (ID: ${id_registro}) por usuario ${usuario_id || 'sistema'}`);
   } catch (error) {
     console.error('Error al registrar auditoría:', error);
     // No lanzamos error para no interrumpir la operación principal

@@ -1,6 +1,7 @@
 const express = require('express');
 const { listCursosController, getCursosDisponiblesController, getCursoController, createCursoController, updateCursoController, deleteCursoController } = require('../controllers/cursos.controller');
 const { pollingLimiter, generalLimiter } = require('../middleware/rateLimit');
+const { authMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -14,13 +15,13 @@ router.get('/', generalLimiter, listCursosController);
 router.get('/:id', pollingLimiter, getCursoController);
 
 // POST /api/cursos
-router.post('/', createCursoController);
+router.post('/', authMiddleware, createCursoController);
 
 // PUT /api/cursos/:id
-router.put('/:id', updateCursoController);
+router.put('/:id', authMiddleware, updateCursoController);
 
 // DELETE /api/cursos/:id
-router.delete('/:id', deleteCursoController);
+router.delete('/:id', authMiddleware, deleteCursoController);
 
 // Ruta de clonado eliminada
 

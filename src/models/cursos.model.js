@@ -10,6 +10,7 @@ async function listCursos({ estado, tipo, page = 1, limit = 10 }) {
       c.id_curso,
       c.codigo_curso,
       c.nombre,
+      c.horario,
       c.fecha_inicio,
       c.fecha_fin,
       c.estado,

@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { getUserByEmail, getUserByUsername, getUserById, updateLastLogin, setUserPasswordAndClearTemp } = require('../models/usuarios.model');
 const { pool } = require('../config/database');
+const { registrarAuditoria } = require('../utils/auditoria');
 
 // Función para registrar sesión
 async function registrarSesion(id_usuario, token, req) {
@@ -156,6 +157,18 @@ async function resetPasswordController(req, res) {
 
     await setUserPasswordAndClearTemp(user.id_usuario, hash);
 
+    // Registrar auditoría
+    await registrarAuditoria({
+      tabla_afectada: 'usuarios',
+      operacion: 'UPDATE',
+      id_registro: user.id_usuario,
+      usuario_id: user.id_usuario,
+      datos_anteriores: { password_temporal: user.password_temporal },
+      datos_nuevos: { password_changed: true },
+      ip_address: req.ip || '0.0.0.0',
+      user_agent: req.get('user-agent') || 'unknown'
+    });
+
     return res.json({ success: true, message: 'Contraseña actualizada correctamente' });
   } catch (err) {
     console.error('Error en reset-password:', err);
@@ -163,4 +176,29 @@ async function resetPasswordController(req, res) {
   }
 }
 
-module.exports = { loginController, meController, resetPasswordController };
+// POST /api/auth/logout - Cerrar sesión del usuario
+async function logoutController(req, res) {
+  try {
+    const userId = req.user.id_usuario;
+    
+    // Actualizar todas las sesiones activas del usuario
+    await pool.execute(
+      `UPDATE sesiones_usuario 
+       SET activa = FALSE, fecha_cierre = CURRENT_TIMESTAMP 
+       WHERE id_usuario = ? AND activa = TRUE`,
+      [userId]
+    );
+
+    console.log(`✅ Sesión cerrada para usuario ${userId}`);
+    
+    return res.json({ 
+      success: true, 
+      message: 'Sesión cerrada exitosamente' 
+    });
+  } catch (err) {
+    console.error('Error en logout:', err);
+    return res.status(500).json({ error: 'Error cerrando sesión' });
+  }
+}
+
+module.exports = { loginController, meController, resetPasswordController, logoutController };

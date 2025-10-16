@@ -1,5 +1,6 @@
 const TareasModel = require('../models/tareas.model');
 const DocentesModel = require('../models/docentes.model');
+const { registrarAuditoria } = require('../utils/auditoria');
 
 // GET /api/tareas/modulo/:id_modulo - Obtener tareas de un módulo
 async function getTareasByModulo(req, res) {
@@ -131,6 +132,17 @@ async function createTarea(req, res) {
     });
 
     const tarea = await TareasModel.getById(id_tarea);
+
+    // Registrar auditoría
+    await registrarAuditoria({
+      tabla_afectada: 'tareas_modulo',
+      operacion: 'INSERT',
+      id_registro: id_tarea,
+      usuario_id: req.user?.id_usuario,
+      datos_nuevos: req.body,
+      ip_address: req.ip || '0.0.0.0',
+      user_agent: req.get('user-agent') || 'unknown'
+    });
 
     return res.status(201).json({
       success: true,
