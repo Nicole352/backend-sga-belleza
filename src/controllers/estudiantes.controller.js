@@ -204,20 +204,26 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
     // 8. Crear matrícula automáticamente
     const codigoMatricula = `MAT-${Date.now()}-${id_estudiante}`;
     
-    // Obtener el curso asociado al tipo de curso de la solicitud
+    // Obtener el curso asociado al tipo de curso de la solicitud CON EL HORARIO CORRECTO
+    console.log('🔍 Buscando curso con horario:', solicitud.horario_preferido);
     const [cursosDisponibles] = await connection.execute(`
-      SELECT id_curso FROM cursos 
-      WHERE id_tipo_curso = ? AND estado IN ('activo', 'planificado')
+      SELECT id_curso, horario FROM cursos 
+      WHERE id_tipo_curso = ? 
+        AND horario = ?
+        AND estado IN ('activo', 'planificado')
+        AND cupos_disponibles > 0
       ORDER BY fecha_inicio ASC LIMIT 1
-    `, [solicitud.id_tipo_curso]);
+    `, [solicitud.id_tipo_curso, solicitud.horario_preferido]);
     
     let id_curso = null;
     if (cursosDisponibles.length > 0) {
       id_curso = cursosDisponibles[0].id_curso;
+      console.log('✅ Curso encontrado:', id_curso, 'Horario:', cursosDisponibles[0].horario);
     } else {
-      // Si no hay curso específico, crear uno temporal o usar un valor por defecto
-      console.warn('⚠️ No se encontró curso para el tipo:', solicitud.id_tipo_curso);
-      // Por ahora, continuamos sin curso específico
+      await connection.rollback();
+      return res.status(400).json({ 
+        error: `No hay cursos disponibles con horario ${solicitud.horario_preferido} para el tipo de curso seleccionado. Por favor, crea un curso con este horario primero.` 
+      });
     }
     
     if (id_curso) {
@@ -259,6 +265,14 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         VALUES (?, ?, NOW(), 'activo')
       `, [id_estudiante, id_curso]);
       console.log('✅ Estudiante agregado a estudiante_curso para reportes');
+
+      // *** ACTUALIZAR CUPOS DISPONIBLES DEL CURSO ***
+      await connection.execute(`
+        UPDATE cursos 
+        SET cupos_disponibles = cupos_disponibles - 1
+        WHERE id_curso = ? AND cupos_disponibles > 0
+      `, [id_curso]);
+      console.log('✅ Cupos actualizados para el curso:', id_curso);
 
       // *** GENERAR CUOTAS AUTOMÁTICAMENTE (MENSUAL O POR CLASES) ***
       console.log('🔍 Generando cuotas para matrícula:', id_matricula);

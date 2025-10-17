@@ -9,6 +9,7 @@ async function listCursos({ estado, tipo, page = 1, limit = 10 }) {
     SELECT
       c.id_curso,
       c.codigo_curso,
+      c.id_tipo_curso,
       c.nombre,
       c.horario,
       c.fecha_inicio,
