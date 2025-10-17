@@ -157,5 +157,81 @@ module.exports = {
   getCursoController,
   createCursoController,
   updateCursoController,
-  deleteCursoController
+  deleteCursoController,
+  // Nuevos handlers para datos académicos por curso
+  async getEstudiantesByCursoController(req, res) {
+    try {
+      const id = Number(req.params.id);
+      if (!id) return res.status(400).json({ error: 'ID inválido' });
+
+      const [rows] = await pool.execute(`
+        SELECT 
+          u.id_usuario AS id_estudiante,
+          u.nombre,
+          u.apellido,
+          u.email
+        FROM matriculas m
+        INNER JOIN usuarios u ON m.id_estudiante = u.id_usuario
+        INNER JOIN roles r ON u.id_rol = r.id_rol AND r.nombre_rol = 'estudiante'
+        WHERE m.id_curso = ? AND m.estado = 'activa'
+        ORDER BY u.apellido, u.nombre
+      `, [id]);
+
+      return res.json({ success: true, estudiantes: rows });
+    } catch (err) {
+      console.error('Error obteniendo estudiantes del curso:', err);
+      return res.status(500).json({ error: 'Error al obtener estudiantes del curso' });
+    }
+  },
+
+  async getTareasByCursoController(req, res) {
+    try {
+      const id = Number(req.params.id);
+      if (!id) return res.status(400).json({ error: 'ID inválido' });
+
+      const [rows] = await pool.execute(`
+        SELECT 
+          t.id_tarea,
+          t.titulo,
+          t.nota_maxima,
+          t.fecha_limite,
+          m.id_modulo,
+          m.nombre AS modulo_nombre,
+          m.numero_orden AS modulo_orden
+        FROM modulos_curso m
+        INNER JOIN tareas_modulo t ON m.id_modulo = t.id_modulo
+        WHERE m.id_curso = ? AND t.estado = 'activo'
+        ORDER BY m.numero_orden ASC, t.fecha_limite ASC
+      `, [id]);
+
+      return res.json({ success: true, tareas: rows });
+    } catch (err) {
+      console.error('Error obteniendo tareas del curso:', err);
+      return res.status(500).json({ error: 'Error al obtener tareas del curso' });
+    }
+  },
+
+  async getCalificacionesByCursoController(req, res) {
+    try {
+      const id = Number(req.params.id);
+      if (!id) return res.status(400).json({ error: 'ID inválido' });
+
+      const [rows] = await pool.execute(`
+        SELECT 
+          e.id_estudiante,
+          t.id_tarea,
+          cal.nota AS nota_obtenida
+        FROM modulos_curso m
+        INNER JOIN tareas_modulo t ON m.id_modulo = t.id_modulo
+        LEFT JOIN entregas_tareas e ON t.id_tarea = e.id_tarea
+        LEFT JOIN calificaciones_tareas cal ON e.id_entrega = cal.id_entrega
+        WHERE m.id_curso = ?
+      `, [id]);
+
+      return res.json({ success: true, calificaciones: rows });
+    } catch (err) {
+      console.error('Error obteniendo calificaciones del curso:', err);
+      return res.status(500).json({ error: 'Error al obtener calificaciones del curso' });
+    }
+  }
 };

@@ -1,5 +1,16 @@
 const express = require('express');
-const { listCursosController, getCursosDisponiblesController, getCursoController, createCursoController, updateCursoController, deleteCursoController } = require('../controllers/cursos.controller');
+const { 
+  listCursosController, 
+  getCursosDisponiblesController, 
+  getCursoController, 
+  createCursoController, 
+  updateCursoController, 
+  deleteCursoController,
+  getEstudiantesByCursoController,
+  getTareasByCursoController,
+  getCalificacionesByCursoController
+} = require('../controllers/cursos.controller');
+
 const { pollingLimiter, generalLimiter } = require('../middleware/rateLimit');
 const { authMiddleware } = require('../middleware/auth');
 
@@ -13,6 +24,13 @@ router.get('/', generalLimiter, listCursosController);
 
 // GET /api/cursos/:id - Con rate limiting para polling
 router.get('/:id', pollingLimiter, getCursoController);
+
+// ========================================
+// Datos académicos por curso (protegidos)
+// ========================================
+router.get('/:id/estudiantes', authMiddleware, getEstudiantesByCursoController);
+router.get('/:id/tareas', authMiddleware, getTareasByCursoController);
+router.get('/:id/calificaciones', authMiddleware, getCalificacionesByCursoController);
 
 // POST /api/cursos
 router.post('/', authMiddleware, createCursoController);
