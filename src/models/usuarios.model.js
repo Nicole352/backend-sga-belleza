@@ -27,7 +27,29 @@ async function getUserByUsername(username) {
 
 async function getUserById(id) {
   const [rows] = await pool.execute(
-    `SELECT u.*, r.nombre_rol
+    `SELECT 
+      u.id_usuario,
+      u.cedula,
+      u.nombre,
+      u.apellido,
+      u.fecha_nacimiento,
+      u.telefono,
+      u.email,
+      u.username,
+      u.direccion,
+      u.genero,
+      CASE 
+        WHEN u.foto_perfil IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(u.foto_perfil))
+        ELSE NULL 
+      END as foto_perfil,
+      u.password,
+      u.password_temporal,
+      u.needs_password_reset,
+      u.id_rol,
+      u.estado,
+      u.fecha_registro,
+      u.fecha_ultima_conexion,
+      r.nombre_rol
      FROM usuarios u
      JOIN roles r ON r.id_rol = u.id_rol
      WHERE u.id_usuario = ?
@@ -349,14 +371,40 @@ async function getAllUsersWithFilters({ search = '', rol = 'todos', estado = 'to
 
   const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
 
-  // Consulta para obtener usuarios
-  const query = `SELECT u.id_usuario, u.cedula, u.nombre, u.apellido, u.email, u.username, u.telefono, u.estado, u.fecha_ultima_conexion, u.fecha_registro, r.nombre_rol FROM usuarios u JOIN roles r ON r.id_rol = u.id_rol ${whereClause} ORDER BY u.fecha_ultima_conexion DESC LIMIT ? OFFSET ?`;
+  // Consulta para obtener usuarios (incluye foto_perfil como base64)
+  const query = `
+    SELECT 
+      u.id_usuario, 
+      u.cedula, 
+      u.nombre, 
+      u.apellido, 
+      u.email, 
+      u.username, 
+      u.telefono, 
+      u.estado, 
+      u.fecha_ultima_conexion, 
+      u.fecha_registro, 
+      r.nombre_rol,
+      CASE 
+        WHEN u.foto_perfil IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(u.foto_perfil))
+        ELSE NULL 
+      END as foto_perfil
+    FROM usuarios u 
+    JOIN roles r ON r.id_rol = u.id_rol 
+    ${whereClause} 
+    ORDER BY u.fecha_ultima_conexion DESC 
+    LIMIT ? OFFSET ?
+  `;
 
   const queryParams = [...params, limitNum, offset];
   console.log('Query params:', queryParams);
   console.log('Types:', queryParams.map(p => typeof p));
   
   const [rows] = await pool.query(query, queryParams);
+  
+  // DEBUG: Verificar fotos (simplificado)
+  const conFoto = rows.filter(u => u.foto_perfil).length;
+  console.log('📸 Backend - Usuarios con foto:', conFoto, 'de', rows.length);
 
   // Consulta para obtener total de registros
   const countQuery = `
@@ -475,6 +523,37 @@ async function getUserActions(id_usuario, limit = 20) {
   return rows;
 }
 
+// ========================================
+// FUNCIONES PARA FOTO DE PERFIL
+// ========================================
+
+// Actualizar foto de perfil (guardar en BLOB)
+async function updateFotoPerfil(id_usuario, fotoBuffer) {
+  await pool.execute(
+    'UPDATE usuarios SET foto_perfil = ? WHERE id_usuario = ?',
+    [fotoBuffer, id_usuario]
+  );
+  return await getUserById(id_usuario);
+}
+
+// Obtener foto de perfil
+async function getFotoPerfil(id_usuario) {
+  const [rows] = await pool.execute(
+    'SELECT foto_perfil FROM usuarios WHERE id_usuario = ?',
+    [id_usuario]
+  );
+  return rows[0]?.foto_perfil || null;
+}
+
+// Eliminar foto de perfil
+async function deleteFotoPerfil(id_usuario) {
+  await pool.execute(
+    'UPDATE usuarios SET foto_perfil = NULL WHERE id_usuario = ?',
+    [id_usuario]
+  );
+  return await getUserById(id_usuario);
+}
+
 module.exports = {
   getUserByEmail,
   getUserByUsername,
@@ -498,5 +577,9 @@ module.exports = {
   changeUserStatus,
   resetUserPassword,
   getUserSessions,
-  getUserActions
+  getUserActions,
+  // Funciones para Foto de Perfil
+  updateFotoPerfil,
+  getFotoPerfil,
+  deleteFotoPerfil
 };

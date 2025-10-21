@@ -7,20 +7,29 @@ class DocentesModel {
     
     const offset = (page - 1) * limit;
     
-    // Consulta MUY simple primero - sin LIMIT
+    // Consulta con JOIN a usuarios para obtener id_usuario, gmail y foto_perfil
     const docentesQuery = `
       SELECT 
-        id_docente,
-        identificacion,
-        nombres,
-        apellidos,
-        fecha_nacimiento,
-        titulo_profesional,
-        experiencia_anos,
-        estado,
-        fecha_creacion
-      FROM docentes
-      ORDER BY apellidos ASC, nombres ASC
+        d.id_docente,
+        d.identificacion,
+        d.nombres,
+        d.apellidos,
+        d.fecha_nacimiento,
+        d.titulo_profesional,
+        d.experiencia_anos,
+        d.estado,
+        d.fecha_creacion,
+        u.id_usuario,
+        u.email as gmail,
+        u.username,
+        u.password_temporal,
+        CASE 
+          WHEN u.foto_perfil IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(u.foto_perfil))
+          ELSE NULL 
+        END as foto_perfil
+      FROM docentes d
+      LEFT JOIN usuarios u ON u.cedula = d.identificacion AND u.id_rol = (SELECT id_rol FROM roles WHERE nombre_rol = 'docente')
+      ORDER BY d.apellidos ASC, d.nombres ASC
     `;
     
     const [allDocentes] = await pool.execute(docentesQuery);

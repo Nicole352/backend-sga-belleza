@@ -20,7 +20,11 @@ class EstudiantesModel {
         u.direccion,
         u.estado,
         u.fecha_registro,
-        u.fecha_ultima_conexion
+        u.fecha_ultima_conexion,
+        CASE 
+          WHEN u.foto_perfil IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(u.foto_perfil))
+          ELSE NULL 
+        END as foto_perfil
       FROM usuarios u
       INNER JOIN roles r ON u.id_rol = r.id_rol
       WHERE r.nombre_rol = 'estudiante'
@@ -91,10 +95,14 @@ class EstudiantesModel {
         u.direccion,
         u.estado,
         u.fecha_registro,
-        u.fecha_ultima_conexion
+        u.fecha_ultima_conexion,
+        CASE 
+          WHEN u.foto_perfil IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(u.foto_perfil))
+          ELSE NULL 
+        END as foto_perfil
       FROM usuarios u
       INNER JOIN roles r ON u.id_rol = r.id_rol
-      WHERE r.nombre_rol = 'estudiante' AND u.id_usuario = ?
+      WHERE u.id_usuario = ? AND r.nombre_rol = 'estudiante'
     `, [id]);
     
     return estudiantes.length > 0 ? estudiantes[0] : null;
@@ -116,10 +124,14 @@ class EstudiantesModel {
         u.direccion,
         u.estado,
         u.fecha_registro,
-        u.fecha_ultima_conexion
+        u.fecha_ultima_conexion,
+        CASE 
+          WHEN u.foto_perfil IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(u.foto_perfil))
+          ELSE NULL 
+        END as foto_perfil
       FROM usuarios u
       INNER JOIN roles r ON u.id_rol = r.id_rol
-      WHERE r.nombre_rol = 'estudiante' AND u.cedula = ?
+      WHERE u.cedula = ? AND r.nombre_rol = 'estudiante'
     `, [cedula]);
     
     return estudiantes.length > 0 ? estudiantes[0] : null;

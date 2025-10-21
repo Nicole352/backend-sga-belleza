@@ -683,6 +683,155 @@ async function getAcciones(req, res) {
   }
 }
 
+// ========================================
+// PUT /api/usuarios/:id/foto-perfil - Subir foto de perfil
+// ========================================
+async function subirFotoPerfil(req, res) {
+  try {
+    const { id } = req.params;
+
+    // Verificar que el usuario existe
+    const usuario = await usuariosModel.getUserById(id);
+    if (!usuario) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuario no encontrado'
+      });
+    }
+
+    // Verificar que se subió un archivo
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No se proporcionó ninguna imagen'
+      });
+    }
+
+    // Validar que el usuario solo puede cambiar su propia foto (o ser admin)
+    if (req.user && req.user.id_usuario !== parseInt(id) && req.user.nombre_rol !== 'administrativo') {
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes permiso para cambiar la foto de este usuario'
+      });
+    }
+
+    // Guardar la foto en la base de datos (BLOB)
+    const fotoBuffer = req.file.buffer;
+    await usuariosModel.updateFotoPerfil(id, fotoBuffer);
+
+    // Registrar auditoría
+    await registrarAuditoria(
+      'usuarios',
+      'UPDATE',
+      parseInt(id),
+      req.user?.id_usuario || parseInt(id),
+      null,
+      { accion: 'actualizar_foto_perfil' },
+      req
+    );
+
+    res.json({
+      success: true,
+      message: 'Foto de perfil actualizada correctamente',
+      data: {
+        id_usuario: parseInt(id),
+        foto_actualizada: true,
+        tamano_kb: Math.round(req.file.size / 1024)
+      }
+    });
+  } catch (error) {
+    console.error('Error al subir foto de perfil:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al subir foto de perfil',
+      error: error.message
+    });
+  }
+}
+
+// ========================================
+// GET /api/usuarios/:id/foto-perfil - Obtener foto de perfil
+// ========================================
+async function obtenerFotoPerfil(req, res) {
+  try {
+    const { id } = req.params;
+
+    // Obtener la foto desde la base de datos
+    const fotoBuffer = await usuariosModel.getFotoPerfil(id);
+
+    if (!fotoBuffer) {
+      return res.status(404).json({
+        success: false,
+        message: 'El usuario no tiene foto de perfil'
+      });
+    }
+
+    // Enviar la imagen como respuesta
+    res.set('Content-Type', 'image/jpeg'); // Asumimos JPEG por defecto
+    res.set('Cache-Control', 'public, max-age=86400'); // Cache de 1 día
+    res.send(fotoBuffer);
+  } catch (error) {
+    console.error('Error al obtener foto de perfil:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener foto de perfil',
+      error: error.message
+    });
+  }
+}
+
+// ========================================
+// DELETE /api/usuarios/:id/foto-perfil - Eliminar foto de perfil
+// ========================================
+async function eliminarFotoPerfil(req, res) {
+  try {
+    const { id } = req.params;
+
+    // Verificar que el usuario existe
+    const usuario = await usuariosModel.getUserById(id);
+    if (!usuario) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuario no encontrado'
+      });
+    }
+
+    // Validar que el usuario solo puede eliminar su propia foto (o ser admin)
+    if (req.user && req.user.id_usuario !== parseInt(id) && req.user.nombre_rol !== 'administrativo') {
+      return res.status(403).json({
+        success: false,
+        message: 'No tienes permiso para eliminar la foto de este usuario'
+      });
+    }
+
+    // Eliminar la foto de la base de datos
+    await usuariosModel.deleteFotoPerfil(id);
+
+    // Registrar auditoría
+    await registrarAuditoria(
+      'usuarios',
+      'UPDATE',
+      parseInt(id),
+      req.user?.id_usuario || parseInt(id),
+      null,
+      { accion: 'eliminar_foto_perfil' },
+      req
+    );
+
+    res.json({
+      success: true,
+      message: 'Foto de perfil eliminada correctamente'
+    });
+  } catch (error) {
+    console.error('Error al eliminar foto de perfil:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al eliminar foto de perfil',
+      error: error.message
+    });
+  }
+}
+
 module.exports = {
   getUsuarios,
   getUsuariosStats,
@@ -690,5 +839,9 @@ module.exports = {
   cambiarEstado,
   resetPassword,
   getSesiones,
-  getAcciones
+  getAcciones,
+  // Funciones para foto de perfil
+  subirFotoPerfil,
+  obtenerFotoPerfil,
+  eliminarFotoPerfil
 };

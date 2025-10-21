@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const usuariosController = require('../controllers/usuarios.controller');
 const { authMiddleware } = require('../middleware/auth');
+const { upload, handleMulterError } = require('../middleware/upload');
 
 // Todas las rutas requieren autenticación
 router.use(authMiddleware);
@@ -30,5 +31,18 @@ router.get('/:id/sesiones', usuariosController.getSesiones);
 
 // GET /api/usuarios/:id/acciones - Últimas acciones del usuario
 router.get('/:id/acciones', usuariosController.getAcciones);
+
+// ========================================
+// RUTAS DE FOTO DE PERFIL
+// ========================================
+
+// PUT /api/usuarios/:id/foto-perfil - Subir/actualizar foto de perfil
+router.put('/:id/foto-perfil', upload.single('foto'), handleMulterError, usuariosController.subirFotoPerfil);
+
+// GET /api/usuarios/:id/foto-perfil - Obtener foto de perfil
+router.get('/:id/foto-perfil', usuariosController.obtenerFotoPerfil);
+
+// DELETE /api/usuarios/:id/foto-perfil - Eliminar foto de perfil
+router.delete('/:id/foto-perfil', usuariosController.eliminarFotoPerfil);
 
 module.exports = router;
