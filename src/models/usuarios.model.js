@@ -300,6 +300,7 @@ async function updateAdminUser(id_usuario, fields) {
     telefono: 'telefono',
     fecha_nacimiento: 'fecha_nacimiento',
     direccion: 'direccion',
+    genero: 'genero',
     id_rol: 'id_rol',
     foto_perfil: 'foto_perfil'
   };

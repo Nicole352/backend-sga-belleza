@@ -832,6 +832,161 @@ async function eliminarFotoPerfil(req, res) {
   }
 }
 
+// ========================================
+// PUT /api/usuarios/mi-perfil - Actualizar perfil propio
+// ========================================
+async function actualizarMiPerfil(req, res) {
+  try {
+    const id_usuario = req.user.id_usuario; // Del token JWT
+    const { nombre, apellido, email, telefono, direccion, fecha_nacimiento, genero } = req.body;
+
+    // Verificar que el usuario existe
+    const usuario = await usuariosModel.getUserById(id_usuario);
+    if (!usuario) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuario no encontrado'
+      });
+    }
+
+    // Si está cambiando el email, verificar que no esté en uso
+    if (email && email !== usuario.email) {
+      const emailExistente = await usuariosModel.getUserByEmail(email);
+      if (emailExistente && emailExistente.id_usuario !== id_usuario) {
+        return res.status(400).json({
+          success: false,
+          message: 'El email ya está en uso por otro usuario'
+        });
+      }
+    }
+
+    // Preparar campos a actualizar
+    const camposActualizar = {};
+    if (nombre !== undefined) camposActualizar.nombre = nombre;
+    if (apellido !== undefined) camposActualizar.apellido = apellido;
+    if (email !== undefined) camposActualizar.email = email;
+    if (telefono !== undefined) camposActualizar.telefono = telefono;
+    if (direccion !== undefined) camposActualizar.direccion = direccion;
+    if (fecha_nacimiento !== undefined) camposActualizar.fecha_nacimiento = fecha_nacimiento;
+    if (genero !== undefined) camposActualizar.genero = genero;
+
+    // Datos anteriores para auditoría
+    const datosAnteriores = {
+      nombre: usuario.nombre,
+      apellido: usuario.apellido,
+      email: usuario.email,
+      telefono: usuario.telefono,
+      direccion: usuario.direccion,
+      fecha_nacimiento: usuario.fecha_nacimiento,
+      genero: usuario.genero
+    };
+
+    // Actualizar en la base de datos
+    const usuarioActualizado = await usuariosModel.updateAdminUser(id_usuario, camposActualizar);
+
+    // Registrar auditoría
+    await registrarAuditoria(
+      'usuarios',
+      'UPDATE',
+      id_usuario,
+      id_usuario,
+      datosAnteriores,
+      camposActualizar,
+      req
+    );
+
+    // Ocultar password en la respuesta
+    delete usuarioActualizado.password;
+    delete usuarioActualizado.password_temporal;
+
+    res.json({
+      success: true,
+      message: 'Perfil actualizado correctamente',
+      usuario: usuarioActualizado
+    });
+  } catch (error) {
+    console.error('Error al actualizar perfil:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al actualizar perfil',
+      error: error.message
+    });
+  }
+}
+
+// ========================================
+// PUT /api/usuarios/cambiar-password - Cambiar contraseña propia
+// ========================================
+async function cambiarMiPassword(req, res) {
+  try {
+    const id_usuario = req.user.id_usuario; // Del token JWT
+    const { password_actual, password_nueva } = req.body;
+
+    // Validar que se envíen ambas contraseñas
+    if (!password_actual || !password_nueva) {
+      return res.status(400).json({
+        success: false,
+        message: 'Debe proporcionar la contraseña actual y la nueva contraseña'
+      });
+    }
+
+    // Validar longitud de la nueva contraseña
+    if (password_nueva.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: 'La nueva contraseña debe tener al menos 8 caracteres'
+      });
+    }
+
+    // Obtener usuario con contraseña
+    const usuario = await usuariosModel.getUserById(id_usuario);
+    if (!usuario) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuario no encontrado'
+      });
+    }
+
+    // Verificar contraseña actual
+    const passwordValida = await bcrypt.compare(password_actual, usuario.password);
+    if (!passwordValida) {
+      return res.status(400).json({
+        success: false,
+        message: 'La contraseña actual es incorrecta'
+      });
+    }
+
+    // Hashear la nueva contraseña
+    const passwordHash = await bcrypt.hash(password_nueva, 10);
+
+    // Actualizar contraseña
+    await usuariosModel.updateUserPassword(id_usuario, passwordHash);
+
+    // Registrar auditoría
+    await registrarAuditoria(
+      'usuarios',
+      'UPDATE',
+      id_usuario,
+      id_usuario,
+      null,
+      { accion: 'cambio_password' },
+      req
+    );
+
+    res.json({
+      success: true,
+      message: 'Contraseña actualizada correctamente'
+    });
+  } catch (error) {
+    console.error('Error al cambiar contraseña:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al cambiar contraseña',
+      error: error.message
+    });
+  }
+}
+
 module.exports = {
   getUsuarios,
   getUsuariosStats,
@@ -843,5 +998,8 @@ module.exports = {
   // Funciones para foto de perfil
   subirFotoPerfil,
   obtenerFotoPerfil,
-  eliminarFotoPerfil
+  eliminarFotoPerfil,
+  // Funciones para perfil propio
+  actualizarMiPerfil,
+  cambiarMiPassword
 };

@@ -8,6 +8,16 @@ const { upload, handleMulterError } = require('../middleware/upload');
 router.use(authMiddleware);
 
 // ========================================
+// RUTAS DE PERFIL PROPIO
+// ========================================
+
+// PUT /api/usuarios/mi-perfil - Actualizar perfil propio
+router.put('/mi-perfil', usuariosController.actualizarMiPerfil);
+
+// PUT /api/usuarios/cambiar-password - Cambiar contraseña propia
+router.put('/cambiar-password', usuariosController.cambiarMiPassword);
+
+// ========================================
 // RUTAS DE CONTROL DE USUARIOS
 // ========================================
 

@@ -75,7 +75,8 @@ async function loginController(req, res) {
         email: user.email,
         rol: user.nombre_rol,
         estado: user.estado,
-        needs_password_reset: !!user.password_temporal
+        needs_password_reset: !!user.password_temporal,
+        is_first_login: !!user.password_temporal && !user.fecha_ultima_conexion
       }
     });
   } catch (err) {
@@ -93,7 +94,7 @@ async function meController(req, res) {
     // Si es docente, obtener datos adicionales de la tabla docentes
     if (user.nombre_rol === 'docente') {
       const [docentes] = await pool.execute(`
-        SELECT d.nombres, d.apellidos, d.titulo_profesional, d.experiencia_anos
+        SELECT d.identificacion, d.nombres, d.apellidos, d.titulo_profesional, d.experiencia_anos, d.fecha_nacimiento
         FROM docentes d
         WHERE d.identificacion = ?
       `, [user.cedula]);
@@ -101,6 +102,7 @@ async function meController(req, res) {
       if (docentes.length > 0) {
         return res.json({
           id_usuario: user.id_usuario,
+          identificacion: docentes[0].identificacion,
           nombre: user.nombre,
           apellido: user.apellido,
           nombres: docentes[0].nombres,
@@ -108,23 +110,36 @@ async function meController(req, res) {
           titulo_profesional: docentes[0].titulo_profesional,
           experiencia_anos: docentes[0].experiencia_anos,
           email: user.email,
+          telefono: user.telefono || '',
+          direccion: user.direccion || '',
+          fecha_nacimiento: docentes[0].fecha_nacimiento || user.fecha_nacimiento || null,
+          genero: user.genero || '',
+          username: user.username,
           rol: user.nombre_rol,
           estado: user.estado,
           fecha_ultima_conexion: user.fecha_ultima_conexion,
-          needs_password_reset: !!user.password_temporal
+          needs_password_reset: !!user.password_temporal,
+          is_first_login: !!user.password_temporal && !user.fecha_ultima_conexion
         });
       }
     }
     
     return res.json({
       id_usuario: user.id_usuario,
+      cedula: user.cedula || '',
       nombre: user.nombre,
       apellido: user.apellido,
       email: user.email,
+      telefono: user.telefono || '',
+      direccion: user.direccion || '',
+      fecha_nacimiento: user.fecha_nacimiento || null,
+      genero: user.genero || '',
+      username: user.username || '',
       rol: user.nombre_rol,
       estado: user.estado,
       fecha_ultima_conexion: user.fecha_ultima_conexion,
-      needs_password_reset: !!user.password_temporal
+      needs_password_reset: !!user.password_temporal,
+      is_first_login: !!user.password_temporal && !user.fecha_ultima_conexion
     });
   } catch (err) {
     console.error('Error en /me:', err);

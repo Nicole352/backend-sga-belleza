@@ -8,7 +8,7 @@ class EntregasModel {
         e.*,
         u.nombre as estudiante_nombre,
         u.apellido as estudiante_apellido,
-        u.cedula as estudiante_cedula,
+        u.cedula as estudiante_identificacion,
         u.email as estudiante_email,
         c.nota,
         c.comentario_docente,
@@ -18,7 +18,7 @@ class EntregasModel {
       INNER JOIN usuarios u ON e.id_estudiante = u.id_usuario
       LEFT JOIN calificaciones_tareas c ON e.id_entrega = c.id_entrega
       WHERE e.id_tarea = ?
-      ORDER BY e.fecha_entrega DESC
+      ORDER BY u.apellido ASC, u.nombre ASC
     `, [id_tarea]);
     
     return entregas;

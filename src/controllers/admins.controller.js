@@ -54,7 +54,7 @@ async function createAdminController(req, res) {
       telefono: telefono || null,
       fecha_nacimiento: fecha_nacimiento || null,
       direccion: direccion || null,
-      genero: null, // ajusta si lo requieres en BDD
+      genero: genero || null,
       foto_perfil: fotoPerfilBuffer,
       foto_mime_type: fotoMimeType,
       passwordHash: hash,
@@ -86,6 +86,9 @@ async function listAdminsController(req, res) {
       apellido: a.apellido,
       email: a.email,
       telefono: a.telefono,
+      fecha_nacimiento: a.fecha_nacimiento,
+      direccion: a.direccion,
+      genero: a.genero,
       rol: a.nombre_rol,
       estado: a.estado,
       fecha_registro: a.fecha_registro,
@@ -114,6 +117,7 @@ async function updateAdminController(req, res) {
       telefono,
       fecha_nacimiento,
       direccion,
+      genero,
       rolId,
       roleName,
     } = req.body || {};
@@ -153,6 +157,7 @@ async function updateAdminController(req, res) {
       telefono: telefono ?? undefined,
       fecha_nacimiento: fecha_nacimiento ?? undefined,
       direccion: direccion ?? undefined,
+      genero: genero ?? undefined,
       id_rol: id_rol ?? undefined,
       foto_perfil: foto_perfil ?? undefined,
     };
