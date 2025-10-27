@@ -119,7 +119,8 @@ async function meController(req, res) {
           estado: user.estado,
           fecha_ultima_conexion: user.fecha_ultima_conexion,
           needs_password_reset: !!user.password_temporal,
-          is_first_login: !!user.password_temporal && !user.fecha_ultima_conexion
+          is_first_login: !!user.password_temporal && !user.fecha_ultima_conexion,
+          foto_perfil: user.foto_perfil || null // Add this line
         });
       }
     }
@@ -139,7 +140,8 @@ async function meController(req, res) {
       estado: user.estado,
       fecha_ultima_conexion: user.fecha_ultima_conexion,
       needs_password_reset: !!user.password_temporal,
-      is_first_login: !!user.password_temporal && !user.fecha_ultima_conexion
+      is_first_login: !!user.password_temporal && !user.fecha_ultima_conexion,
+      foto_perfil: user.foto_perfil || null // Add this line
     });
   } catch (err) {
     console.error('Error en /me:', err);
