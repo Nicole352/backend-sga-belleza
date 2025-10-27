@@ -12,7 +12,7 @@ class ModulosModel {
       FROM modulos_curso m
       INNER JOIN docentes d ON m.id_docente = d.id_docente
       WHERE m.id_curso = ?
-      ORDER BY m.numero_orden ASC
+      ORDER BY m.id_modulo ASC
     `, [id_curso]);
     
     return modulos;
@@ -44,7 +44,6 @@ class ModulosModel {
       id_docente,
       nombre,
       descripcion,
-      numero_orden,
       fecha_inicio,
       fecha_fin,
       estado = 'activo'
@@ -53,14 +52,13 @@ class ModulosModel {
     const [result] = await pool.execute(`
       INSERT INTO modulos_curso (
         id_curso, id_docente, nombre, descripcion, 
-        numero_orden, fecha_inicio, fecha_fin, estado
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        fecha_inicio, fecha_fin, estado
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `, [
       id_curso,
       id_docente,
       nombre.trim(),
       descripcion ? descripcion.trim() : null,
-      numero_orden,
       fecha_inicio || null,
       fecha_fin || null,
       estado
@@ -74,30 +72,55 @@ class ModulosModel {
     const {
       nombre,
       descripcion,
-      numero_orden,
       fecha_inicio,
       fecha_fin,
       estado
     } = moduloData;
 
-    const [result] = await pool.execute(`
+    // Construir dinámicamente la consulta de actualización
+    const fields = [];
+    const values = [];
+
+    if (nombre !== undefined) {
+      fields.push('nombre = ?');
+      values.push(nombre.trim());
+    }
+
+    if (descripcion !== undefined) {
+      fields.push('descripcion = ?');
+      values.push(descripcion ? descripcion.trim() : null);
+    }
+
+    if (fecha_inicio !== undefined) {
+      fields.push('fecha_inicio = ?');
+      values.push(fecha_inicio || null);
+    }
+
+    if (fecha_fin !== undefined) {
+      fields.push('fecha_fin = ?');
+      values.push(fecha_fin || null);
+    }
+
+    if (estado !== undefined) {
+      fields.push('estado = ?');
+      values.push(estado);
+    }
+
+    // Si no hay campos para actualizar, retornar true (no hay cambios necesarios)
+    if (fields.length === 0) {
+      return true;
+    }
+
+    // Agregar el ID del módulo al final de los valores
+    values.push(id_modulo);
+
+    const query = `
       UPDATE modulos_curso 
-      SET nombre = ?, 
-          descripcion = ?, 
-          numero_orden = ?,
-          fecha_inicio = ?,
-          fecha_fin = ?,
-          estado = ?
+      SET ${fields.join(', ')}
       WHERE id_modulo = ?
-    `, [
-      nombre.trim(),
-      descripcion ? descripcion.trim() : null,
-      numero_orden,
-      fecha_inicio || null,
-      fecha_fin || null,
-      estado,
-      id_modulo
-    ]);
+    `;
+
+    const [result] = await pool.execute(query, values);
 
     return result.affectedRows > 0;
   }
@@ -120,29 +143,6 @@ class ModulosModel {
     return result[0].count > 0;
   }
 
-  // Obtener el siguiente número de orden disponible
-  static async getNextOrden(id_curso) {
-    const [result] = await pool.execute(
-      'SELECT COALESCE(MAX(numero_orden), 0) + 1 as next_orden FROM modulos_curso WHERE id_curso = ?',
-      [id_curso]
-    );
-    return result[0].next_orden;
-  }
-
-  // Verificar si existe un módulo con el mismo orden
-  static async existsOrden(id_curso, numero_orden, excludeId = null) {
-    let query = 'SELECT COUNT(*) as count FROM modulos_curso WHERE id_curso = ? AND numero_orden = ?';
-    let params = [id_curso, numero_orden];
-    
-    if (excludeId) {
-      query += ' AND id_modulo != ?';
-      params.push(excludeId);
-    }
-    
-    const [result] = await pool.execute(query, params);
-    return result[0].count > 0;
-  }
-
   // Obtener estadísticas del módulo
   static async getStats(id_modulo) {
     const [stats] = await pool.execute(`
@@ -160,6 +160,75 @@ class ModulosModel {
     `, [id_modulo]);
     
     return stats[0];
+  }
+
+  // Calcular promedio ponderado de un estudiante en un módulo
+  static async getPromedioPonderado(id_modulo, id_estudiante) {
+    const [result] = await pool.execute(`
+      SELECT 
+        SUM((cal.nota / t.nota_maxima) * t.ponderacion) as promedio_ponderado,
+        SUM(t.ponderacion) as suma_ponderaciones,
+        COUNT(DISTINCT t.id_tarea) as total_tareas,
+        COUNT(DISTINCT cal.id_calificacion) as tareas_calificadas
+      FROM tareas_modulo t
+      LEFT JOIN entregas_tareas e ON t.id_tarea = e.id_tarea AND e.id_estudiante = ?
+      LEFT JOIN calificaciones_tareas cal ON e.id_entrega = cal.id_entrega
+      WHERE t.id_modulo = ? AND t.estado = 'activo'
+    `, [id_estudiante, id_modulo]);
+    
+    return result[0];
+  }
+
+  // Obtener promedios ponderados de todos los estudiantes de un módulo
+  static async getPromediosPonderadosPorModulo(id_modulo) {
+    const [result] = await pool.execute(`
+      SELECT 
+        u.id_usuario as id_estudiante,
+        u.nombre,
+        u.apellido,
+        SUM((cal.nota / t.nota_maxima) * t.ponderacion) as promedio_ponderado,
+        SUM(t.ponderacion) as suma_ponderaciones,
+        COUNT(DISTINCT t.id_tarea) as total_tareas,
+        COUNT(DISTINCT cal.id_calificacion) as tareas_calificadas
+      FROM estudiante_curso ec
+      INNER JOIN usuarios u ON ec.id_estudiante = u.id_usuario
+      INNER JOIN modulos_curso m ON ec.id_curso = m.id_curso
+      INNER JOIN tareas_modulo t ON m.id_modulo = t.id_modulo AND t.estado = 'activo'
+      LEFT JOIN entregas_tareas e ON t.id_tarea = e.id_tarea AND e.id_estudiante = u.id_usuario
+      LEFT JOIN calificaciones_tareas cal ON e.id_entrega = cal.id_entrega
+      WHERE m.id_modulo = ?
+      GROUP BY u.id_usuario, u.nombre, u.apellido
+      ORDER BY u.apellido, u.nombre
+    `, [id_modulo]);
+    
+    return result;
+  }
+
+  // Publicar promedios de un módulo
+  static async publicarPromedios(id_modulo) {
+    const [result] = await pool.execute(
+      'UPDATE modulos_curso SET promedios_publicados = TRUE WHERE id_modulo = ?',
+      [id_modulo]
+    );
+    return result.affectedRows > 0;
+  }
+
+  // Ocultar promedios de un módulo
+  static async ocultarPromedios(id_modulo) {
+    const [result] = await pool.execute(
+      'UPDATE modulos_curso SET promedios_publicados = FALSE WHERE id_modulo = ?',
+      [id_modulo]
+    );
+    return result.affectedRows > 0;
+  }
+
+  // Verificar si los promedios están publicados
+  static async estanPromediosPublicados(id_modulo) {
+    const [result] = await pool.execute(
+      'SELECT promedios_publicados FROM modulos_curso WHERE id_modulo = ?',
+      [id_modulo]
+    );
+    return result.length > 0 ? result[0].promedios_publicados : false;
   }
 }
 

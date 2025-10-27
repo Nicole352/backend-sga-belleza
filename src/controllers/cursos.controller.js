@@ -194,14 +194,15 @@ module.exports = {
           t.id_tarea,
           t.titulo,
           t.nota_maxima,
+          t.ponderacion,
           t.fecha_limite,
           m.id_modulo,
           m.nombre AS modulo_nombre,
-          m.numero_orden AS modulo_orden
+          m.id_modulo AS modulo_orden
         FROM modulos_curso m
         INNER JOIN tareas_modulo t ON m.id_modulo = t.id_modulo
         WHERE m.id_curso = ? AND t.estado = 'activo'
-        ORDER BY m.numero_orden ASC, t.fecha_limite ASC
+        ORDER BY m.id_modulo ASC, t.fecha_limite ASC
       `, [id]);
 
       return res.json({ success: true, tareas: rows });

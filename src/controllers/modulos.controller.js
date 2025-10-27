@@ -47,7 +47,6 @@ async function createModulo(req, res) {
       id_curso,
       nombre,
       descripcion,
-      numero_orden,
       fecha_inicio,
       fecha_fin
     } = req.body;
@@ -64,24 +63,11 @@ async function createModulo(req, res) {
       return res.status(403).json({ error: 'Usuario no es docente' });
     }
 
-    // Si no se proporciona número de orden, obtener el siguiente disponible
-    let orden = numero_orden;
-    if (!orden) {
-      orden = await ModulosModel.getNextOrden(id_curso);
-    } else {
-      // Verificar que no exista otro módulo con el mismo orden
-      const existeOrden = await ModulosModel.existsOrden(id_curso, orden);
-      if (existeOrden) {
-        return res.status(400).json({ error: 'Ya existe un módulo con ese número de orden' });
-      }
-    }
-
     const id_modulo = await ModulosModel.create({
       id_curso,
       id_docente,
       nombre,
       descripcion,
-      numero_orden: orden,
       fecha_inicio,
       fecha_fin
     });
@@ -117,7 +103,6 @@ async function updateModulo(req, res) {
     const {
       nombre,
       descripcion,
-      numero_orden,
       fecha_inicio,
       fecha_fin,
       estado
@@ -136,19 +121,9 @@ async function updateModulo(req, res) {
       return res.status(403).json({ error: 'No tienes permiso para modificar este módulo' });
     }
 
-    // Si se cambia el orden, verificar que no exista otro módulo con ese orden
-    if (numero_orden) {
-      const modulo = await ModulosModel.getById(id);
-      const existeOrden = await ModulosModel.existsOrden(modulo.id_curso, numero_orden, id);
-      if (existeOrden) {
-        return res.status(400).json({ error: 'Ya existe un módulo con ese número de orden' });
-      }
-    }
-
     const updated = await ModulosModel.update(id, {
       nombre,
       descripcion,
-      numero_orden,
       fecha_inicio,
       fecha_fin,
       estado
@@ -168,6 +143,96 @@ async function updateModulo(req, res) {
   } catch (error) {
     console.error('Error en updateModulo:', error);
     return res.status(500).json({ error: 'Error actualizando módulo' });
+  }
+}
+
+// PUT /api/modulos/:id/cerrar - Cerrar módulo
+async function cerrarModulo(req, res) {
+  try {
+    const { id } = req.params;
+    console.log('Intentando cerrar módulo con ID:', id);
+
+    // Obtener id_docente del usuario autenticado
+    const id_docente = await DocentesModel.getDocenteIdByUserId(req.user.id_usuario);
+    console.log('ID de docente obtenido:', id_docente);
+    
+    if (!id_docente) {
+      return res.status(403).json({ error: 'Usuario no es docente' });
+    }
+
+    // Verificar que el módulo pertenece al docente
+    const belongsToDocente = await ModulosModel.belongsToDocente(id, id_docente);
+    console.log('¿El módulo pertenece al docente?', belongsToDocente);
+    if (!belongsToDocente) {
+      return res.status(403).json({ error: 'No tienes permiso para modificar este módulo' });
+    }
+
+    // Actualizar el estado del módulo a 'finalizado'
+    const updated = await ModulosModel.update(id, {
+      estado: 'finalizado'
+    });
+    console.log('Resultado de actualización:', updated);
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Módulo no encontrado' });
+    }
+
+    const modulo = await ModulosModel.getById(id);
+    console.log('Módulo actualizado:', modulo);
+
+    return res.json({
+      success: true,
+      message: 'Módulo cerrado exitosamente',
+      modulo
+    });
+  } catch (error) {
+    console.error('Error en cerrarModulo:', error);
+    return res.status(500).json({ error: 'Error cerrando módulo: ' + error.message });
+  }
+}
+
+// PUT /api/modulos/:id/reabrir - Reabrir módulo
+async function reabrirModulo(req, res) {
+  try {
+    const { id } = req.params;
+    console.log('Intentando reabrir módulo con ID:', id);
+
+    // Obtener id_docente del usuario autenticado
+    const id_docente = await DocentesModel.getDocenteIdByUserId(req.user.id_usuario);
+    console.log('ID de docente obtenido:', id_docente);
+    
+    if (!id_docente) {
+      return res.status(403).json({ error: 'Usuario no es docente' });
+    }
+
+    // Verificar que el módulo pertenece al docente
+    const belongsToDocente = await ModulosModel.belongsToDocente(id, id_docente);
+    console.log('¿El módulo pertenece al docente?', belongsToDocente);
+    if (!belongsToDocente) {
+      return res.status(403).json({ error: 'No tienes permiso para modificar este módulo' });
+    }
+
+    // Actualizar el estado del módulo a 'activo'
+    const updated = await ModulosModel.update(id, {
+      estado: 'activo'
+    });
+    console.log('Resultado de actualización:', updated);
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Módulo no encontrado' });
+    }
+
+    const modulo = await ModulosModel.getById(id);
+    console.log('Módulo actualizado:', modulo);
+
+    return res.json({
+      success: true,
+      message: 'Módulo reabierto exitosamente',
+      modulo
+    });
+  } catch (error) {
+    console.error('Error en reabrirModulo:', error);
+    return res.status(500).json({ error: 'Error reabriendo módulo: ' + error.message });
   }
 }
 
@@ -222,11 +287,93 @@ async function getModuloStats(req, res) {
   }
 }
 
+// GET /api/modulos/:id/promedio-ponderado/:id_estudiante - Obtener promedio ponderado de un estudiante
+async function getPromedioPonderado(req, res) {
+  try {
+    const { id, id_estudiante } = req.params;
+    
+    const promedio = await ModulosModel.getPromedioPonderado(id, id_estudiante);
+    
+    return res.json({
+      success: true,
+      promedio
+    });
+  } catch (error) {
+    console.error('Error en getPromedioPonderado:', error);
+    return res.status(500).json({ error: 'Error obteniendo promedio ponderado' });
+  }
+}
+
+// GET /api/modulos/:id/promedios-ponderados - Obtener promedios de todos los estudiantes
+async function getPromediosPonderados(req, res) {
+  try {
+    const { id } = req.params;
+    
+    const promedios = await ModulosModel.getPromediosPonderadosPorModulo(id);
+    
+    return res.json({
+      success: true,
+      promedios
+    });
+  } catch (error) {
+    console.error('Error en getPromediosPonderados:', error);
+    return res.status(500).json({ error: 'Error obteniendo promedios ponderados' });
+  }
+}
+
+// PUT /api/modulos/:id/publicar-promedios - Publicar promedios del módulo
+async function publicarPromedios(req, res) {
+  try {
+    const { id } = req.params;
+    
+    const updated = await ModulosModel.publicarPromedios(id);
+    
+    if (!updated) {
+      return res.status(404).json({ error: 'Módulo no encontrado' });
+    }
+    
+    return res.json({
+      success: true,
+      message: 'Promedios publicados exitosamente'
+    });
+  } catch (error) {
+    console.error('Error en publicarPromedios:', error);
+    return res.status(500).json({ error: 'Error publicando promedios' });
+  }
+}
+
+// PUT /api/modulos/:id/ocultar-promedios - Ocultar promedios del módulo
+async function ocultarPromedios(req, res) {
+  try {
+    const { id } = req.params;
+    
+    const updated = await ModulosModel.ocultarPromedios(id);
+    
+    if (!updated) {
+      return res.status(404).json({ error: 'Módulo no encontrado' });
+    }
+    
+    return res.json({
+      success: true,
+      message: 'Promedios ocultados exitosamente'
+    });
+  } catch (error) {
+    console.error('Error en ocultarPromedios:', error);
+    return res.status(500).json({ error: 'Error ocultando promedios' });
+  }
+}
+
 module.exports = {
   getModulosByCurso,
   getModuloById,
   createModulo,
   updateModulo,
   deleteModulo,
-  getModuloStats
+  getModuloStats,
+  cerrarModulo,
+  reabrirModulo,
+  getPromedioPonderado,
+  getPromediosPonderados,
+  publicarPromedios,
+  ocultarPromedios
 };

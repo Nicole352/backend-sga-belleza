@@ -65,6 +65,11 @@ class AsistenciasModel {
         a.observaciones,
         a.justificacion,
         a.hora_registro,
+        a.fecha_actualizacion,
+        a.documento_nombre_original,
+        a.documento_size_kb,
+        a.documento_mime,
+        (CASE WHEN a.documento_justificacion IS NOT NULL THEN 1 ELSE 0 END) AS tiene_documento,
         u.nombre,
         u.apellido,
         u.cedula
@@ -86,19 +91,51 @@ class AsistenciasModel {
       fecha,
       estado,
       observaciones = null,
-      justificacion = null
+      justificacion = null,
+      documento_justificacion = null,
+      documento_mime = null,
+      documento_size_kb = null,
+      documento_nombre_original = null
     } = asistenciaData;
 
-    const [result] = await pool.execute(`
+    // Construir consulta dinámica para manejar documentos opcionales
+    let query = `
       INSERT INTO asistencias 
-        (id_curso, id_estudiante, id_docente, fecha, estado, observaciones, justificacion)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+        (id_curso, id_estudiante, id_docente, fecha, estado, observaciones, justificacion
+    `;
+    
+    const params = [id_curso, id_estudiante, id_docente, fecha, estado, observaciones, justificacion];
+    
+    // Agregar campos de documento si están presentes
+    if (documento_justificacion) {
+      query += `, documento_justificacion, documento_mime, documento_size_kb, documento_nombre_original`;
+      params.push(documento_justificacion, documento_mime, documento_size_kb, documento_nombre_original);
+    }
+    
+    query += `)
+      VALUES (?, ?, ?, ?, ?, ?, ?`;
+    
+    if (documento_justificacion) {
+      query += `, ?, ?, ?, ?`;
+    }
+    
+    query += `)
       ON DUPLICATE KEY UPDATE
         estado = VALUES(estado),
         observaciones = VALUES(observaciones),
         justificacion = VALUES(justificacion),
-        fecha_actualizacion = CURRENT_TIMESTAMP
-    `, [id_curso, id_estudiante, id_docente, fecha, estado, observaciones, justificacion]);
+        fecha_actualizacion = CURRENT_TIMESTAMP`;
+    
+    // Actualizar campos de documento si están presentes
+    if (documento_justificacion) {
+      query += `,
+        documento_justificacion = VALUES(documento_justificacion),
+        documento_mime = VALUES(documento_mime),
+        documento_size_kb = VALUES(documento_size_kb),
+        documento_nombre_original = VALUES(documento_nombre_original)`;
+    }
+
+    const [result] = await pool.execute(query, params);
 
     return result.affectedRows > 0;
   }
@@ -111,18 +148,49 @@ class AsistenciasModel {
       await connection.beginTransaction();
 
       for (const registro of asistencias) {
-        const { id_estudiante, estado, observaciones, justificacion } = registro;
+        const { id_estudiante, estado, observaciones, justificacion,
+                documento_justificacion = null, documento_mime = null, 
+                documento_size_kb = null, documento_nombre_original = null } = registro;
 
-        await connection.execute(`
+        // Construir consulta dinámica para manejar documentos opcionales
+        let query = `
           INSERT INTO asistencias 
-            (id_curso, id_estudiante, id_docente, fecha, estado, observaciones, justificacion)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+            (id_curso, id_estudiante, id_docente, fecha, estado, observaciones, justificacion
+        `;
+        
+        const params = [id_curso, id_estudiante, id_docente, fecha, estado, 
+                       observaciones || null, justificacion || null];
+        
+        // Agregar campos de documento si están presentes
+        if (documento_justificacion) {
+          query += `, documento_justificacion, documento_mime, documento_size_kb, documento_nombre_original`;
+          params.push(documento_justificacion, documento_mime, documento_size_kb, documento_nombre_original);
+        }
+        
+        query += `)
+          VALUES (?, ?, ?, ?, ?, ?, ?`;
+        
+        if (documento_justificacion) {
+          query += `, ?, ?, ?, ?`;
+        }
+        
+        query += `)
           ON DUPLICATE KEY UPDATE
             estado = VALUES(estado),
             observaciones = VALUES(observaciones),
             justificacion = VALUES(justificacion),
-            fecha_actualizacion = CURRENT_TIMESTAMP
-        `, [id_curso, id_estudiante, id_docente, fecha, estado, observaciones || null, justificacion || null]);
+            fecha_actualizacion = CURRENT_TIMESTAMP`;
+        
+        // Actualizar campos de documento si están presentes
+        if (documento_justificacion) {
+          query += `,
+            documento_justificacion = VALUES(documento_justificacion),
+            documento_mime = VALUES(documento_mime),
+            documento_size_kb = VALUES(documento_size_kb),
+            documento_nombre_original = VALUES(documento_nombre_original)`;
+        }
+
+        await connection.execute(query, params);
       }
 
       await connection.commit();
@@ -145,6 +213,11 @@ class AsistenciasModel {
         a.observaciones,
         a.justificacion,
         a.hora_registro,
+        a.fecha_actualizacion,
+        a.documento_nombre_original,
+        a.documento_size_kb,
+        a.documento_mime,
+        (CASE WHEN a.documento_justificacion IS NOT NULL THEN 1 ELSE 0 END) AS tiene_documento,
         CONCAT(d.nombres, ' ', d.apellidos) AS docente_nombre
       FROM asistencias a
       INNER JOIN docentes d ON a.id_docente = d.id_docente

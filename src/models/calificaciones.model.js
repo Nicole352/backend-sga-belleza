@@ -96,8 +96,11 @@ class CalificacionesModel {
         c.*,
         t.titulo as tarea_titulo,
         t.nota_maxima,
+        t.ponderacion,
+        m.id_modulo,
         m.nombre as modulo_nombre,
-        m.numero_orden as modulo_orden,
+        m.id_modulo as modulo_orden,
+        m.promedios_publicados,
         e.fecha_entrega,
         d.nombres as docente_nombres,
         d.apellidos as docente_apellidos
@@ -107,7 +110,7 @@ class CalificacionesModel {
       INNER JOIN modulos_curso m ON t.id_modulo = m.id_modulo
       INNER JOIN docentes d ON c.calificado_por = d.id_docente
       WHERE e.id_estudiante = ? AND m.id_curso = ?
-      ORDER BY m.numero_orden ASC, t.fecha_limite ASC
+      ORDER BY m.id_modulo ASC, t.fecha_limite ASC
     `, [id_estudiante, id_curso]);
     
     return calificaciones;

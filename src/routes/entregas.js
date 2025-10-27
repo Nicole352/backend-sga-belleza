@@ -24,6 +24,9 @@ router.post('/', entregasController.createEntrega);
 // PUT /api/entregas/:id - Actualizar entrega (estudiante propietario)
 router.put('/:id', entregasController.updateEntrega);
 
+// DELETE /api/entregas/:id - Eliminar entrega (estudiante propietario)
+router.delete('/:id', entregasController.deleteEntrega);
+
 // POST /api/entregas/:id/calificar - Calificar entrega (docente)
 router.post('/:id/calificar', entregasController.calificarEntrega);
 

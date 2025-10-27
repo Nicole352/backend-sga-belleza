@@ -5,13 +5,21 @@ class EntregasModel {
   static async getAllByTarea(id_tarea) {
     const [entregas] = await pool.execute(`
       SELECT 
-        e.*,
+        e.id_entrega,
+        e.id_tarea,
+        e.id_estudiante,
+        e.archivo_nombre_original as archivo_nombre,
+        e.archivo_mime,
+        e.archivo_size_kb,
+        e.comentario_estudiante,
+        e.fecha_entrega,
+        e.estado,
         u.nombre as estudiante_nombre,
         u.apellido as estudiante_apellido,
         u.cedula as estudiante_identificacion,
         u.email as estudiante_email,
-        c.nota,
-        c.comentario_docente,
+        c.nota as calificacion,
+        c.comentario_docente as comentario,
         c.resultado,
         c.fecha_calificacion
       FROM entregas_tareas e
@@ -177,6 +185,15 @@ class EntregasModel {
       [id_entrega, id_estudiante]
     );
     return result[0].count > 0;
+  }
+
+  // Eliminar entrega
+  static async delete(id_entrega) {
+    const [result] = await pool.execute(
+      'DELETE FROM entregas_tareas WHERE id_entrega = ?',
+      [id_entrega]
+    );
+    return result.affectedRows > 0;
   }
 }
 

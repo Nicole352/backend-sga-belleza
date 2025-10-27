@@ -164,6 +164,45 @@ async function updateEntrega(req, res) {
   });
 }
 
+// DELETE /api/entregas/:id - Eliminar entrega (solo si no está calificada)
+async function deleteEntrega(req, res) {
+  try {
+    const { id } = req.params;
+    const id_estudiante = req.user.id_usuario;
+
+    // Verificar que la entrega pertenece al estudiante
+    const belongsToEstudiante = await EntregasModel.belongsToEstudiante(id, id_estudiante);
+    if (!belongsToEstudiante) {
+      return res.status(403).json({ error: 'No tienes permiso para eliminar esta entrega' });
+    }
+
+    // Verificar que no esté calificada
+    const entrega = await EntregasModel.getById(id);
+    if (!entrega) {
+      return res.status(404).json({ error: 'Entrega no encontrada' });
+    }
+
+    if (entrega.calificacion !== null && entrega.calificacion !== undefined) {
+      return res.status(400).json({ error: 'No puedes eliminar una entrega que ya ha sido calificada' });
+    }
+
+    // Eliminar la entrega
+    const deleted = await EntregasModel.delete(id);
+
+    if (!deleted) {
+      return res.status(404).json({ error: 'Entrega no encontrada' });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Entrega eliminada exitosamente'
+    });
+  } catch (error) {
+    console.error('Error en deleteEntrega:', error);
+    return res.status(500).json({ error: 'Error eliminando entrega' });
+  }
+}
+
 // GET /api/entregas/:id/archivo - Descargar archivo de entrega
 async function getArchivoEntrega(req, res) {
   try {
@@ -245,6 +284,7 @@ module.exports = {
   getEntregaById,
   createEntrega,
   updateEntrega,
+  deleteEntrega,
   getArchivoEntrega,
   getEntregaByTareaEstudiante,
   calificarEntrega

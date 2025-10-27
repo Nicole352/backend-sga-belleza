@@ -81,8 +81,9 @@ class TareasModel {
       titulo,
       descripcion,
       instrucciones,
-      nota_maxima = 20.00,
-      nota_minima_aprobacion = 14.00,
+      nota_maxima = 10.00,
+      nota_minima_aprobacion = 7.00,
+      ponderacion = 1.00,
       fecha_limite,
       permite_archivo = true,
       tamano_maximo_mb = 5,
@@ -93,9 +94,9 @@ class TareasModel {
     const [result] = await pool.execute(`
       INSERT INTO tareas_modulo (
         id_modulo, id_docente, titulo, descripcion, instrucciones,
-        nota_maxima, nota_minima_aprobacion, fecha_limite,
+        nota_maxima, nota_minima_aprobacion, ponderacion, fecha_limite,
         permite_archivo, tamano_maximo_mb, formatos_permitidos, estado
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       id_modulo,
       id_docente,
@@ -104,6 +105,7 @@ class TareasModel {
       instrucciones ? instrucciones.trim() : null,
       nota_maxima,
       nota_minima_aprobacion,
+      ponderacion,
       fecha_limite,
       permite_archivo,
       tamano_maximo_mb,
@@ -122,6 +124,7 @@ class TareasModel {
       instrucciones,
       nota_maxima,
       nota_minima_aprobacion,
+      ponderacion,
       fecha_limite,
       permite_archivo,
       tamano_maximo_mb,
@@ -136,6 +139,7 @@ class TareasModel {
           instrucciones = ?,
           nota_maxima = ?,
           nota_minima_aprobacion = ?,
+          ponderacion = ?,
           fecha_limite = ?,
           permite_archivo = ?,
           tamano_maximo_mb = ?,
@@ -148,6 +152,7 @@ class TareasModel {
       instrucciones ? instrucciones.trim() : null,
       nota_maxima,
       nota_minima_aprobacion,
+      ponderacion,
       fecha_limite,
       permite_archivo,
       tamano_maximo_mb,
@@ -183,7 +188,7 @@ class TareasModel {
       SELECT 
         t.*,
         m.nombre as modulo_nombre,
-        m.numero_orden as modulo_orden,
+        m.id_modulo as modulo_orden,
         c.nombre as curso_nombre,
         d.nombres as docente_nombres,
         d.apellidos as docente_apellidos,
@@ -205,7 +210,7 @@ class TareasModel {
       LEFT JOIN entregas_tareas e ON t.id_tarea = e.id_tarea AND e.id_estudiante = ?
       LEFT JOIN calificaciones_tareas cal ON e.id_entrega = cal.id_entrega
       WHERE m.id_curso = ? AND t.estado = 'activo'
-      ORDER BY m.numero_orden ASC, t.fecha_limite ASC
+      ORDER BY m.id_modulo ASC, t.fecha_limite ASC
     `, [id_estudiante, id_curso]);
     
     return tareas;

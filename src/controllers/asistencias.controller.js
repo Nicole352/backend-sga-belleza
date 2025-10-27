@@ -100,6 +100,10 @@ async function getAsistenciaByFechaController(req, res) {
         a.justificacion,
         a.hora_registro,
         a.fecha,
+        a.documento_nombre_original,
+        a.documento_size_kb,
+        a.documento_mime,
+        (CASE WHEN a.documento_justificacion IS NOT NULL THEN 1 ELSE 0 END) AS tiene_documento,
         u.nombre,
         u.apellido,
         u.cedula
@@ -119,8 +123,8 @@ async function getAsistenciaByFechaController(req, res) {
       query += ` AND a.fecha BETWEEN ? AND ?`;
       params.push(fecha_inicio, fecha_fin);
     } else {
-      return res.status(400).json({ 
-        error: 'Se requiere fecha específica o rango (fecha_inicio y fecha_fin)' 
+      return res.status(400).json({
+        error: 'Se requiere fecha específica o rango (fecha_inicio y fecha_fin)'
       });
     }
 
@@ -139,13 +143,21 @@ async function getAsistenciaByFechaController(req, res) {
 // Guardar o actualizar múltiples registros de asistencia
 async function guardarAsistenciaController(req, res) {
   const connection = await pool.getConnection();
-  
+
   try {
-    const { id_curso, id_docente, fecha, asistencias } = req.body;
+    // Parsear el JSON que viene en el campo 'data'
+    let bodyData;
+    if (req.body.data) {
+      bodyData = JSON.parse(req.body.data);
+    } else {
+      bodyData = req.body;
+    }
+
+    const { id_curso, id_docente, fecha, asistencias } = bodyData;
 
     if (!id_curso || !id_docente || !fecha || !Array.isArray(asistencias)) {
-      return res.status(400).json({ 
-        error: 'Datos incompletos: se requiere id_curso, id_docente, fecha y array de asistencias' 
+      return res.status(400).json({
+        error: 'Datos incompletos: se requiere id_curso, id_docente, fecha y array de asistencias'
       });
     }
 
@@ -154,23 +166,75 @@ async function guardarAsistenciaController(req, res) {
     const resultados = [];
 
     for (const registro of asistencias) {
-      const { id_estudiante, estado, observaciones, justificacion } = registro;
+      const { id_estudiante, estado, observaciones } = registro;
+
+      // Buscar archivo adjunto para este registro si existe
+      let documento_justificacion = null;
+      let documento_mime = null;
+      let documento_size_kb = null;
+      let documento_nombre_original = null;
+
+      if (req.files && req.files.length > 0) {
+        // Buscar archivo para este estudiante específico
+        const archivoEstudiante = req.files.find(file =>
+          file.fieldname === `documento_${id_estudiante}`
+        );
+
+        if (archivoEstudiante) {
+          documento_justificacion = archivoEstudiante.buffer;
+          documento_mime = archivoEstudiante.mimetype;
+          documento_size_kb = Math.round(archivoEstudiante.size / 1024);
+          documento_nombre_original = archivoEstudiante.originalname;
+        }
+      }
 
       if (!id_estudiante || !estado) {
         continue;
       }
 
+      // La justificación viene en el campo observaciones cuando el estado es 'justificado'
+      const justificacion = (estado === 'justificado' && observaciones) ? observaciones : null;
+
       // Intentar insertar, si ya existe actualizar (UPSERT)
-      const [result] = await connection.execute(`
+      let query = `
         INSERT INTO asistencias 
-          (id_curso, id_estudiante, id_docente, fecha, estado, observaciones, justificacion)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+          (id_curso, id_estudiante, id_docente, fecha, estado, observaciones, justificacion
+      `;
+
+      const params = [id_curso, id_estudiante, id_docente, fecha, estado,
+        observaciones || null, justificacion];
+
+      // Agregar campos de documento si están presentes
+      if (documento_justificacion) {
+        query += `, documento_justificacion, documento_mime, documento_size_kb, documento_nombre_original`;
+        params.push(documento_justificacion, documento_mime || null,
+          documento_size_kb || null, documento_nombre_original || null);
+      }
+
+      query += `)
+        VALUES (?, ?, ?, ?, ?, ?, ?`;
+
+      if (documento_justificacion) {
+        query += `, ?, ?, ?, ?`;
+      }
+
+      query += `)
         ON DUPLICATE KEY UPDATE
           estado = VALUES(estado),
           observaciones = VALUES(observaciones),
           justificacion = VALUES(justificacion),
-          fecha_actualizacion = CURRENT_TIMESTAMP
-      `, [id_curso, id_estudiante, id_docente, fecha, estado, observaciones || null, justificacion || null]);
+          fecha_actualizacion = CURRENT_TIMESTAMP`;
+
+      // Actualizar campos de documento si están presentes
+      if (documento_justificacion) {
+        query += `,
+          documento_justificacion = VALUES(documento_justificacion),
+          documento_mime = VALUES(documento_mime),
+          documento_size_kb = VALUES(documento_size_kb),
+          documento_nombre_original = VALUES(documento_nombre_original)`;
+      }
+
+      const [result] = await connection.execute(query, params);
 
       resultados.push({
         id_estudiante,
@@ -191,10 +255,10 @@ async function guardarAsistenciaController(req, res) {
 
     await connection.commit();
 
-    return res.json({ 
-      success: true, 
+    return res.json({
+      success: true,
       message: 'Asistencia guardada correctamente',
-      resultados 
+      resultados
     });
 
   } catch (err) {
@@ -225,6 +289,10 @@ async function getHistorialEstudianteController(req, res) {
         a.observaciones,
         a.justificacion,
         a.hora_registro,
+        a.documento_nombre_original,
+        a.documento_size_kb,
+        a.documento_mime,
+        (CASE WHEN a.documento_justificacion IS NOT NULL THEN 1 ELSE 0 END) AS tiene_documento,
         CONCAT(d.nombres, ' ', d.apellidos) AS docente_nombre
       FROM asistencias a
       INNER JOIN docentes d ON a.id_docente = d.id_docente
@@ -245,8 +313,8 @@ async function getHistorialEstudianteController(req, res) {
       WHERE id_estudiante = ? AND id_curso = ?
     `, [id_estudiante, id_curso]);
 
-    return res.json({ 
-      success: true, 
+    return res.json({
+      success: true,
       historial,
       estadisticas: stats[0] || {}
     });
