@@ -1,6 +1,7 @@
 const { listCursos, getCursoById, createCurso, updateCurso, deleteCurso } = require('../models/cursos.model');
 const { pool } = require('../config/database');
 const { registrarAuditoria } = require('../utils/auditoria');
+const ExcelJS = require('exceljs');
 
 // Caché simple para cursos disponibles (30 segundos) 
 let cursosDisponiblesCache = null;
@@ -233,6 +234,241 @@ module.exports = {
     } catch (err) {
       console.error('Error obteniendo calificaciones del curso:', err);
       return res.status(500).json({ error: 'Error al obtener calificaciones del curso' });
+    }
+  },
+
+  // GET /api/cursos/reporte/excel - Generar reporte Excel de cursos
+  async generarReporteExcel(req, res) {
+    try {
+      // 1. Obtener todos los cursos con información completa
+      const [cursos] = await pool.execute(`
+        SELECT 
+          c.codigo_curso,
+          c.nombre as curso_nombre,
+          tc.nombre as tipo_curso,
+          c.horario,
+          c.capacidad_maxima,
+          c.cupos_disponibles,
+          c.fecha_inicio,
+          c.fecha_fin,
+          c.estado,
+          COUNT(DISTINCT m.id_matricula) as estudiantes_matriculados
+        FROM cursos c
+        INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
+        LEFT JOIN matriculas m ON m.id_curso = c.id_curso
+        GROUP BY c.id_curso, c.codigo_curso, c.nombre, tc.nombre, c.horario, 
+                 c.capacidad_maxima, c.cupos_disponibles, c.fecha_inicio, c.fecha_fin, c.estado
+        ORDER BY c.fecha_inicio DESC, c.nombre
+      `);
+
+      // 2. Obtener estadísticas generales
+      const [estadisticas] = await pool.execute(`
+        SELECT 
+          COUNT(*) as total_cursos,
+          COUNT(CASE WHEN estado = 'activo' THEN 1 END) as activos,
+          COUNT(CASE WHEN estado = 'planificado' THEN 1 END) as planificados,
+          COUNT(CASE WHEN estado = 'finalizado' THEN 1 END) as finalizados,
+          COUNT(CASE WHEN estado = 'cancelado' THEN 1 END) as cancelados,
+          SUM(capacidad_maxima) as capacidad_total,
+          SUM(cupos_disponibles) as cupos_disponibles_total,
+          SUM(capacidad_maxima - cupos_disponibles) as estudiantes_totales
+        FROM cursos
+      `);
+
+      // 3. Obtener resumen por tipo de curso
+      const [resumenPorTipo] = await pool.execute(`
+        SELECT 
+          tc.nombre as tipo_curso,
+          COUNT(c.id_curso) as total_cursos,
+          SUM(c.capacidad_maxima) as capacidad_total,
+          SUM(c.capacidad_maxima - c.cupos_disponibles) as estudiantes_matriculados,
+          ROUND(AVG(c.capacidad_maxima - c.cupos_disponibles), 2) as promedio_estudiantes
+        FROM tipos_cursos tc
+        LEFT JOIN cursos c ON c.id_tipo_curso = tc.id_tipo_curso
+        WHERE tc.estado = 'activo'
+        GROUP BY tc.id_tipo_curso, tc.nombre
+        ORDER BY total_cursos DESC
+      `);
+
+      // Crear workbook
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Sistema SGA Belleza';
+      workbook.created = new Date();
+
+      // ==================== HOJA 1: CURSOS DETALLADOS ====================
+      const sheet1 = workbook.addWorksheet('Cursos Detallados');
+
+      // Configurar columnas
+      sheet1.columns = [
+        { header: 'Código', key: 'codigo', width: 15 },
+        { header: 'Nombre del Curso', key: 'nombre', width: 30 },
+        { header: 'Tipo', key: 'tipo', width: 20 },
+        { header: 'Horario', key: 'horario', width: 15 },
+        { header: 'Capacidad', key: 'capacidad', width: 12 },
+        { header: 'Matriculados', key: 'matriculados', width: 15 },
+        { header: 'Cupos Disp.', key: 'cupos', width: 12 },
+        { header: 'Fecha Inicio', key: 'fecha_inicio', width: 15 },
+        { header: 'Fecha Fin', key: 'fecha_fin', width: 15 },
+        { header: 'Estado', key: 'estado', width: 15 }
+      ];
+
+      // Estilo del encabezado
+      sheet1.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      sheet1.getRow(1).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFDC2626' }
+      };
+      sheet1.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+      sheet1.getRow(1).height = 25;
+
+      // Agregar datos
+      cursos.forEach(curso => {
+        sheet1.addRow({
+          codigo: curso.codigo_curso,
+          nombre: curso.curso_nombre,
+          tipo: curso.tipo_curso,
+          horario: curso.horario.charAt(0).toUpperCase() + curso.horario.slice(1),
+          capacidad: curso.capacidad_maxima,
+          matriculados: curso.estudiantes_matriculados,
+          cupos: curso.cupos_disponibles,
+          fecha_inicio: new Date(curso.fecha_inicio).toLocaleDateString('es-ES'),
+          fecha_fin: new Date(curso.fecha_fin).toLocaleDateString('es-ES'),
+          estado: curso.estado.charAt(0).toUpperCase() + curso.estado.slice(1)
+        });
+      });
+
+      // Aplicar bordes y colores alternados
+      sheet1.eachRow((row, rowNumber) => {
+        if (rowNumber > 1) {
+          row.eachCell((cell) => {
+            cell.border = {
+              top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+              left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+              bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+              right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
+            };
+          });
+          
+          if (rowNumber % 2 === 0) {
+            row.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFF9FAFB' }
+            };
+          }
+        }
+      });
+
+      // ==================== HOJA 2: ESTADÍSTICAS ====================
+      const sheet2 = workbook.addWorksheet('Estadísticas');
+      sheet2.properties.defaultColWidth = 25;
+
+      const stats = estadisticas[0];
+
+      // Título principal
+      sheet2.mergeCells('A1:B1');
+      sheet2.getCell('A1').value = '📊 ESTADÍSTICAS GENERALES DE CURSOS';
+      sheet2.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FFDC2626' } };
+      sheet2.getCell('A1').fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFFEF2F2' }
+      };
+      sheet2.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
+      sheet2.getRow(1).height = 30;
+
+      // Estadísticas generales
+      const startRow = 3;
+      const statsData = [
+        ['Total de Cursos', stats.total_cursos],
+        ['Cursos Activos', stats.activos],
+        ['Cursos Planificados', stats.planificados],
+        ['Cursos Finalizados', stats.finalizados],
+        ['Cursos Cancelados', stats.cancelados],
+        ['Capacidad Total', stats.capacidad_total],
+        ['Cupos Disponibles', stats.cupos_disponibles_total],
+        ['Estudiantes Matriculados', stats.estudiantes_totales]
+      ];
+
+      statsData.forEach((data, index) => {
+        const row = startRow + index;
+        sheet2.getCell(`A${row}`).value = data[0];
+        sheet2.getCell(`B${row}`).value = data[1];
+        
+        sheet2.getCell(`A${row}`).font = { bold: true, size: 11 };
+        sheet2.getCell(`B${row}`).font = { size: 11, color: { argb: 'FFDC2626' }, bold: true };
+        sheet2.getCell(`B${row}`).alignment = { horizontal: 'center' };
+      });
+
+      // Sección: Resumen por Tipo de Curso
+      const tipoRow = startRow + statsData.length + 2;
+      sheet2.mergeCells(`A${tipoRow}:E${tipoRow}`);
+      sheet2.getCell(`A${tipoRow}`).value = '📚 RESUMEN POR TIPO DE CURSO';
+      sheet2.getCell(`A${tipoRow}`).font = { bold: true, size: 12, color: { argb: 'FF2563EB' } };
+      sheet2.getCell(`A${tipoRow}`).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFDBEAFE' }
+      };
+      sheet2.getCell(`A${tipoRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
+      sheet2.getRow(tipoRow).height = 25;
+
+      // Encabezados tabla resumen
+      const headerRow = tipoRow + 2;
+      sheet2.getCell(`A${headerRow}`).value = 'Tipo de Curso';
+      sheet2.getCell(`B${headerRow}`).value = 'Total Cursos';
+      sheet2.getCell(`C${headerRow}`).value = 'Capacidad Total';
+      sheet2.getCell(`D${headerRow}`).value = 'Matriculados';
+      sheet2.getCell(`E${headerRow}`).value = 'Promedio Est.';
+
+      ['A', 'B', 'C', 'D', 'E'].forEach(col => {
+        sheet2.getCell(`${col}${headerRow}`).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+        sheet2.getCell(`${col}${headerRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+        sheet2.getCell(`${col}${headerRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+
+      // Datos resumen por tipo
+      let dataRow = headerRow + 1;
+      resumenPorTipo.forEach((tipo, index) => {
+        sheet2.getCell(`A${dataRow}`).value = tipo.tipo_curso;
+        sheet2.getCell(`B${dataRow}`).value = tipo.total_cursos;
+        sheet2.getCell(`C${dataRow}`).value = tipo.capacidad_total;
+        sheet2.getCell(`D${dataRow}`).value = tipo.estudiantes_matriculados;
+        sheet2.getCell(`E${dataRow}`).value = tipo.promedio_estudiantes;
+        
+        sheet2.getCell(`B${dataRow}`).alignment = { horizontal: 'center' };
+        sheet2.getCell(`C${dataRow}`).alignment = { horizontal: 'center' };
+        sheet2.getCell(`D${dataRow}`).alignment = { horizontal: 'center' };
+        sheet2.getCell(`E${dataRow}`).alignment = { horizontal: 'center' };
+        
+        if (index % 2 === 0) {
+          ['A', 'B', 'C', 'D', 'E'].forEach(col => {
+            sheet2.getCell(`${col}${dataRow}`).fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFF9FAFB' }
+            };
+          });
+        }
+        
+        dataRow++;
+      });
+
+      // Generar el archivo
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=Reporte_Cursos_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+      await workbook.xlsx.write(res);
+      res.end();
+
+      console.log('✅ Reporte de cursos generado exitosamente');
+    } catch (error) {
+      console.error('❌ Error generando reporte de cursos:', error);
+      res.status(500).json({ 
+        error: 'Error interno del servidor',
+        details: error.message 
+      });
     }
   }
 };

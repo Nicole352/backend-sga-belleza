@@ -1,21 +1,23 @@
-const ModulosModel = require('../models/modulos.model');
-const DocentesModel = require('../models/docentes.model');
-const { registrarAuditoria } = require('../utils/auditoria');
+const ModulosModel = require("../models/modulos.model");
+const DocentesModel = require("../models/docentes.model");
+const { registrarAuditoria } = require("../utils/auditoria");
 
 // GET /api/modulos/curso/:id_curso - Obtener módulos de un curso
 async function getModulosByCurso(req, res) {
   try {
     const { id_curso } = req.params;
-    
+
     const modulos = await ModulosModel.getAllByCurso(id_curso);
-    
+
     return res.json({
       success: true,
-      modulos
+      modulos,
     });
   } catch (error) {
-    console.error('Error en getModulosByCurso:', error);
-    return res.status(500).json({ error: 'Error obteniendo módulos del curso' });
+    console.error("Error en getModulosByCurso:", error);
+    return res
+      .status(500)
+      .json({ error: "Error obteniendo módulos del curso" });
   }
 }
 
@@ -23,44 +25,40 @@ async function getModulosByCurso(req, res) {
 async function getModuloById(req, res) {
   try {
     const { id } = req.params;
-    
+
     const modulo = await ModulosModel.getById(id);
-    
+
     if (!modulo) {
-      return res.status(404).json({ error: 'Módulo no encontrado' });
+      return res.status(404).json({ error: "Módulo no encontrado" });
     }
-    
+
     return res.json({
       success: true,
-      modulo
+      modulo,
     });
   } catch (error) {
-    console.error('Error en getModuloById:', error);
-    return res.status(500).json({ error: 'Error obteniendo módulo' });
+    console.error("Error en getModuloById:", error);
+    return res.status(500).json({ error: "Error obteniendo módulo" });
   }
 }
 
 // POST /api/modulos - Crear nuevo módulo
 async function createModulo(req, res) {
   try {
-    const {
-      id_curso,
-      nombre,
-      descripcion,
-      fecha_inicio,
-      fecha_fin
-    } = req.body;
+    const { id_curso, nombre, descripcion, fecha_inicio, fecha_fin } = req.body;
 
     // Validaciones
     if (!id_curso || !nombre) {
-      return res.status(400).json({ error: 'Curso y nombre son obligatorios' });
+      return res.status(400).json({ error: "Curso y nombre son obligatorios" });
     }
 
     // Obtener id_docente del usuario autenticado
-    const id_docente = await DocentesModel.getDocenteIdByUserId(req.user.id_usuario);
-    
+    const id_docente = await DocentesModel.getDocenteIdByUserId(
+      req.user.id_usuario,
+    );
+
     if (!id_docente) {
-      return res.status(403).json({ error: 'Usuario no es docente' });
+      return res.status(403).json({ error: "Usuario no es docente" });
     }
 
     const id_modulo = await ModulosModel.create({
@@ -69,30 +67,30 @@ async function createModulo(req, res) {
       nombre,
       descripcion,
       fecha_inicio,
-      fecha_fin
+      fecha_fin,
     });
 
     const modulo = await ModulosModel.getById(id_modulo);
 
     // Registrar auditoría
     await registrarAuditoria({
-      tabla_afectada: 'modulos_curso',
-      operacion: 'INSERT',
+      tabla_afectada: "modulos_curso",
+      operacion: "INSERT",
       id_registro: id_modulo,
       usuario_id: req.user?.id_usuario,
       datos_nuevos: req.body,
-      ip_address: req.ip || '0.0.0.0',
-      user_agent: req.get('user-agent') || 'unknown'
+      ip_address: req.ip || "0.0.0.0",
+      user_agent: req.get("user-agent") || "unknown",
     });
 
     return res.status(201).json({
       success: true,
-      message: 'Módulo creado exitosamente',
-      modulo
+      message: "Módulo creado exitosamente",
+      modulo,
     });
   } catch (error) {
-    console.error('Error en createModulo:', error);
-    return res.status(500).json({ error: 'Error creando módulo' });
+    console.error("Error en createModulo:", error);
+    return res.status(500).json({ error: "Error creando módulo" });
   }
 }
 
@@ -100,25 +98,26 @@ async function createModulo(req, res) {
 async function updateModulo(req, res) {
   try {
     const { id } = req.params;
-    const {
-      nombre,
-      descripcion,
-      fecha_inicio,
-      fecha_fin,
-      estado
-    } = req.body;
+    const { nombre, descripcion, fecha_inicio, fecha_fin, estado } = req.body;
 
     // Obtener id_docente del usuario autenticado
-    const id_docente = await DocentesModel.getDocenteIdByUserId(req.user.id_usuario);
-    
+    const id_docente = await DocentesModel.getDocenteIdByUserId(
+      req.user.id_usuario,
+    );
+
     if (!id_docente) {
-      return res.status(403).json({ error: 'Usuario no es docente' });
+      return res.status(403).json({ error: "Usuario no es docente" });
     }
 
     // Verificar que el módulo pertenece al docente
-    const belongsToDocente = await ModulosModel.belongsToDocente(id, id_docente);
+    const belongsToDocente = await ModulosModel.belongsToDocente(
+      id,
+      id_docente,
+    );
     if (!belongsToDocente) {
-      return res.status(403).json({ error: 'No tienes permiso para modificar este módulo' });
+      return res
+        .status(403)
+        .json({ error: "No tienes permiso para modificar este módulo" });
     }
 
     const updated = await ModulosModel.update(id, {
@@ -126,23 +125,23 @@ async function updateModulo(req, res) {
       descripcion,
       fecha_inicio,
       fecha_fin,
-      estado
+      estado,
     });
 
     if (!updated) {
-      return res.status(404).json({ error: 'Módulo no encontrado' });
+      return res.status(404).json({ error: "Módulo no encontrado" });
     }
 
     const modulo = await ModulosModel.getById(id);
 
     return res.json({
       success: true,
-      message: 'Módulo actualizado exitosamente',
-      modulo
+      message: "Módulo actualizado exitosamente",
+      modulo,
     });
   } catch (error) {
-    console.error('Error en updateModulo:', error);
-    return res.status(500).json({ error: 'Error actualizando módulo' });
+    console.error("Error en updateModulo:", error);
+    return res.status(500).json({ error: "Error actualizando módulo" });
   }
 }
 
@@ -150,44 +149,53 @@ async function updateModulo(req, res) {
 async function cerrarModulo(req, res) {
   try {
     const { id } = req.params;
-    console.log('Intentando cerrar módulo con ID:', id);
+    console.log("Intentando cerrar módulo con ID:", id);
 
     // Obtener id_docente del usuario autenticado
-    const id_docente = await DocentesModel.getDocenteIdByUserId(req.user.id_usuario);
-    console.log('ID de docente obtenido:', id_docente);
-    
+    const id_docente = await DocentesModel.getDocenteIdByUserId(
+      req.user.id_usuario,
+    );
+    console.log("ID de docente obtenido:", id_docente);
+
     if (!id_docente) {
-      return res.status(403).json({ error: 'Usuario no es docente' });
+      return res.status(403).json({ error: "Usuario no es docente" });
     }
 
     // Verificar que el módulo pertenece al docente
-    const belongsToDocente = await ModulosModel.belongsToDocente(id, id_docente);
-    console.log('¿El módulo pertenece al docente?', belongsToDocente);
+    const belongsToDocente = await ModulosModel.belongsToDocente(
+      id,
+      id_docente,
+    );
+    console.log("¿El módulo pertenece al docente?", belongsToDocente);
     if (!belongsToDocente) {
-      return res.status(403).json({ error: 'No tienes permiso para modificar este módulo' });
+      return res
+        .status(403)
+        .json({ error: "No tienes permiso para modificar este módulo" });
     }
 
     // Actualizar el estado del módulo a 'finalizado'
     const updated = await ModulosModel.update(id, {
-      estado: 'finalizado'
+      estado: "finalizado",
     });
-    console.log('Resultado de actualización:', updated);
+    console.log("Resultado de actualización:", updated);
 
     if (!updated) {
-      return res.status(404).json({ error: 'Módulo no encontrado' });
+      return res.status(404).json({ error: "Módulo no encontrado" });
     }
 
     const modulo = await ModulosModel.getById(id);
-    console.log('Módulo actualizado:', modulo);
+    console.log("Módulo actualizado:", modulo);
 
     return res.json({
       success: true,
-      message: 'Módulo cerrado exitosamente',
-      modulo
+      message: "Módulo cerrado exitosamente",
+      modulo,
     });
   } catch (error) {
-    console.error('Error en cerrarModulo:', error);
-    return res.status(500).json({ error: 'Error cerrando módulo: ' + error.message });
+    console.error("Error en cerrarModulo:", error);
+    return res
+      .status(500)
+      .json({ error: "Error cerrando módulo: " + error.message });
   }
 }
 
@@ -195,44 +203,53 @@ async function cerrarModulo(req, res) {
 async function reabrirModulo(req, res) {
   try {
     const { id } = req.params;
-    console.log('Intentando reabrir módulo con ID:', id);
+    console.log("Intentando reabrir módulo con ID:", id);
 
     // Obtener id_docente del usuario autenticado
-    const id_docente = await DocentesModel.getDocenteIdByUserId(req.user.id_usuario);
-    console.log('ID de docente obtenido:', id_docente);
-    
+    const id_docente = await DocentesModel.getDocenteIdByUserId(
+      req.user.id_usuario,
+    );
+    console.log("ID de docente obtenido:", id_docente);
+
     if (!id_docente) {
-      return res.status(403).json({ error: 'Usuario no es docente' });
+      return res.status(403).json({ error: "Usuario no es docente" });
     }
 
     // Verificar que el módulo pertenece al docente
-    const belongsToDocente = await ModulosModel.belongsToDocente(id, id_docente);
-    console.log('¿El módulo pertenece al docente?', belongsToDocente);
+    const belongsToDocente = await ModulosModel.belongsToDocente(
+      id,
+      id_docente,
+    );
+    console.log("¿El módulo pertenece al docente?", belongsToDocente);
     if (!belongsToDocente) {
-      return res.status(403).json({ error: 'No tienes permiso para modificar este módulo' });
+      return res
+        .status(403)
+        .json({ error: "No tienes permiso para modificar este módulo" });
     }
 
     // Actualizar el estado del módulo a 'activo'
     const updated = await ModulosModel.update(id, {
-      estado: 'activo'
+      estado: "activo",
     });
-    console.log('Resultado de actualización:', updated);
+    console.log("Resultado de actualización:", updated);
 
     if (!updated) {
-      return res.status(404).json({ error: 'Módulo no encontrado' });
+      return res.status(404).json({ error: "Módulo no encontrado" });
     }
 
     const modulo = await ModulosModel.getById(id);
-    console.log('Módulo actualizado:', modulo);
+    console.log("Módulo actualizado:", modulo);
 
     return res.json({
       success: true,
-      message: 'Módulo reabierto exitosamente',
-      modulo
+      message: "Módulo reabierto exitosamente",
+      modulo,
     });
   } catch (error) {
-    console.error('Error en reabrirModulo:', error);
-    return res.status(500).json({ error: 'Error reabriendo módulo: ' + error.message });
+    console.error("Error en reabrirModulo:", error);
+    return res
+      .status(500)
+      .json({ error: "Error reabriendo módulo: " + error.message });
   }
 }
 
@@ -242,31 +259,38 @@ async function deleteModulo(req, res) {
     const { id } = req.params;
 
     // Obtener id_docente del usuario autenticado
-    const id_docente = await DocentesModel.getDocenteIdByUserId(req.user.id_usuario);
-    
+    const id_docente = await DocentesModel.getDocenteIdByUserId(
+      req.user.id_usuario,
+    );
+
     if (!id_docente) {
-      return res.status(403).json({ error: 'Usuario no es docente' });
+      return res.status(403).json({ error: "Usuario no es docente" });
     }
 
     // Verificar que el módulo pertenece al docente
-    const belongsToDocente = await ModulosModel.belongsToDocente(id, id_docente);
+    const belongsToDocente = await ModulosModel.belongsToDocente(
+      id,
+      id_docente,
+    );
     if (!belongsToDocente) {
-      return res.status(403).json({ error: 'No tienes permiso para eliminar este módulo' });
+      return res
+        .status(403)
+        .json({ error: "No tienes permiso para eliminar este módulo" });
     }
 
     const deleted = await ModulosModel.delete(id);
 
     if (!deleted) {
-      return res.status(404).json({ error: 'Módulo no encontrado' });
+      return res.status(404).json({ error: "Módulo no encontrado" });
     }
 
     return res.json({
       success: true,
-      message: 'Módulo eliminado exitosamente'
+      message: "Módulo eliminado exitosamente",
     });
   } catch (error) {
-    console.error('Error en deleteModulo:', error);
-    return res.status(500).json({ error: 'Error eliminando módulo' });
+    console.error("Error en deleteModulo:", error);
+    return res.status(500).json({ error: "Error eliminando módulo" });
   }
 }
 
@@ -274,16 +298,16 @@ async function deleteModulo(req, res) {
 async function getModuloStats(req, res) {
   try {
     const { id } = req.params;
-    
+
     const stats = await ModulosModel.getStats(id);
-    
+
     return res.json({
       success: true,
-      stats
+      stats,
     });
   } catch (error) {
-    console.error('Error en getModuloStats:', error);
-    return res.status(500).json({ error: 'Error obteniendo estadísticas' });
+    console.error("Error en getModuloStats:", error);
+    return res.status(500).json({ error: "Error obteniendo estadísticas" });
   }
 }
 
@@ -291,16 +315,18 @@ async function getModuloStats(req, res) {
 async function getPromedioPonderado(req, res) {
   try {
     const { id, id_estudiante } = req.params;
-    
+
     const promedio = await ModulosModel.getPromedioPonderado(id, id_estudiante);
-    
+
     return res.json({
       success: true,
-      promedio
+      promedio,
     });
   } catch (error) {
-    console.error('Error en getPromedioPonderado:', error);
-    return res.status(500).json({ error: 'Error obteniendo promedio ponderado' });
+    console.error("Error en getPromedioPonderado:", error);
+    return res
+      .status(500)
+      .json({ error: "Error obteniendo promedio ponderado" });
   }
 }
 
@@ -308,16 +334,18 @@ async function getPromedioPonderado(req, res) {
 async function getPromediosPonderados(req, res) {
   try {
     const { id } = req.params;
-    
+
     const promedios = await ModulosModel.getPromediosPonderadosPorModulo(id);
-    
+
     return res.json({
       success: true,
-      promedios
+      promedios,
     });
   } catch (error) {
-    console.error('Error en getPromediosPonderados:', error);
-    return res.status(500).json({ error: 'Error obteniendo promedios ponderados' });
+    console.error("Error en getPromediosPonderados:", error);
+    return res
+      .status(500)
+      .json({ error: "Error obteniendo promedios ponderados" });
   }
 }
 
@@ -325,20 +353,20 @@ async function getPromediosPonderados(req, res) {
 async function publicarPromedios(req, res) {
   try {
     const { id } = req.params;
-    
+
     const updated = await ModulosModel.publicarPromedios(id);
-    
+
     if (!updated) {
-      return res.status(404).json({ error: 'Módulo no encontrado' });
+      return res.status(404).json({ error: "Módulo no encontrado" });
     }
-    
+
     return res.json({
       success: true,
-      message: 'Promedios publicados exitosamente'
+      message: "Promedios publicados exitosamente",
     });
   } catch (error) {
-    console.error('Error en publicarPromedios:', error);
-    return res.status(500).json({ error: 'Error publicando promedios' });
+    console.error("Error en publicarPromedios:", error);
+    return res.status(500).json({ error: "Error publicando promedios" });
   }
 }
 
@@ -346,20 +374,20 @@ async function publicarPromedios(req, res) {
 async function ocultarPromedios(req, res) {
   try {
     const { id } = req.params;
-    
+
     const updated = await ModulosModel.ocultarPromedios(id);
-    
+
     if (!updated) {
-      return res.status(404).json({ error: 'Módulo no encontrado' });
+      return res.status(404).json({ error: "Módulo no encontrado" });
     }
-    
+
     return res.json({
       success: true,
-      message: 'Promedios ocultados exitosamente'
+      message: "Promedios ocultados exitosamente",
     });
   } catch (error) {
-    console.error('Error en ocultarPromedios:', error);
-    return res.status(500).json({ error: 'Error ocultando promedios' });
+    console.error("Error en ocultarPromedios:", error);
+    return res.status(500).json({ error: "Error ocultando promedios" });
   }
 }
 

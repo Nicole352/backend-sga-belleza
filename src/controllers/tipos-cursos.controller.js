@@ -12,6 +12,14 @@ function slugify(v = '') {
 
 exports.listTiposCursos = async (req, res) => {
   try {
+    // Test database connection first
+    try {
+      await pool.execute('SELECT 1');
+    } catch (dbError) {
+      console.error('Database connection error:', dbError);
+      return res.status(500).json({ error: 'Database connection failed' });
+    }
+    
     const estado = req.query.estado;
     const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 100));
     let sql = `SELECT 
@@ -27,6 +35,10 @@ exports.listTiposCursos = async (req, res) => {
     return res.json(rows);
   } catch (err) {
     console.error('Error listando tipos de curso:', err);
+    // Check if it's a connection error
+    if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
+      return res.status(500).json({ error: 'Database connection failed' });
+    }
     return res.status(500).json({ error: 'Error al listar tipos de curso' });
   }
 };

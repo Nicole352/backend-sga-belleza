@@ -4,6 +4,7 @@ const EstudiantesModel = require('../models/estudiantes.model');
 const { enviarEmailBienvenidaEstudiante } = require('../services/emailService');
 const { generarComprobantePagoMensual } = require('../services/pdfService');
 const { registrarAuditoria } = require('../utils/auditoria');
+const ExcelJS = require('exceljs');
 
 // Función para generar username único
 async function generateUniqueUsername(nombre, apellido) {
@@ -266,13 +267,10 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
       `, [id_estudiante, id_curso]);
       console.log('✅ Estudiante agregado a estudiante_curso para reportes');
 
-      // *** ACTUALIZAR CUPOS DISPONIBLES DEL CURSO ***
-      await connection.execute(`
-        UPDATE cursos 
-        SET cupos_disponibles = cupos_disponibles - 1
-        WHERE id_curso = ? AND cupos_disponibles > 0
-      `, [id_curso]);
-      console.log('✅ Cupos actualizados para el curso:', id_curso);
+      // *** NO ES NECESARIO ACTUALIZAR CUPOS DISPONIBLES DEL CURSO ***
+      // Los cupos ya fueron actualizados cuando se creó la solicitud
+      // El id_curso en la matrícula es el mismo que se asignó en la solicitud
+      console.log('ℹ️  Los cupos del curso ya fueron actualizados al crear la solicitud');
 
       // *** GENERAR CUOTAS AUTOMÁTICAMENTE (MENSUAL O POR CLASES) ***
       console.log('🔍 Generando cuotas para matrícula:', id_matricula);
@@ -593,6 +591,29 @@ exports.getEstudiantes = async (req, res) => {
     const result = await EstudiantesModel.getAll(filters);
     const { estudiantes, total } = result;
     
+    // Obtener cursos inscritos para cada estudiante
+    for (const estudiante of estudiantes) {
+      try {
+        const [cursos] = await pool.execute(`
+          SELECT 
+            c.id_curso,
+            c.nombre,
+            c.codigo_curso,
+            c.horario,
+            c.estado
+          FROM estudiante_curso ec
+          INNER JOIN cursos c ON c.id_curso = ec.id_curso
+          WHERE ec.id_estudiante = ?
+          ORDER BY c.fecha_inicio DESC
+        `, [estudiante.id_usuario]);
+        
+        estudiante.cursos = cursos;
+      } catch (err) {
+        console.error(`Error obteniendo cursos del estudiante ${estudiante.id_usuario}:`, err);
+        estudiante.cursos = [];
+      }
+    }
+    
     res.setHeader('X-Total-Count', String(total));
     res.json(estudiantes);
     
@@ -690,7 +711,8 @@ exports.updateEstudiante = async (req, res) => {
       fecha_nacimiento,
       genero,
       direccion,
-      estado
+      estado,
+      contacto_emergencia
     } = req.body;
     
     // Verificar que el estudiante existe
@@ -705,12 +727,34 @@ exports.updateEstudiante = async (req, res) => {
       return res.status(404).json({ error: 'Estudiante no encontrado' });
     }
     
+    // Actualizar datos en la tabla usuarios
     await pool.execute(`
       UPDATE usuarios 
       SET nombre = ?, apellido = ?, telefono = ?, 
           fecha_nacimiento = ?, genero = ?, direccion = ?, estado = ?
       WHERE id_usuario = ?
     `, [nombre, apellido, telefono, fecha_nacimiento, genero, direccion, estado, id]);
+    
+    // Si se proporciona contacto_emergencia, actualizar en la tabla solicitudes_matricula
+    if (contacto_emergencia !== undefined) {
+      // Obtener la cédula del estudiante
+      const [userData] = await pool.execute(`
+        SELECT cedula FROM usuarios WHERE id_usuario = ?
+      `, [id]);
+      
+      if (userData.length > 0) {
+        const cedula = userData[0].cedula;
+        
+        // Actualizar el contacto de emergencia en la solicitud aprobada más reciente
+        await pool.execute(`
+          UPDATE solicitudes_matricula 
+          SET contacto_emergencia = ?
+          WHERE identificacion_solicitante = ? AND estado = 'aprobado'
+          ORDER BY fecha_solicitud DESC
+          LIMIT 1
+        `, [contacto_emergencia, cedula]);
+      }
+    }
     
     res.json({ success: true, message: 'Estudiante actualizado exitosamente' });
     
@@ -902,5 +946,347 @@ exports.verificarEstudiante = async (req, res) => {
       error: 'Error interno del servidor',
       details: error.message 
     });
+  }
+};
+
+// Generar reporte Excel de estudiantes
+exports.generarReporteExcel = async (req, res) => {
+  try {
+    // 1. Obtener todos los estudiantes con información completa
+    const [estudiantes] = await pool.execute(`
+      SELECT 
+        u.id_usuario,
+        u.cedula as identificacion,
+        u.nombre,
+        u.apellido,
+        u.username,
+        u.email,
+        u.telefono,
+        u.fecha_nacimiento,
+        u.genero,
+        u.direccion,
+        u.estado,
+        u.fecha_registro,
+        s.contacto_emergencia,
+        CASE
+          WHEN LENGTH(u.cedula) > 10 THEN 'Extranjero'
+          ELSE 'Ecuatoriano'
+        END as tipo_documento
+      FROM usuarios u
+      INNER JOIN roles r ON u.id_rol = r.id_rol
+      LEFT JOIN solicitudes_matricula s ON s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado'
+      WHERE r.nombre_rol = 'estudiante'
+      ORDER BY u.fecha_registro DESC
+    `);
+
+    // 2. Obtener cursos por estudiante
+    const [cursosEstudiantes] = await pool.execute(`
+      SELECT 
+        ec.id_estudiante,
+        c.nombre as curso_nombre,
+        c.codigo_curso,
+        c.horario,
+        tc.nombre as tipo_curso
+      FROM estudiante_curso ec
+      INNER JOIN cursos c ON c.id_curso = ec.id_curso
+      INNER JOIN tipos_cursos tc ON tc.id_tipo_curso = c.id_tipo_curso
+      ORDER BY ec.id_estudiante, c.nombre
+    `);
+
+    // Mapear cursos por estudiante
+    const cursosMap = {};
+    cursosEstudiantes.forEach(curso => {
+      if (!cursosMap[curso.id_estudiante]) {
+        cursosMap[curso.id_estudiante] = [];
+      }
+      cursosMap[curso.id_estudiante].push(curso);
+    });
+
+    // 3. Obtener estadísticas generales
+    const [estadisticas] = await pool.execute(`
+      SELECT 
+        COUNT(*) as total_estudiantes,
+        COUNT(CASE WHEN u.estado = 'activo' THEN 1 END) as activos,
+        COUNT(CASE WHEN u.estado = 'inactivo' THEN 1 END) as inactivos,
+        COUNT(CASE WHEN u.genero = 'masculino' THEN 1 END) as masculinos,
+        COUNT(CASE WHEN u.genero = 'femenino' THEN 1 END) as femeninos,
+        COUNT(CASE WHEN LENGTH(u.cedula) > 10 THEN 1 END) as extranjeros,
+        COUNT(CASE WHEN LENGTH(u.cedula) <= 10 THEN 1 END) as ecuatorianos
+      FROM usuarios u
+      INNER JOIN roles r ON u.id_rol = r.id_rol
+      WHERE r.nombre_rol = 'estudiante'
+    `);
+
+    // 4. Obtener distribución por curso
+    const [distribucionCursos] = await pool.execute(`
+      SELECT 
+        c.codigo_curso,
+        c.nombre as curso_nombre,
+        tc.nombre as tipo_curso,
+        c.horario,
+        COUNT(ec.id_estudiante) as total_estudiantes
+      FROM cursos c
+      LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = c.id_tipo_curso
+      LEFT JOIN estudiante_curso ec ON ec.id_curso = c.id_curso
+      GROUP BY c.id_curso, c.codigo_curso, c.nombre, tc.nombre, c.horario
+      HAVING total_estudiantes > 0
+      ORDER BY total_estudiantes DESC
+    `);
+
+    // Crear workbook
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'SGA Belleza';
+    workbook.created = new Date();
+
+    // ========== HOJA 1: LISTADO DE ESTUDIANTES ==========
+    const sheet1 = workbook.addWorksheet('Estudiantes', {
+      properties: { tabColor: { argb: 'FFDC2626' } }
+    });
+
+    // Encabezados (sin ID interno)
+    sheet1.columns = [
+      { header: 'Identificación', key: 'cedula', width: 15 },
+      { header: 'Nombres', key: 'nombres', width: 20 },
+      { header: 'Apellidos', key: 'apellidos', width: 20 },
+      { header: 'Username', key: 'username', width: 15 },
+      { header: 'Email', key: 'email', width: 35 },
+      { header: 'Teléfono', key: 'telefono', width: 12 },
+      { header: 'Fecha Nacimiento', key: 'fecha_nac', width: 15 },
+      { header: 'Género', key: 'genero', width: 12 },
+      { header: 'Tipo Documento', key: 'tipo_doc', width: 15 },
+      { header: 'Contacto Emergencia', key: 'contacto_emerg', width: 15 },
+      { header: 'Cursos Inscritos', key: 'cursos', width: 40 },
+      { header: 'Estado', key: 'estado', width: 12 },
+      { header: 'Fecha Registro', key: 'fecha_reg', width: 18 }
+    ];
+
+    // Estilo del encabezado
+    sheet1.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+    sheet1.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFDC2626' }
+    };
+    sheet1.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+    sheet1.getRow(1).height = 25;
+
+    // Agregar datos
+    estudiantes.forEach(est => {
+      const cursos = cursosMap[est.id_usuario] || [];
+      const cursosTexto = cursos.length > 0 
+        ? cursos.map(c => `${c.codigo_curso} - ${c.curso_nombre} (${c.horario})`).join('; ')
+        : 'Sin cursos';
+
+      sheet1.addRow({
+        cedula: est.identificacion,
+        nombres: est.nombre,
+        apellidos: est.apellido,
+        username: est.username,
+        email: est.email,
+        telefono: est.telefono || 'N/A',
+        fecha_nac: est.fecha_nacimiento ? new Date(est.fecha_nacimiento).toLocaleDateString('es-EC') : 'N/A',
+        genero: est.genero ? est.genero.charAt(0).toUpperCase() + est.genero.slice(1) : 'N/A',
+        tipo_doc: est.tipo_documento,
+        contacto_emerg: est.contacto_emergencia || 'N/A',
+        cursos: cursosTexto,
+        estado: est.estado.charAt(0).toUpperCase() + est.estado.slice(1),
+        fecha_reg: new Date(est.fecha_registro).toLocaleString('es-EC')
+      });
+    });
+
+    // Aplicar bordes y estilos alternados
+    sheet1.eachRow((row, rowNumber) => {
+      row.eachCell(cell => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
+        };
+      });
+      
+      if (rowNumber > 1 && rowNumber % 2 === 0) {
+        row.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFF9FAFB' }
+        };
+      }
+    });
+
+    // ========== HOJA 2: RESUMEN ESTADÍSTICO ==========
+    const sheet2 = workbook.addWorksheet('Resumen Estadístico', {
+      properties: { tabColor: { argb: 'FF10B981' } }
+    });
+
+    // Título principal
+    sheet2.mergeCells('A1:F1');
+    sheet2.getCell('A1').value = 'REPORTE ESTADÍSTICO DE ESTUDIANTES';
+    sheet2.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
+    sheet2.getCell('A1').fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFDC2626' }
+    };
+    sheet2.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
+    sheet2.getRow(1).height = 35;
+
+    // Subtítulo con fecha
+    sheet2.mergeCells('A2:F2');
+    sheet2.getCell('A2').value = `Generado el: ${new Date().toLocaleDateString('es-EC', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })}`;
+    sheet2.getCell('A2').font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+    sheet2.getCell('A2').alignment = { horizontal: 'center', vertical: 'middle' };
+    sheet2.getRow(2).height = 20;
+
+    const stats = estadisticas[0];
+    const total = stats.total_estudiantes;
+
+    // Sección 1: Resumen General
+    sheet2.mergeCells('A4:C4');
+    sheet2.getCell('A4').value = 'RESUMEN GENERAL';
+    sheet2.getCell('A4').font = { bold: true, size: 12, color: { argb: 'FFDC2626' } };
+    sheet2.getCell('A4').fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFFEF2F2' }
+    };
+    sheet2.getCell('A4').alignment = { horizontal: 'center', vertical: 'middle' };
+    sheet2.getRow(4).height = 25;
+
+    // Encabezados
+    sheet2.getCell('A6').value = 'Categoría';
+    sheet2.getCell('B6').value = 'Cantidad';
+    sheet2.getCell('C6').value = 'Porcentaje';
+    ['A6', 'B6', 'C6'].forEach(cell => {
+      sheet2.getCell(cell).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      sheet2.getCell(cell).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEF4444' } };
+      sheet2.getCell(cell).alignment = { horizontal: 'center', vertical: 'middle' };
+    });
+
+    // Datos generales
+    const datosGenerales = [
+      { categoria: 'Total Estudiantes', cantidad: total, color: 'FF3B82F6' },
+      { categoria: '✓ Activos', cantidad: stats.activos, color: 'FF10B981' },
+      { categoria: '✗ Inactivos', cantidad: stats.inactivos, color: 'FFEF4444' },
+      { categoria: '👨 Masculino', cantidad: stats.masculinos, color: 'FF3B82F6' },
+      { categoria: '👩 Femenino', cantidad: stats.femeninos, color: 'FFEC4899' },
+      { categoria: '🇪🇨 Ecuatorianos', cantidad: stats.ecuatorianos, color: 'FFF59E0B' },
+      { categoria: '🌎 Extranjeros', cantidad: stats.extranjeros, color: 'FF8B5CF6' }
+    ];
+
+    let row = 7;
+    datosGenerales.forEach(dato => {
+      const porcentaje = total > 0 ? ((dato.cantidad / total) * 100).toFixed(1) : '0.0';
+      sheet2.getCell(`A${row}`).value = dato.categoria;
+      sheet2.getCell(`B${row}`).value = dato.cantidad;
+      sheet2.getCell(`C${row}`).value = `${porcentaje}%`;
+      
+      sheet2.getCell(`B${row}`).alignment = { horizontal: 'center' };
+      sheet2.getCell(`C${row}`).alignment = { horizontal: 'center' };
+      sheet2.getCell(`C${row}`).font = { bold: true, color: { argb: dato.color } };
+      
+      row++;
+    });
+
+    // Sección 2: Distribución por Curso
+    const startRow = row + 2;
+    sheet2.mergeCells(`A${startRow}:E${startRow}`);
+    sheet2.getCell(`A${startRow}`).value = 'DISTRIBUCIÓN POR CURSO';
+    sheet2.getCell(`A${startRow}`).font = { bold: true, size: 12, color: { argb: 'FFDC2626' } };
+    sheet2.getCell(`A${startRow}`).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFFEF2F2' }
+    };
+    sheet2.getCell(`A${startRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
+    sheet2.getRow(startRow).height = 25;
+
+    // Encabezados tabla cursos
+    const headerRow = startRow + 2;
+    sheet2.getCell(`A${headerRow}`).value = 'Código';
+    sheet2.getCell(`B${headerRow}`).value = 'Curso';
+    sheet2.getCell(`C${headerRow}`).value = 'Tipo';
+    sheet2.getCell(`D${headerRow}`).value = 'Horario';
+    sheet2.getCell(`E${headerRow}`).value = 'Estudiantes';
+
+    ['A', 'B', 'C', 'D', 'E'].forEach(col => {
+      sheet2.getCell(`${col}${headerRow}`).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      sheet2.getCell(`${col}${headerRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF10B981' } };
+      sheet2.getCell(`${col}${headerRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
+    });
+
+    // Datos por curso
+    let cursoRow = headerRow + 1;
+    distribucionCursos.forEach((curso, index) => {
+      sheet2.getCell(`A${cursoRow}`).value = curso.codigo_curso;
+      sheet2.getCell(`B${cursoRow}`).value = curso.curso_nombre;
+      sheet2.getCell(`C${cursoRow}`).value = curso.tipo_curso;
+      sheet2.getCell(`D${cursoRow}`).value = curso.horario;
+      sheet2.getCell(`E${cursoRow}`).value = curso.total_estudiantes;
+      
+      sheet2.getCell(`E${cursoRow}`).alignment = { horizontal: 'center' };
+      sheet2.getCell(`E${cursoRow}`).font = { bold: true, color: { argb: 'FF10B981' } };
+      
+      // Filas alternadas
+      if (index % 2 === 0) {
+        ['A', 'B', 'C', 'D', 'E'].forEach(col => {
+          sheet2.getCell(`${col}${cursoRow}`).fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFF9FAFB' }
+          };
+        });
+      }
+      
+      cursoRow++;
+    });
+
+    // Ajustar anchos
+    sheet2.getColumn('A').width = 15;
+    sheet2.getColumn('B').width = 40;
+    sheet2.getColumn('C').width = 25;
+    sheet2.getColumn('D').width = 15;
+    sheet2.getColumn('E').width = 15;
+
+    // Aplicar bordes
+    for (let i = 6; i < row; i++) {
+      ['A', 'B', 'C'].forEach(col => {
+        sheet2.getCell(`${col}${i}`).border = {
+          top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
+        };
+      });
+    }
+
+    for (let i = headerRow; i < cursoRow; i++) {
+      ['A', 'B', 'C', 'D', 'E'].forEach(col => {
+        sheet2.getCell(`${col}${i}`).border = {
+          top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
+        };
+      });
+    }
+
+    // Generar archivo
+    const buffer = await workbook.xlsx.writeBuffer();
+    const fecha = new Date().toISOString().split('T')[0];
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=Reporte_Estudiantes_${fecha}.xlsx`);
+    res.send(buffer);
+
+  } catch (error) {
+    console.error('Error generando reporte Excel:', error);
+    res.status(500).json({ error: 'Error al generar el reporte', details: error.message });
   }
 };

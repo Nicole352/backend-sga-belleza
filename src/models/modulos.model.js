@@ -1,10 +1,11 @@
-const { pool } = require('../config/database');
+const { pool } = require("../config/database");
 
 class ModulosModel {
   // Obtener todos los módulos de un curso
   static async getAllByCurso(id_curso) {
-    const [modulos] = await pool.execute(`
-      SELECT 
+    const [modulos] = await pool.execute(
+      `
+      SELECT
         m.*,
         d.nombres as docente_nombres,
         d.apellidos as docente_apellidos,
@@ -13,15 +14,18 @@ class ModulosModel {
       INNER JOIN docentes d ON m.id_docente = d.id_docente
       WHERE m.id_curso = ?
       ORDER BY m.id_modulo ASC
-    `, [id_curso]);
-    
+    `,
+      [id_curso],
+    );
+
     return modulos;
   }
 
   // Obtener módulo por ID
   static async getById(id_modulo) {
-    const [modulos] = await pool.execute(`
-      SELECT 
+    const [modulos] = await pool.execute(
+      `
+      SELECT
         m.*,
         c.nombre as curso_nombre,
         c.codigo_curso,
@@ -32,8 +36,10 @@ class ModulosModel {
       INNER JOIN cursos c ON m.id_curso = c.id_curso
       INNER JOIN docentes d ON m.id_docente = d.id_docente
       WHERE m.id_modulo = ?
-    `, [id_modulo]);
-    
+    `,
+      [id_modulo],
+    );
+
     return modulos.length > 0 ? modulos[0] : null;
   }
 
@@ -46,63 +52,60 @@ class ModulosModel {
       descripcion,
       fecha_inicio,
       fecha_fin,
-      estado = 'activo'
+      estado = "activo",
     } = moduloData;
 
-    const [result] = await pool.execute(`
+    const [result] = await pool.execute(
+      `
       INSERT INTO modulos_curso (
-        id_curso, id_docente, nombre, descripcion, 
+        id_curso, id_docente, nombre, descripcion,
         fecha_inicio, fecha_fin, estado
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [
-      id_curso,
-      id_docente,
-      nombre.trim(),
-      descripcion ? descripcion.trim() : null,
-      fecha_inicio || null,
-      fecha_fin || null,
-      estado
-    ]);
+    `,
+      [
+        id_curso,
+        id_docente,
+        nombre.trim(),
+        descripcion ? descripcion.trim() : null,
+        fecha_inicio || null,
+        fecha_fin || null,
+        estado,
+      ],
+    );
 
     return result.insertId;
   }
 
   // Actualizar módulo
   static async update(id_modulo, moduloData) {
-    const {
-      nombre,
-      descripcion,
-      fecha_inicio,
-      fecha_fin,
-      estado
-    } = moduloData;
+    const { nombre, descripcion, fecha_inicio, fecha_fin, estado } = moduloData;
 
     // Construir dinámicamente la consulta de actualización
     const fields = [];
     const values = [];
 
     if (nombre !== undefined) {
-      fields.push('nombre = ?');
+      fields.push("nombre = ?");
       values.push(nombre.trim());
     }
 
     if (descripcion !== undefined) {
-      fields.push('descripcion = ?');
+      fields.push("descripcion = ?");
       values.push(descripcion ? descripcion.trim() : null);
     }
 
     if (fecha_inicio !== undefined) {
-      fields.push('fecha_inicio = ?');
+      fields.push("fecha_inicio = ?");
       values.push(fecha_inicio || null);
     }
 
     if (fecha_fin !== undefined) {
-      fields.push('fecha_fin = ?');
+      fields.push("fecha_fin = ?");
       values.push(fecha_fin || null);
     }
 
     if (estado !== undefined) {
-      fields.push('estado = ?');
+      fields.push("estado = ?");
       values.push(estado);
     }
 
@@ -115,8 +118,8 @@ class ModulosModel {
     values.push(id_modulo);
 
     const query = `
-      UPDATE modulos_curso 
-      SET ${fields.join(', ')}
+      UPDATE modulos_curso
+      SET ${fields.join(", ")}
       WHERE id_modulo = ?
     `;
 
@@ -128,8 +131,8 @@ class ModulosModel {
   // Eliminar módulo
   static async delete(id_modulo) {
     const [result] = await pool.execute(
-      'DELETE FROM modulos_curso WHERE id_modulo = ?',
-      [id_modulo]
+      "DELETE FROM modulos_curso WHERE id_modulo = ?",
+      [id_modulo],
     );
     return result.affectedRows > 0;
   }
@@ -137,16 +140,17 @@ class ModulosModel {
   // Verificar si el módulo pertenece al docente
   static async belongsToDocente(id_modulo, id_docente) {
     const [result] = await pool.execute(
-      'SELECT COUNT(*) as count FROM modulos_curso WHERE id_modulo = ? AND id_docente = ?',
-      [id_modulo, id_docente]
+      "SELECT COUNT(*) as count FROM modulos_curso WHERE id_modulo = ? AND id_docente = ?",
+      [id_modulo, id_docente],
     );
     return result[0].count > 0;
   }
 
   // Obtener estadísticas del módulo
   static async getStats(id_modulo) {
-    const [stats] = await pool.execute(`
-      SELECT 
+    const [stats] = await pool.execute(
+      `
+      SELECT
         COUNT(DISTINCT t.id_tarea) as total_tareas,
         COUNT(DISTINCT e.id_entrega) as total_entregas,
         COUNT(DISTINCT CASE WHEN c.resultado = 'aprobado' THEN c.id_calificacion END) as entregas_aprobadas,
@@ -157,15 +161,18 @@ class ModulosModel {
       LEFT JOIN entregas_tareas e ON t.id_tarea = e.id_tarea
       LEFT JOIN calificaciones_tareas c ON e.id_entrega = c.id_entrega
       WHERE m.id_modulo = ?
-    `, [id_modulo]);
-    
+    `,
+      [id_modulo],
+    );
+
     return stats[0];
   }
 
   // Calcular promedio ponderado de un estudiante en un módulo
   static async getPromedioPonderado(id_modulo, id_estudiante) {
-    const [result] = await pool.execute(`
-      SELECT 
+    const [result] = await pool.execute(
+      `
+      SELECT
         SUM((cal.nota / t.nota_maxima) * t.ponderacion) as promedio_ponderado,
         SUM(t.ponderacion) as suma_ponderaciones,
         COUNT(DISTINCT t.id_tarea) as total_tareas,
@@ -174,15 +181,18 @@ class ModulosModel {
       LEFT JOIN entregas_tareas e ON t.id_tarea = e.id_tarea AND e.id_estudiante = ?
       LEFT JOIN calificaciones_tareas cal ON e.id_entrega = cal.id_entrega
       WHERE t.id_modulo = ? AND t.estado = 'activo'
-    `, [id_estudiante, id_modulo]);
-    
+    `,
+      [id_estudiante, id_modulo],
+    );
+
     return result[0];
   }
 
   // Obtener promedios ponderados de todos los estudiantes de un módulo
   static async getPromediosPonderadosPorModulo(id_modulo) {
-    const [result] = await pool.execute(`
-      SELECT 
+    const [result] = await pool.execute(
+      `
+      SELECT
         u.id_usuario as id_estudiante,
         u.nombre,
         u.apellido,
@@ -199,16 +209,18 @@ class ModulosModel {
       WHERE m.id_modulo = ?
       GROUP BY u.id_usuario, u.nombre, u.apellido
       ORDER BY u.apellido, u.nombre
-    `, [id_modulo]);
-    
+    `,
+      [id_modulo],
+    );
+
     return result;
   }
 
   // Publicar promedios de un módulo
   static async publicarPromedios(id_modulo) {
     const [result] = await pool.execute(
-      'UPDATE modulos_curso SET promedios_publicados = TRUE WHERE id_modulo = ?',
-      [id_modulo]
+      "UPDATE modulos_curso SET promedios_publicados = TRUE WHERE id_modulo = ?",
+      [id_modulo],
     );
     return result.affectedRows > 0;
   }
@@ -216,8 +228,8 @@ class ModulosModel {
   // Ocultar promedios de un módulo
   static async ocultarPromedios(id_modulo) {
     const [result] = await pool.execute(
-      'UPDATE modulos_curso SET promedios_publicados = FALSE WHERE id_modulo = ?',
-      [id_modulo]
+      "UPDATE modulos_curso SET promedios_publicados = FALSE WHERE id_modulo = ?",
+      [id_modulo],
     );
     return result.affectedRows > 0;
   }
@@ -225,8 +237,8 @@ class ModulosModel {
   // Verificar si los promedios están publicados
   static async estanPromediosPublicados(id_modulo) {
     const [result] = await pool.execute(
-      'SELECT promedios_publicados FROM modulos_curso WHERE id_modulo = ?',
-      [id_modulo]
+      "SELECT promedios_publicados FROM modulos_curso WHERE id_modulo = ?",
+      [id_modulo],
     );
     return result.length > 0 ? result[0].promedios_publicados : false;
   }

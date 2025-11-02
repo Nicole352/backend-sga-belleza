@@ -293,7 +293,13 @@ async function getAdminStats() {
 
 // Actualizar datos de un usuario (campos opcionales)
 async function updateAdminUser(id_usuario, fields) {
-  const allowed = {
+  const { pool } = require('../config/database');
+  
+  // Separar campos que pertenecen a la tabla usuarios de los que pertenecen a otras tablas
+  const userFields = {};
+  const otherFields = {};
+  
+  const userTableFields = {
     nombre: 'nombre',
     apellido: 'apellido',
     email: 'email',
@@ -305,20 +311,59 @@ async function updateAdminUser(id_usuario, fields) {
     foto_perfil: 'foto_perfil'
   };
 
-  const setParts = [];
-  const values = [];
-  Object.keys(allowed).forEach((k) => {
-    if (Object.prototype.hasOwnProperty.call(fields, k) && fields[k] !== undefined) {
-      setParts.push(`${allowed[k]} = ?`);
-      values.push(fields[k]);
+  Object.keys(fields).forEach((field) => {
+    if (userTableFields[field]) {
+      userFields[field] = fields[field];
+    } else {
+      otherFields[field] = fields[field];
     }
   });
 
-  if (setParts.length === 0) return await getUserById(id_usuario);
+  // Actualizar campos en la tabla usuarios
+  if (Object.keys(userFields).length > 0) {
+    const setParts = [];
+    const values = [];
+    
+    Object.keys(userTableFields).forEach((k) => {
+      if (Object.prototype.hasOwnProperty.call(userFields, k) && userFields[k] !== undefined) {
+        setParts.push(`${userTableFields[k]} = ?`);
+        values.push(userFields[k]);
+      }
+    });
 
-  values.push(id_usuario);
-  const sql = `UPDATE usuarios SET ${setParts.join(', ')} WHERE id_usuario = ?`;
-  await pool.execute(sql, values);
+    if (setParts.length > 0) {
+      values.push(id_usuario);
+      const sql = `UPDATE usuarios SET ${setParts.join(', ')} WHERE id_usuario = ?`;
+      await pool.execute(sql, values);
+    }
+  }
+
+  // Actualizar campos en otras tablas (por ahora solo contacto_emergencia)
+  if (otherFields.contacto_emergencia !== undefined) {
+    try {
+      // Obtener la cédula del usuario
+      const [userData] = await pool.execute(`
+        SELECT cedula FROM usuarios WHERE id_usuario = ?
+      `, [id_usuario]);
+      
+      if (userData.length > 0) {
+        const cedula = userData[0].cedula;
+        
+        // Actualizar el contacto de emergencia en la solicitud aprobada más reciente
+        await pool.execute(`
+          UPDATE solicitudes_matricula 
+          SET contacto_emergencia = ?
+          WHERE identificacion_solicitante = ? AND estado = 'aprobado'
+          ORDER BY fecha_solicitud DESC
+          LIMIT 1
+        `, [otherFields.contacto_emergencia, cedula]);
+      }
+    } catch (error) {
+      console.error('Error updating emergency contact:', error);
+      // Don't throw the error, just log it since this is a secondary update
+    }
+  }
+
   const user = await getUserById(id_usuario);
   return user;
 }

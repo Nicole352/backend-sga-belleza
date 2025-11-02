@@ -105,8 +105,8 @@ async function meController(req, res) {
           identificacion: docentes[0].identificacion,
           nombre: user.nombre,
           apellido: user.apellido,
-          nombres: docentes[0].nombres,
-          apellidos: docentes[0].apellidos,
+          nombres: docentes[0].nombres,  // For consistency with frontend
+          apellidos: docentes[0].apellidos,  // For consistency with frontend
           titulo_profesional: docentes[0].titulo_profesional,
           experiencia_anos: docentes[0].experiencia_anos,
           email: user.email,
@@ -120,9 +120,44 @@ async function meController(req, res) {
           fecha_ultima_conexion: user.fecha_ultima_conexion,
           needs_password_reset: !!user.password_temporal,
           is_first_login: !!user.password_temporal && !user.fecha_ultima_conexion,
-          foto_perfil: user.foto_perfil || null // Add this line
+          foto_perfil: user.foto_perfil || null
         });
       }
+    }
+    
+    // Para estudiantes, obtener información adicional de la solicitud aprobada
+    if (user.nombre_rol === 'estudiante') {
+      const [solicitudes] = await pool.execute(`
+        SELECT s.contacto_emergencia
+        FROM solicitudes_matricula s
+        WHERE s.identificacion_solicitante = ? AND s.estado = 'aprobado'
+        ORDER BY s.fecha_solicitud DESC
+        LIMIT 1
+      `, [user.cedula]);
+      
+      const contacto_emergencia = solicitudes.length > 0 ? solicitudes[0].contacto_emergencia : null;
+      
+      return res.json({
+        id_usuario: user.id_usuario,
+        cedula: user.cedula || '',
+        nombre: user.nombre,
+        apellido: user.apellido,
+        nombres: user.nombre,  // Add this for consistency
+        apellidos: user.apellido,  // Add this for consistency
+        email: user.email,
+        telefono: user.telefono || '',
+        direccion: user.direccion || '',
+        fecha_nacimiento: user.fecha_nacimiento || null,
+        genero: user.genero || '',
+        username: user.username || '',
+        rol: user.nombre_rol,
+        estado: user.estado,
+        fecha_ultima_conexion: user.fecha_ultima_conexion,
+        needs_password_reset: !!user.password_temporal,
+        is_first_login: !!user.password_temporal && !user.fecha_ultima_conexion,
+        foto_perfil: user.foto_perfil || null,
+        contacto_emergencia: contacto_emergencia || null // Add this line
+      });
     }
     
     return res.json({
@@ -130,6 +165,8 @@ async function meController(req, res) {
       cedula: user.cedula || '',
       nombre: user.nombre,
       apellido: user.apellido,
+      nombres: user.nombre,  // Add this for consistency
+      apellidos: user.apellido,  // Add this for consistency
       email: user.email,
       telefono: user.telefono || '',
       direccion: user.direccion || '',
@@ -141,7 +178,7 @@ async function meController(req, res) {
       fecha_ultima_conexion: user.fecha_ultima_conexion,
       needs_password_reset: !!user.password_temporal,
       is_first_login: !!user.password_temporal && !user.fecha_ultima_conexion,
-      foto_perfil: user.foto_perfil || null // Add this line
+      foto_perfil: user.foto_perfil || null
     });
   } catch (err) {
     console.error('Error en /me:', err);

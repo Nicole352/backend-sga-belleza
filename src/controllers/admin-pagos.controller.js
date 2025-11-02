@@ -162,6 +162,33 @@ exports.verificarPago = async (req, res) => {
     const { id } = req.params;
     const { verificado_por } = req.body; // ID del admin que verifica
 
+    // Verificar que el usuario que verifica es admin (no superadmin)
+    const [usuario] = await pool.execute(`
+      SELECT u.id_usuario, r.nombre_rol
+      FROM usuarios u
+      INNER JOIN roles r ON r.id_rol = u.id_rol
+      WHERE u.id_usuario = ?
+    `, [verificado_por]);
+
+    console.log('🔍 Verificando usuario:', verificado_por);
+    console.log('👤 Usuario encontrado:', usuario);
+
+    if (usuario.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    const rolPermitido = usuario[0].nombre_rol.toLowerCase();
+    console.log('🎭 Rol del usuario:', rolPermitido);
+    
+    if (rolPermitido !== 'admin' && rolPermitido !== 'administrativo') {
+      console.log('❌ Rol no permitido:', rolPermitido);
+      return res.status(403).json({ 
+        error: `Solo los administradores pueden verificar pagos. Rol actual: ${rolPermitido}` 
+      });
+    }
+    
+    console.log('✅ Rol permitido, continuando con verificación...');
+
     // Verificar que el pago existe y está en estado 'pagado'
     const [pago] = await pool.execute(
       'SELECT id_pago, estado FROM pagos_mensuales WHERE id_pago = ?',
@@ -341,6 +368,25 @@ exports.rechazarPago = async (req, res) => {
 
     if (!observaciones) {
       return res.status(400).json({ error: 'Las observaciones son requeridas para rechazar un pago' });
+    }
+
+    // Verificar que el usuario que rechaza es admin (no superadmin)
+    const [usuario] = await pool.execute(`
+      SELECT u.id_usuario, r.nombre_rol
+      FROM usuarios u
+      INNER JOIN roles r ON r.id_rol = u.id_rol
+      WHERE u.id_usuario = ?
+    `, [verificado_por]);
+
+    if (usuario.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    const rolPermitido = usuario[0].nombre_rol.toLowerCase();
+    if (rolPermitido !== 'admin' && rolPermitido !== 'administrativo') {
+      return res.status(403).json({ 
+        error: 'Solo los administradores pueden rechazar pagos. Los superadministradores no tienen permiso para esta acción.' 
+      });
     }
 
     // Verificar que el pago existe

@@ -838,7 +838,7 @@ async function eliminarFotoPerfil(req, res) {
 async function actualizarMiPerfil(req, res) {
   try {
     const id_usuario = req.user.id_usuario; // Del token JWT
-    const { nombre, apellido, email, telefono, direccion, fecha_nacimiento, genero } = req.body;
+    const { nombre, apellido, email, telefono, direccion, fecha_nacimiento, genero, contacto_emergencia } = req.body;
 
     // Verificar que el usuario existe
     const usuario = await usuariosModel.getUserById(id_usuario);
@@ -869,6 +869,7 @@ async function actualizarMiPerfil(req, res) {
     if (direccion !== undefined) camposActualizar.direccion = direccion;
     if (fecha_nacimiento !== undefined) camposActualizar.fecha_nacimiento = fecha_nacimiento;
     if (genero !== undefined) camposActualizar.genero = genero;
+    if (contacto_emergencia !== undefined) camposActualizar.contacto_emergencia = contacto_emergencia;
 
     // Datos anteriores para auditoría
     const datosAnteriores = {

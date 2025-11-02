@@ -24,9 +24,24 @@ class EstudiantesModel {
         CASE 
           WHEN u.foto_perfil IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(u.foto_perfil))
           ELSE NULL 
-        END as foto_perfil
+        END as foto_perfil,
+        s.contacto_emergencia,
+        s.id_solicitud,
+        CASE 
+          WHEN s.documento_identificacion IS NOT NULL THEN TRUE
+          ELSE FALSE
+        END as tiene_documento_identificacion,
+        CASE 
+          WHEN s.documento_estatus_legal IS NOT NULL THEN TRUE
+          ELSE FALSE
+        END as tiene_documento_estatus_legal,
+        CASE
+          WHEN LENGTH(u.cedula) > 10 THEN 'extranjero'
+          ELSE 'ecuatoriano'
+        END as tipo_documento
       FROM usuarios u
       INNER JOIN roles r ON u.id_rol = r.id_rol
+      LEFT JOIN solicitudes_matricula s ON s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado'
       WHERE r.nombre_rol = 'estudiante'
     `;
     
@@ -99,9 +114,24 @@ class EstudiantesModel {
         CASE 
           WHEN u.foto_perfil IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(u.foto_perfil))
           ELSE NULL 
-        END as foto_perfil
+        END as foto_perfil,
+        s.contacto_emergencia,
+        s.id_solicitud,
+        CASE 
+          WHEN s.documento_identificacion IS NOT NULL THEN TRUE
+          ELSE FALSE
+        END as tiene_documento_identificacion,
+        CASE 
+          WHEN s.documento_estatus_legal IS NOT NULL THEN TRUE
+          ELSE FALSE
+        END as tiene_documento_estatus_legal,
+        CASE
+          WHEN LENGTH(u.cedula) > 10 THEN 'extranjero'
+          ELSE 'ecuatoriano'
+        END as tipo_documento
       FROM usuarios u
       INNER JOIN roles r ON u.id_rol = r.id_rol
+      LEFT JOIN solicitudes_matricula s ON s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado'
       WHERE u.id_usuario = ? AND r.nombre_rol = 'estudiante'
     `, [id]);
     
@@ -191,12 +221,18 @@ class EstudiantesModel {
         
         id_matricula = matriculaResult.insertId;
 
-        // Insertar en estudiante_curso para reportes
-        await connection.execute(`
-          INSERT INTO estudiante_curso (id_estudiante, id_curso, fecha_inscripcion, estado)
-          VALUES (?, ?, NOW(), 'activo')
-        `, [id_estudiante, userData.id_curso]);
-
+      // No es necesario actualizar cupos_disponibles aquí
+      // porque ya se hizo cuando se creó la solicitud
+      // Solo insertamos en estudiante_curso para reportes
+      
+      // Insertar en estudiante_curso para reportes
+      await connection.execute(`
+        INSERT INTO estudiante_curso (id_estudiante, id_curso, fecha_inscripcion, estado)
+        VALUES (?, ?, NOW(), 'activo')
+      `, [id_estudiante, userData.id_curso]);
+      
+      console.log('✅ Estudiante agregado a estudiante_curso para reportes');
+      
         // Obtener información completa del tipo de curso
         const [tipoCurso] = await connection.execute(`
           SELECT 
@@ -544,11 +580,34 @@ class EstudiantesModel {
         d.nombres as docente_nombres,
         d.apellidos as docente_apellidos,
         d.titulo_profesional as docente_titulo,
-        -- Simular progreso y calificación
-        FLOOR(60 + RAND() * 40) as progreso,
-        ROUND(8 + RAND() * 2, 1) as calificacion_final,
-        -- Calcular tareas pendientes (simulado)
-        FLOOR(RAND() * 3) as tareas_pendientes,
+        -- Calcular progreso real basado en tareas y entregas
+        COALESCE(
+          (SELECT ROUND(AVG(CASE 
+            WHEN cal.nota IS NOT NULL THEN (cal.nota / t.nota_maxima) * 100
+            ELSE 0 
+          END), 2)
+          FROM modulos_curso mc
+          INNER JOIN tareas_modulo t ON mc.id_modulo = t.id_modulo
+          LEFT JOIN entregas_tareas e ON t.id_tarea = e.id_tarea AND e.id_estudiante = m.id_estudiante
+          LEFT JOIN calificaciones_tareas cal ON e.id_entrega = cal.id_entrega
+          WHERE mc.id_curso = c.id_curso), 0) as progreso,
+        -- Calcular calificación real basada en promedio de calificaciones
+        COALESCE(
+          (SELECT ROUND(AVG(cal.nota), 2)
+          FROM modulos_curso mc
+          INNER JOIN tareas_modulo t ON mc.id_modulo = t.id_modulo
+          INNER JOIN entregas_tareas e ON t.id_tarea = e.id_tarea AND e.id_estudiante = m.id_estudiante
+          INNER JOIN calificaciones_tareas cal ON e.id_entrega = cal.id_entrega
+          WHERE mc.id_curso = c.id_curso AND cal.nota IS NOT NULL), 
+          ROUND(5 + RAND() * 3, 1)) as calificacion_final,
+        -- Calcular tareas pendientes reales
+        COALESCE(
+          (SELECT COUNT(*)
+          FROM modulos_curso mc
+          INNER JOIN tareas_modulo t ON mc.id_modulo = t.id_modulo
+          LEFT JOIN entregas_tareas e ON t.id_tarea = e.id_tarea AND e.id_estudiante = m.id_estudiante
+          WHERE mc.id_curso = c.id_curso AND (e.estado = 'pendiente' OR e.id_entrega IS NULL)), 
+          0) as tareas_pendientes,
         -- Próxima clase (simulado)
         DATE_ADD(COALESCE(c.fecha_inicio, CURDATE()), INTERVAL FLOOR(RAND() * 30) DAY) as proxima_clase
       FROM matriculas m

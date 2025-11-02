@@ -1,6 +1,7 @@
 const { pool } = require('../config/database');
 const SolicitudesModel = require('../models/solicitudes.model');
 const { enviarNotificacionNuevaMatricula } = require('../services/emailService');
+const ExcelJS = require('exceljs');
 
 // Util: generar código de solicitud
 function generarCodigoSolicitud() {
@@ -32,7 +33,9 @@ exports.createSolicitud = async (req, res) => {
     // Campo para pago en efectivo
     recibido_por,
     // Campo para estudiantes existentes
-    id_estudiante_existente
+    id_estudiante_existente,
+    // Nuevo campo de contacto de emergencia
+    contacto_emergencia
   } = req.body;
 
   // Función para convertir fecha a formato MySQL (YYYY-MM-DD)
@@ -191,7 +194,7 @@ exports.createSolicitud = async (req, res) => {
   try {
     await connection.beginTransaction();
 
-    // 1. INSERTAR SOLICITUD CON id_curso
+    // 1. INSERTAR SOLICITUD CON id_curso (32 columnas + contacto_emergencia = 33 total)
     const sql = `INSERT INTO solicitudes_matricula (
       codigo_solicitud,
       identificacion_solicitante,
@@ -199,12 +202,12 @@ exports.createSolicitud = async (req, res) => {
       apellido_solicitante,
       telefono_solicitante,
       email_solicitante,
+      id_tipo_curso,
+      id_curso,
       fecha_nacimiento_solicitante,
       direccion_solicitante,
       genero_solicitante,
       horario_preferido,
-      id_tipo_curso,
-      id_curso,
       monto_matricula,
       metodo_pago,
       numero_comprobante,
@@ -223,8 +226,9 @@ exports.createSolicitud = async (req, res) => {
       documento_estatus_legal_mime,
       documento_estatus_legal_size_kb,
       documento_estatus_legal_nombre_original,
-      id_estudiante_existente
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+      id_estudiante_existente,
+      contacto_emergencia
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const values = [
       codigo,
@@ -233,12 +237,12 @@ exports.createSolicitud = async (req, res) => {
       apellido_solicitante || null,
       telefono_solicitante || null,
       email_solicitante || null,
+      Number(id_tipo_curso),
+      cursoSeleccionado.id_curso, // ID del curso seleccionado con cupos disponibles
       convertirFecha(fecha_nacimiento_solicitante),
       direccion_solicitante || null,
       genero_solicitante || null,
       horario_preferido,
-      Number(id_tipo_curso),
-      cursoSeleccionado.id_curso, // ID del curso seleccionado con cupos disponibles
       Number(monto_matricula),
       metodo_pago,
       numero_comprobante ? numero_comprobante.trim().toUpperCase() : null,
@@ -257,7 +261,8 @@ exports.createSolicitud = async (req, res) => {
       documentoEstatusLegalMime,
       documentoEstatusLegalSizeKb,
       documentoEstatusLegalNombreOriginal,
-      id_estudiante_existente ? Number(id_estudiante_existente) : null
+      id_estudiante_existente ? Number(id_estudiante_existente) : null,
+      contacto_emergencia || null
     ];
 
     const [result] = await connection.execute(sql, values);
@@ -532,5 +537,428 @@ exports.updateDecision = async (req, res) => {
     }
     console.error('Error actualizando decisión:', err);
     return res.status(500).json({ error: 'Error al actualizar la solicitud' });
+  }
+};
+
+// Generar reporte Excel de solicitudes
+exports.generarReporteExcel = async (req, res) => {
+  try {
+    // 1. Obtener todas las solicitudes aprobadas con información completa
+    const [solicitudesAprobadas] = await pool.execute(`
+      SELECT 
+        s.codigo_solicitud,
+        s.identificacion_solicitante,
+        s.nombre_solicitante,
+        s.apellido_solicitante,
+        s.email_solicitante,
+        s.telefono_solicitante,
+        s.fecha_nacimiento_solicitante,
+        s.genero_solicitante,
+        s.horario_preferido,
+        tc.nombre AS tipo_curso,
+        c.nombre AS curso_nombre,
+        c.codigo_curso,
+        c.horario AS horario_curso,
+        s.monto_matricula,
+        s.metodo_pago,
+        s.fecha_solicitud,
+        s.contacto_emergencia
+      FROM solicitudes_matricula s
+      LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = s.id_tipo_curso
+      LEFT JOIN cursos c ON c.id_curso = s.id_curso
+      WHERE s.estado = 'aprobado'
+      ORDER BY s.fecha_solicitud DESC
+    `);
+
+    // 1.5 Obtener todas las solicitudes rechazadas
+    const [solicitudesRechazadas] = await pool.execute(`
+      SELECT 
+        s.codigo_solicitud,
+        s.identificacion_solicitante,
+        s.nombre_solicitante,
+        s.apellido_solicitante,
+        s.email_solicitante,
+        s.telefono_solicitante,
+        s.horario_preferido,
+        tc.nombre AS tipo_curso,
+        c.nombre AS curso_nombre,
+        s.monto_matricula,
+        s.fecha_solicitud,
+        s.observaciones
+      FROM solicitudes_matricula s
+      LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = s.id_tipo_curso
+      LEFT JOIN cursos c ON c.id_curso = s.id_curso
+      WHERE s.estado = 'rechazado'
+      ORDER BY s.fecha_solicitud DESC
+    `);
+
+    // 2. Obtener resumen estadístico
+    const [resumenGeneral] = await pool.execute(`
+      SELECT 
+        COUNT(CASE WHEN estado = 'aprobado' THEN 1 END) as total_aprobadas,
+        COUNT(CASE WHEN estado = 'rechazado' THEN 1 END) as total_rechazadas,
+        COUNT(CASE WHEN estado = 'pendiente' THEN 1 END) as total_pendientes,
+        COUNT(CASE WHEN estado = 'observaciones' THEN 1 END) as total_observaciones,
+        COUNT(*) as total_solicitudes
+      FROM solicitudes_matricula
+    `);
+
+    // 3. Obtener resumen por curso
+    const [resumenPorCurso] = await pool.execute(`
+      SELECT 
+        c.codigo_curso,
+        c.nombre AS curso_nombre,
+        c.horario,
+        tc.nombre AS tipo_curso,
+        COUNT(s.id_solicitud) as total_estudiantes
+      FROM cursos c
+      LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = c.id_tipo_curso
+      LEFT JOIN solicitudes_matricula s ON s.id_curso = c.id_curso AND s.estado = 'aprobado'
+      GROUP BY c.id_curso, c.codigo_curso, c.nombre, c.horario, tc.nombre
+      HAVING total_estudiantes > 0
+      ORDER BY total_estudiantes DESC
+    `);
+
+    // Crear workbook
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'SGA Belleza';
+    workbook.created = new Date();
+
+    // ========== HOJA 1: SOLICITUDES APROBADAS ==========
+    const sheet1 = workbook.addWorksheet('Solicitudes Aprobadas', {
+      properties: { tabColor: { argb: 'FFDC2626' } }
+    });
+
+    // Encabezados Hoja 1
+    sheet1.columns = [
+      { header: 'Código', key: 'codigo', width: 18 },
+      { header: 'Cédula', key: 'cedula', width: 12 },
+      { header: 'Nombres', key: 'nombres', width: 20 },
+      { header: 'Apellidos', key: 'apellidos', width: 20 },
+      { header: 'Email', key: 'email', width: 30 },
+      { header: 'Teléfono', key: 'telefono', width: 12 },
+      { header: 'Fecha Nacimiento', key: 'fecha_nac', width: 15 },
+      { header: 'Género', key: 'genero', width: 12 },
+      { header: 'Tipo Curso', key: 'tipo_curso', width: 20 },
+      { header: 'Curso', key: 'curso', width: 25 },
+      { header: 'Código Curso', key: 'codigo_curso', width: 15 },
+      { header: 'Horario Preferido', key: 'horario_pref', width: 15 },
+      { header: 'Horario Curso', key: 'horario_curso', width: 15 },
+      { header: 'Monto', key: 'monto', width: 12 },
+      { header: 'Método Pago', key: 'metodo_pago', width: 15 },
+      { header: 'Contacto Emergencia', key: 'contacto_emerg', width: 15 },
+      { header: 'Fecha Solicitud', key: 'fecha_sol', width: 18 }
+    ];
+
+    // Estilo del encabezado
+    sheet1.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+    sheet1.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFDC2626' }
+    };
+    sheet1.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+    sheet1.getRow(1).height = 25;
+
+    // Agregar datos
+    solicitudesAprobadas.forEach(sol => {
+      sheet1.addRow({
+        codigo: sol.codigo_solicitud,
+        cedula: sol.identificacion_solicitante,
+        nombres: sol.nombre_solicitante,
+        apellidos: sol.apellido_solicitante,
+        email: sol.email_solicitante,
+        telefono: sol.telefono_solicitante || 'N/A',
+        fecha_nac: sol.fecha_nacimiento_solicitante ? new Date(sol.fecha_nacimiento_solicitante).toLocaleDateString('es-EC') : 'N/A',
+        genero: sol.genero_solicitante || 'N/A',
+        tipo_curso: sol.tipo_curso || 'N/A',
+        curso: sol.curso_nombre || 'N/A',
+        codigo_curso: sol.codigo_curso || 'N/A',
+        horario_pref: sol.horario_preferido,
+        horario_curso: sol.horario_curso || 'N/A',
+        monto: `$${parseFloat(sol.monto_matricula).toFixed(2)}`,
+        metodo_pago: sol.metodo_pago,
+        contacto_emerg: sol.contacto_emergencia || 'N/A',
+        fecha_sol: new Date(sol.fecha_solicitud).toLocaleString('es-EC')
+      });
+    });
+
+    // Aplicar bordes y estilos alternados
+    sheet1.eachRow((row, rowNumber) => {
+      row.eachCell(cell => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
+        };
+      });
+      
+      if (rowNumber > 1 && rowNumber % 2 === 0) {
+        row.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFF9FAFB' }
+        };
+      }
+    });
+
+    // ========== HOJA 2: SOLICITUDES RECHAZADAS ==========
+    const sheet2 = workbook.addWorksheet('Solicitudes Rechazadas', {
+      properties: { tabColor: { argb: 'FFEF4444' } }
+    });
+
+    // Encabezados Hoja 2
+    sheet2.columns = [
+      { header: 'Código', key: 'codigo', width: 18 },
+      { header: 'Cédula', key: 'cedula', width: 12 },
+      { header: 'Nombres', key: 'nombres', width: 20 },
+      { header: 'Apellidos', key: 'apellidos', width: 20 },
+      { header: 'Email', key: 'email', width: 30 },
+      { header: 'Teléfono', key: 'telefono', width: 12 },
+      { header: 'Tipo Curso', key: 'tipo_curso', width: 20 },
+      { header: 'Curso', key: 'curso', width: 25 },
+      { header: 'Horario', key: 'horario', width: 15 },
+      { header: 'Monto', key: 'monto', width: 12 },
+      { header: 'Fecha Solicitud', key: 'fecha_sol', width: 18 },
+      { header: 'Observaciones', key: 'observaciones', width: 40 }
+    ];
+
+    // Estilo del encabezado
+    sheet2.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+    sheet2.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFEF4444' }
+    };
+    sheet2.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+    sheet2.getRow(1).height = 25;
+
+    // Agregar datos rechazados
+    solicitudesRechazadas.forEach(sol => {
+      sheet2.addRow({
+        codigo: sol.codigo_solicitud,
+        cedula: sol.identificacion_solicitante,
+        nombres: sol.nombre_solicitante,
+        apellidos: sol.apellido_solicitante,
+        email: sol.email_solicitante,
+        telefono: sol.telefono_solicitante || 'N/A',
+        tipo_curso: sol.tipo_curso || 'N/A',
+        curso: sol.curso_nombre || 'N/A',
+        horario: sol.horario_preferido,
+        monto: `$${parseFloat(sol.monto_matricula).toFixed(2)}`,
+        fecha_sol: new Date(sol.fecha_solicitud).toLocaleString('es-EC'),
+        observaciones: sol.observaciones || 'Sin observaciones'
+      });
+    });
+
+    // Aplicar bordes y estilos alternados
+    sheet2.eachRow((row, rowNumber) => {
+      row.eachCell(cell => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
+        };
+      });
+      
+      if (rowNumber > 1 && rowNumber % 2 === 0) {
+        row.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFEF2F2' }
+        };
+      }
+    });
+
+    // ========== HOJA 3: RESUMEN ESTADÍSTICO ==========
+    const sheet3 = workbook.addWorksheet('Resumen Estadístico', {
+      properties: { tabColor: { argb: 'FF10B981' } }
+    });
+
+    // Título principal con diseño profesional
+    sheet3.mergeCells('A1:F1');
+    sheet3.getCell('A1').value = 'REPORTE ESTADÍSTICO DE MATRÍCULAS';
+    sheet3.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
+    sheet3.getCell('A1').fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFDC2626' }
+    };
+    sheet3.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
+    sheet3.getRow(1).height = 35;
+
+    // Subtítulo con fecha
+    sheet3.mergeCells('A2:F2');
+    sheet3.getCell('A2').value = `Generado el: ${new Date().toLocaleDateString('es-EC', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })}`;
+    sheet3.getCell('A2').font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
+    sheet3.getCell('A2').alignment = { horizontal: 'center', vertical: 'middle' };
+    sheet3.getRow(2).height = 20;
+
+    // Sección 1: Resumen General
+    sheet3.mergeCells('A4:B4');
+    sheet3.getCell('A4').value = 'RESUMEN GENERAL DE SOLICITUDES';
+    sheet3.getCell('A4').font = { bold: true, size: 12, color: { argb: 'FFDC2626' } };
+    sheet3.getCell('A4').fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFFEF2F2' }
+    };
+    sheet3.getCell('A4').alignment = { horizontal: 'center', vertical: 'middle' };
+    sheet3.getRow(4).height = 25;
+
+    // Encabezados
+    sheet3.getCell('A6').value = 'Estado';
+    sheet3.getCell('B6').value = 'Cantidad';
+    sheet3.getCell('C6').value = 'Porcentaje';
+    ['A6', 'B6', 'C6'].forEach(cell => {
+      sheet3.getCell(cell).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      sheet3.getCell(cell).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEF4444' } };
+      sheet3.getCell(cell).alignment = { horizontal: 'center', vertical: 'middle' };
+    });
+
+    const stats = resumenGeneral[0];
+    const total = stats.total_solicitudes;
+    
+    // Datos con porcentajes
+    const datosEstadisticos = [
+      { estado: '✓ Aprobadas', cantidad: stats.total_aprobadas, color: 'FF10B981' },
+      { estado: '✗ Rechazadas', cantidad: stats.total_rechazadas, color: 'FFEF4444' },
+      { estado: '⏳ Pendientes', cantidad: stats.total_pendientes, color: 'FFF59E0B' },
+      { estado: '⚠ Con Observaciones', cantidad: stats.total_observaciones, color: 'FFFBBF24' }
+    ];
+
+    let row = 7;
+    datosEstadisticos.forEach(dato => {
+      const porcentaje = total > 0 ? ((dato.cantidad / total) * 100).toFixed(1) : '0.0';
+      sheet3.getCell(`A${row}`).value = dato.estado;
+      sheet3.getCell(`B${row}`).value = dato.cantidad;
+      sheet3.getCell(`C${row}`).value = `${porcentaje}%`;
+      
+      sheet3.getCell(`B${row}`).alignment = { horizontal: 'center' };
+      sheet3.getCell(`C${row}`).alignment = { horizontal: 'center' };
+      sheet3.getCell(`C${row}`).font = { bold: true, color: { argb: dato.color } };
+      
+      row++;
+    });
+
+    // Total
+    sheet3.getCell(`A${row}`).value = 'TOTAL';
+    sheet3.getCell(`B${row}`).value = total;
+    sheet3.getCell(`C${row}`).value = '100%';
+    ['A', 'B', 'C'].forEach(col => {
+      sheet3.getCell(`${col}${row}`).font = { bold: true, size: 11 };
+      sheet3.getCell(`${col}${row}`).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE5E7EB' }
+      };
+    });
+    sheet3.getCell(`B${row}`).alignment = { horizontal: 'center' };
+    sheet3.getCell(`C${row}`).alignment = { horizontal: 'center' };
+
+    // Sección 2: Estudiantes por Curso
+    const startRow = row + 3;
+    sheet3.mergeCells(`A${startRow}:E${startRow}`);
+    sheet3.getCell(`A${startRow}`).value = 'DISTRIBUCIÓN DE ESTUDIANTES POR CURSO';
+    sheet3.getCell(`A${startRow}`).font = { bold: true, size: 12, color: { argb: 'FFDC2626' } };
+    sheet3.getCell(`A${startRow}`).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFFEF2F2' }
+    };
+    sheet3.getCell(`A${startRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
+    sheet3.getRow(startRow).height = 25;
+
+    // Encabezados tabla cursos
+    const headerRow = startRow + 2;
+    sheet3.getCell(`A${headerRow}`).value = 'Código';
+    sheet3.getCell(`B${headerRow}`).value = 'Nombre del Curso';
+    sheet3.getCell(`C${headerRow}`).value = 'Tipo';
+    sheet3.getCell(`D${headerRow}`).value = 'Horario';
+    sheet3.getCell(`E${headerRow}`).value = 'Estudiantes';
+
+    ['A', 'B', 'C', 'D', 'E'].forEach(col => {
+      sheet3.getCell(`${col}${headerRow}`).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      sheet3.getCell(`${col}${headerRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF10B981' } };
+      sheet3.getCell(`${col}${headerRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
+    });
+
+    // Datos por curso
+    let cursoRow = headerRow + 1;
+    resumenPorCurso.forEach((curso, index) => {
+      sheet3.getCell(`A${cursoRow}`).value = curso.codigo_curso;
+      sheet3.getCell(`B${cursoRow}`).value = curso.curso_nombre;
+      sheet3.getCell(`C${cursoRow}`).value = curso.tipo_curso;
+      sheet3.getCell(`D${cursoRow}`).value = curso.horario;
+      sheet3.getCell(`E${cursoRow}`).value = curso.total_estudiantes;
+      
+      sheet3.getCell(`E${cursoRow}`).alignment = { horizontal: 'center' };
+      sheet3.getCell(`E${cursoRow}`).font = { bold: true, color: { argb: 'FF10B981' } };
+      
+      // Filas alternadas
+      if (index % 2 === 0) {
+        ['A', 'B', 'C', 'D', 'E'].forEach(col => {
+          sheet3.getCell(`${col}${cursoRow}`).fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFF9FAFB' }
+          };
+        });
+      }
+      
+      cursoRow++;
+    });
+
+    // Ajustar anchos
+    sheet3.getColumn('A').width = 15;
+    sheet3.getColumn('B').width = 40;
+    sheet3.getColumn('C').width = 25;
+    sheet3.getColumn('D').width = 15;
+    sheet3.getColumn('E').width = 15;
+    sheet3.getColumn('F').width = 5;
+
+    // Aplicar bordes a resumen general
+    for (let i = 6; i <= row; i++) {
+      ['A', 'B', 'C'].forEach(col => {
+        sheet3.getCell(`${col}${i}`).border = {
+          top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
+        };
+      });
+    }
+
+    // Aplicar bordes a tabla de cursos
+    for (let i = headerRow; i < cursoRow; i++) {
+      ['A', 'B', 'C', 'D', 'E'].forEach(col => {
+        sheet3.getCell(`${col}${i}`).border = {
+          top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
+        };
+      });
+    }
+
+    // Generar archivo
+    const buffer = await workbook.xlsx.writeBuffer();
+    const fecha = new Date().toISOString().split('T')[0];
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=Reporte_Matriculas_${fecha}.xlsx`);
+    res.send(buffer);
+
+  } catch (error) {
+    console.error('Error generando reporte Excel:', error);
+    res.status(500).json({ error: 'Error al generar el reporte', details: error.message });
   }
 };

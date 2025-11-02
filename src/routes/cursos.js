@@ -1,4 +1,5 @@
 const express = require('express');
+const cursosController = require('../controllers/cursos.controller');
 const { 
   listCursosController, 
   getCursosDisponiblesController, 
@@ -9,7 +10,7 @@ const {
   getEstudiantesByCursoController,
   getTareasByCursoController,
   getCalificacionesByCursoController
-} = require('../controllers/cursos.controller');
+} = cursosController;
 
 const { pollingLimiter, generalLimiter } = require('../middleware/rateLimit');
 const { authMiddleware } = require('../middleware/auth');
@@ -18,6 +19,9 @@ const router = express.Router();
 
 // GET /api/cursos/disponibles - DEBE IR ANTES de /:id para evitar conflictos
 router.get('/disponibles', generalLimiter, getCursosDisponiblesController);
+
+// GET /api/cursos/reporte/excel - Generar reporte Excel
+router.get('/reporte/excel', cursosController.generarReporteExcel);
 
 // GET /api/cursos?estado=activo&tipo=<id_tipo_curso>&page=1&limit=10
 router.get('/', generalLimiter, listCursosController);

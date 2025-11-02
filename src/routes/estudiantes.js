@@ -10,6 +10,9 @@ router.post('/crear-desde-solicitud', estudiantesController.createEstudianteFrom
 // GET /api/estudiantes/verificar - Verificar si estudiante existe por identificación
 router.get('/verificar', estudiantesController.verificarEstudiante);
 
+// GET /api/estudiantes/reporte/excel - Generar reporte Excel
+router.get('/reporte/excel', estudiantesController.generarReporteExcel);
+
 // GET /api/estudiantes - Obtener todos los estudiantes
 router.get('/', estudiantesController.getEstudiantes);
 

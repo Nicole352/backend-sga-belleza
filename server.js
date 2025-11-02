@@ -1,6 +1,7 @@
 require('dotenv').config();
 const app = require('./src/app');
 const { testConnection } = require('./src/config/database');
+const initDatabase = require('./src/utils/initDatabase');
 
 const PORT = process.env.PORT || 3000;
 
@@ -8,6 +9,9 @@ const startServer = async () => {
   try {
     // Probar conexión a BD
     await testConnection();
+    
+    // Initialize database tables
+    await initDatabase();
     
     // Crear directorio de uploads si está habilitado por env (por defecto deshabilitado).
     // Nota: Actualmente los comprobantes se guardan en BD (LONGBLOB) con multer.memoryStorage.

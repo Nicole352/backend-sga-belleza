@@ -47,4 +47,7 @@ router.get('/:id/documento-estatus-legal', solicitudesController.getDocumentoEst
 // PATCH /api/solicitudes/:id/decision (admin)
 router.patch('/:id/decision', solicitudesController.updateDecision);
 
+// GET /api/solicitudes/reporte/excel (admin) - Generar reporte Excel
+router.get('/reporte/excel', solicitudesController.generarReporteExcel);
+
 module.exports = router;

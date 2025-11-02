@@ -1,13 +1,13 @@
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const compression = require('compression');
+const express = require("express");
+const cors = require("cors");
+const helmet = require("helmet");
+const compression = require("compression");
 
 // Middleware de auditoría
-const { auditoriaMiddleware } = require('./middleware/auditoria.middleware');
+const { auditoriaMiddleware } = require("./middleware/auditoria.middleware");
 
 // Utilidad de inicialización
-const inicializarTiposReportes = require('./utils/inicializarTiposReportes');
+const inicializarTiposReportes = require("./utils/inicializarTiposReportes");
 
 // Routes
 const cursosRoutes = require('./routes/cursos');
@@ -35,36 +35,44 @@ const asistenciasRoutes = require('./routes/asistencias');
 const app = express();
 
 // Middlewares de seguridad básica
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }
-}));
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
+);
 
 // Compresión GZIP para todas las respuestas (reduce 70% el tamaño)
 app.use(compression());
 
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://tudominio.com'] 
-    : ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:4173'],
-  credentials: true
-}));
+app.use(
+  cors({
+    origin:
+      process.env.NODE_ENV === "production"
+        ? ["https://tudominio.com"]
+        : [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://localhost:4173",
+          ],
+    credentials: true,
+  }),
+);
 
 // Nota: el rate limiting ahora es específico por ruta (ver middleware/rateLimit.js)
 
 // Body parsing
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Middleware de auditoría (debe ir después de body parsing)
 app.use(auditoriaMiddleware);
 
-
 // Health check
-app.get('/api/health', (req, res) => {
+app.get("/api/health", (req, res) => {
   res.json({
-    status: 'ok',
+    status: "ok",
     timestamp: new Date().toISOString(),
-    service: 'SGA Belleza API'
+    service: "SGA Belleza API",
   });
 });
 
@@ -94,8 +102,8 @@ app.use('/api/asistencias', asistenciasRoutes);
 
 // Inicializar tipos de reportes al cargar el módulo
 // Se ejecutará automáticamente cuando el servidor inicie
-inicializarTiposReportes().catch(err => {
-  console.error('Error en inicialización de tipos de reportes:', err);
+inicializarTiposReportes().catch((err) => {
+  console.error("Error en inicialización de tipos de reportes:", err);
 });
 
 module.exports = app;

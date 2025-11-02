@@ -22,6 +22,9 @@ const upload = multer({
   }
 });
 
+// GET /api/pagos-mensuales/reporte/excel - Generar reporte Excel (sin autenticación para admin)
+router.get('/reporte/excel', pagosMenualesController.generarReporteExcel);
+
 // Todas las rutas requieren autenticación
 router.use(authMiddleware);
 
