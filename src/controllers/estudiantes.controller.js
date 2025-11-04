@@ -208,18 +208,41 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
     // Obtener el curso asociado al tipo de curso de la solicitud CON EL HORARIO CORRECTO
     console.log('🔍 Buscando curso con horario:', solicitud.horario_preferido);
     const [cursosDisponibles] = await connection.execute(`
-      SELECT id_curso, horario FROM cursos 
-      WHERE id_tipo_curso = ? 
-        AND horario = ?
-        AND estado IN ('activo', 'planificado')
-        AND cupos_disponibles > 0
-      ORDER BY fecha_inicio ASC LIMIT 1
-    `, [solicitud.id_tipo_curso, solicitud.horario_preferido]);
+      SELECT 
+        c.id_curso, 
+        c.horario,
+        c.capacidad_maxima,
+        COALESCE(
+          (SELECT COUNT(*) FROM matriculas m WHERE m.id_curso = c.id_curso AND m.estado = 'activa'), 0
+        ) + COALESCE(
+          (SELECT COUNT(*) FROM solicitudes_matricula s 
+           WHERE s.id_curso = c.id_curso 
+           AND s.estado = 'pendiente'
+           AND s.id_solicitud != ?), 0
+        ) AS cupos_ocupados,
+        c.capacidad_maxima - (
+          COALESCE(
+            (SELECT COUNT(*) FROM matriculas m WHERE m.id_curso = c.id_curso AND m.estado = 'activa'), 0
+          ) + COALESCE(
+            (SELECT COUNT(*) FROM solicitudes_matricula s 
+             WHERE s.id_curso = c.id_curso 
+             AND s.estado = 'pendiente'
+             AND s.id_solicitud != ?), 0
+          )
+        ) AS cupos_reales_disponibles
+      FROM cursos c
+      WHERE c.id_tipo_curso = ? 
+        AND c.horario = ?
+        AND c.estado IN ('activo', 'planificado')
+      HAVING cupos_reales_disponibles > 0
+      ORDER BY c.fecha_inicio ASC 
+      LIMIT 1
+    `, [id_solicitud, id_solicitud, solicitud.id_tipo_curso, solicitud.horario_preferido]);
     
     let id_curso = null;
     if (cursosDisponibles.length > 0) {
       id_curso = cursosDisponibles[0].id_curso;
-      console.log('✅ Curso encontrado:', id_curso, 'Horario:', cursosDisponibles[0].horario);
+      console.log('✅ Curso encontrado:', id_curso, 'Horario:', cursosDisponibles[0].horario, 'Cupos libres:', cursosDisponibles[0].cupos_reales_disponibles);
     } else {
       await connection.rollback();
       return res.status(400).json({ 
@@ -416,7 +439,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
           console.log('✅ Cuotas mensuales generadas exitosamente para matrícula:', id_matricula);
         }
       } else {
-        console.log('❌ No se encontró tipo de curso para generar cuotas');
+        console.log('-No se encontró tipo de curso para generar cuotas');
       }
     }
     
@@ -523,7 +546,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
               console.log('⚠️ No se encontró el primer pago para generar PDF');
             }
           } catch (pdfError) {
-            console.error('❌ Error generando PDF del comprobante (continuando sin PDF):', pdfError);
+            console.error('-Error generando PDF del comprobante (continuando sin PDF):', pdfError);
           }
 
           // Enviar email de bienvenida con credenciales y PDF del primer pago
@@ -534,7 +557,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
           }
           
         } catch (emailError) {
-          console.error('❌ Error enviando email de bienvenida (no afecta la creación):', emailError);
+          console.error('-Error enviando email de bienvenida (no afecta la creación):', emailError);
         }
       });
     }

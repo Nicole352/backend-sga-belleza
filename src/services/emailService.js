@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { getActiveAdmins } = require('../models/admins.model');
 
 // Configuración del transporter de nodemailer para iCloud Mail
 // Con configuraciones anti-spam optimizadas
@@ -8,18 +9,26 @@ const transporter = nodemailer.createTransport({
   secure: false, // true para 465, false para otros puertos
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD
+    pass: process.env.EMAIL_PASSWORD,
+    type: 'login'
   },
   tls: {
-    rejectUnauthorized: false,
-    ciphers: 'SSLv3' // Mejorar compatibilidad SSL/TLS
+    rejectUnauthorized: true,
+    minVersion: 'TLSv1.2'
   },
-  // Configuraciones adicionales para evitar spam
+  debug: true, // Habilitar logs para diagnóstico
+  // Configuraciones adicionales para evitar spam y el texto "MAIN DELIVERY SYSTEM"
   pool: true, // Usar pool de conexiones
   maxConnections: 5,
   maxMessages: 100,
   rateDelta: 1000, // Tiempo entre emails (1 segundo)
-  rateLimit: 5 // Máximo 5 emails por segundo
+  rateLimit: 5, // Máximo 5 emails por segundo
+  headers: {
+    'X-Transport-Type': 'Direct',
+    'X-Mailer': 'Escuela Jessica Vélez - SGA',
+    'X-MSMail-Priority': 'Normal',
+    'X-MimeOLE': 'Produced By SGA System'
+  }
 });
 
 /**
@@ -27,17 +36,21 @@ const transporter = nodemailer.createTransport({
  */
 async function enviarNotificacionNuevaMatricula(solicitud) {
   try {
+    // Obtener todos los administradores activos
+    const admins = await getActiveAdmins();
+    const adminEmails = admins.map(admin => admin.email);
+    
     const mailOptions = {
-      from: `"${process.env.EMAIL_FROM_NAME || 'Academia Jessica Vélez'}" <${process.env.EMAIL_USER}>`,
-      to: process.env.EMAIL_USER, // El admin recibe en su propio correo
-      replyTo: process.env.EMAIL_USER, // Dirección de respuesta
+      from: `"${process.env.EMAIL_FROM_NAME || 'Escuela Jessica Vélez'}" <${process.env.EMAIL_USER}>`,
+      to: adminEmails.join(', '), // Enviar a todos los admins activos
+      replyTo: process.env.EMAIL_USER,
       subject: `🎓 Nueva Solicitud de Matrícula - ${solicitud.nombres} ${solicitud.apellidos}`,
       // Headers anti-spam
       headers: {
         'X-Priority': '1', // Alta prioridad
         'X-MSMail-Priority': 'High',
         'Importance': 'high',
-        'X-Mailer': 'Academia Jessica Vélez - Sistema de Gestión Académica',
+        'X-Mailer': 'Escuela Jessica Vélez - Sistema de Gestión Académica',
         'X-Entity-Ref-ID': `matricula-${Date.now()}`,
         'List-Unsubscribe': `<mailto:${process.env.EMAIL_USER}?subject=unsubscribe>`,
         'Precedence': 'bulk'
@@ -128,7 +141,7 @@ async function enviarNotificacionNuevaMatricula(solicitud) {
               </div>
             </div>
             <div class="footer">
-              <p><strong>Academia Jessica Vélez</strong></p>
+              <p><strong>Escuela Jessica Vélez</strong></p>
               <p>Sistema de Gestión Académica - Notificación Automática</p>
               <p style="margin-top: 10px; color: #9ca3af;">Este es un correo automático, por favor no responder.</p>
             </div>
@@ -142,7 +155,7 @@ async function enviarNotificacionNuevaMatricula(solicitud) {
     console.log('✅ Email de notificación enviado al admin:', info.messageId);
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error('❌ Error enviando email de notificación:', error);
+    console.error('-Error enviando email de notificación:', error);
     return { success: false, error: error.message };
   }
 }
@@ -156,16 +169,16 @@ async function enviarNotificacionNuevaMatricula(solicitud) {
 async function enviarEmailBienvenidaEstudiante(estudiante, credenciales, pdfComprobante = null) {
   try {
     const mailOptions = {
-      from: `"${process.env.EMAIL_FROM_NAME || 'Academia Jessica Vélez'}" <${process.env.EMAIL_USER}>`,
+      from: `"${process.env.EMAIL_FROM_NAME || 'Escuela Jessica Vélez'}" <${process.env.EMAIL_USER}>`,
       to: estudiante.email,
       replyTo: process.env.EMAIL_USER,
-      subject: '🎉 ¡Bienvenido a Academia Jessica Vélez! - Matrícula Aprobada',
+      subject: '🎉 ¡Bienvenido a Escuela Jessica Vélez! - Matrícula Aprobada',
       // Headers anti-spam para emails transaccionales
       headers: {
         'X-Priority': '1',
         'X-MSMail-Priority': 'High',
         'Importance': 'high',
-        'X-Mailer': 'Academia Jessica Vélez - Sistema de Gestión Académica',
+        'X-Mailer': 'Escuela Jessica Vélez - Sistema de Gestión Académica',
         'X-Entity-Ref-ID': `bienvenida-${estudiante.cedula}-${Date.now()}`,
         'List-Unsubscribe': `<mailto:${process.env.EMAIL_USER}?subject=unsubscribe>`,
         'X-Auto-Response-Suppress': 'OOF, DR, RN, NRN, AutoReply',
@@ -479,7 +492,7 @@ async function enviarEmailBienvenidaEstudiante(estudiante, credenciales, pdfComp
               <div class="logo" style="background: rgba(255,255,255,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 40px;">
                 🎓
               </div>
-              <h1>¡Bienvenido a Academia Jessica Vélez!</h1>
+              <h1>¡Bienvenido a Escuela Jessica Vélez!</h1>
               <p>Tu matrícula ha sido aprobada exitosamente</p>
             </div>
             
@@ -487,12 +500,12 @@ async function enviarEmailBienvenidaEstudiante(estudiante, credenciales, pdfComp
               <div class="success-box">
                 <h2>✅ ¡Felicitaciones ${estudiante.nombres}!</h2>
                 <p style="color: #065f46; margin: 10px 0 0 0; font-size: 15px;">
-                  Tu solicitud de matrícula ha sido aprobada. Estamos emocionados de tenerte en nuestra academia.
+                  Tu solicitud de matrícula ha sido aprobada. Estamos emocionados de tenerte en nuestra Escuela.
                 </p>
               </div>
 
               <p style="color: #4b5563; line-height: 1.8; font-size: 15px;">
-                Gracias por elegir a <strong>Academia Jessica Vélez</strong> para tu formación profesional en belleza estética. 
+                Gracias por elegir a <strong>Escuela Jessica Vélez</strong> para tu formación profesional en belleza estética. 
                 Estamos comprometidos en brindarte la mejor educación y acompañarte en tu camino hacia el éxito.
               </p>
 
@@ -536,7 +549,7 @@ async function enviarEmailBienvenidaEstudiante(estudiante, credenciales, pdfComp
               <div class="info-section" style="background: #fef2f2; border-left: 4px solid #ef4444;">
                 <h4 style="color: #991b1b;">💰 Recordatorio de Pagos:</h4>
                 <ul style="color: #991b1b;">
-                  <li>La academia <strong>NO cobra matrícula</strong>, solo pagas el primer mes por adelantado</li>
+                  <li>La Escuela <strong>NO cobra matrícula</strong>, solo pagas el primer mes por adelantado</li>
                   <li><strong>Sé puntual</strong> con tus pagos mensuales para evitar inconvenientes</li>
                   <li>Puedes realizar tus pagos desde el <strong>panel de estudiante</strong></li>
                   <li>Recibirás un <strong>comprobante PDF</strong> por cada pago realizado</li>
@@ -559,7 +572,7 @@ async function enviarEmailBienvenidaEstudiante(estudiante, credenciales, pdfComp
             </div>
 
             <div class="footer">
-              <p><strong>Academia Jessica Vélez</strong></p>
+              <p><strong>Escuela Jessica Vélez</strong></p>
               <p>Tu carrera en belleza estética comienza aquí</p>
               <p style="margin-top: 15px; color: #9ca3af;">
                 Este correo fue enviado a: ${estudiante.email}<br>
@@ -576,7 +589,7 @@ async function enviarEmailBienvenidaEstudiante(estudiante, credenciales, pdfComp
     console.log('✅ Email de bienvenida enviado a:', estudiante.email);
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error('❌ Error enviando email de bienvenida:', error);
+    console.error('-Error enviando email de bienvenida:', error);
     return { success: false, error: error.message };
   }
 }
@@ -587,7 +600,7 @@ async function enviarEmailBienvenidaEstudiante(estudiante, credenciales, pdfComp
 async function enviarComprobantePagoMensual(estudiante, pago, pdfBuffer) {
   try {
     const mailOptions = {
-      from: `"${process.env.EMAIL_FROM_NAME || 'Academia Jessica Vélez'}" <${process.env.EMAIL_USER}>`,
+      from: `"${process.env.EMAIL_FROM_NAME || 'Escuela Jessica Vélez'}" <${process.env.EMAIL_USER}>`,
       to: estudiante.email,
       replyTo: process.env.EMAIL_USER,
       subject: `📄 Comprobante de Pago - Mes ${new Date(pago.mes_pago).toLocaleDateString('es-EC', { month: 'long', year: 'numeric' })}`,
@@ -596,7 +609,7 @@ async function enviarComprobantePagoMensual(estudiante, pago, pdfBuffer) {
         'X-Priority': '1',
         'X-MSMail-Priority': 'High',
         'Importance': 'high',
-        'X-Mailer': 'Academia Jessica Vélez - Sistema de Gestión Académica',
+        'X-Mailer': 'Escuela Jessica Vélez - Sistema de Gestión Académica',
         'X-Entity-Ref-ID': `comprobante-${pago.id_pago_mensual}-${Date.now()}`,
         'List-Unsubscribe': `<mailto:${process.env.EMAIL_USER}?subject=unsubscribe>`,
         'X-Auto-Response-Suppress': 'OOF, DR, RN, NRN, AutoReply',
@@ -671,7 +684,7 @@ async function enviarComprobantePagoMensual(estudiante, pago, pdfBuffer) {
               </p>
             </div>
             <div class="footer">
-              <p><strong>Academia Jessica Vélez</strong></p>
+              <p><strong>Escuela Jessica Vélez</strong></p>
               <p>Gracias por tu puntualidad y compromiso</p>
               <p style="margin-top: 10px; color: #9ca3af;">Este es un correo automático, por favor no responder.</p>
             </div>
@@ -692,7 +705,7 @@ async function enviarComprobantePagoMensual(estudiante, pago, pdfBuffer) {
     console.log('✅ Email con comprobante enviado a:', estudiante.email);
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error('❌ Error enviando email con comprobante:', error);
+    console.error('-Error enviando email con comprobante:', error);
     return { success: false, error: error.message };
   }
 }
@@ -702,9 +715,13 @@ async function enviarComprobantePagoMensual(estudiante, pago, pdfBuffer) {
  */
 async function enviarNotificacionPagoEstudiante(datosPago) {
   try {
+    // Obtener todos los administradores activos
+    const admins = await getActiveAdmins();
+    const adminEmails = admins.map(admin => admin.email);
+
     const mailOptions = {
-      from: `"${process.env.EMAIL_FROM_NAME || 'Academia Jessica Vélez'}" <${process.env.EMAIL_USER}>`,
-      to: process.env.EMAIL_USER, // Email del admin
+      from: `"${process.env.EMAIL_FROM_NAME || 'Escuela Jessica Vélez'}" <${process.env.EMAIL_USER}>`,
+      to: adminEmails.join(', '), // Enviar a todos los admins activos
       replyTo: process.env.EMAIL_USER,
       subject: `💰 Nuevo Pago Pendiente de Verificación - ${datosPago.estudiante_nombre}`,
       // Headers anti-spam
@@ -712,7 +729,7 @@ async function enviarNotificacionPagoEstudiante(datosPago) {
         'X-Priority': '1',
         'X-MSMail-Priority': 'High',
         'Importance': 'high',
-        'X-Mailer': 'Academia Jessica Vélez - Sistema de Gestión Académica',
+        'X-Mailer': 'Escuela Jessica Vélez - Sistema de Gestión Académica',
         'X-Entity-Ref-ID': `notif-pago-${datosPago.id_pago}-${Date.now()}`,
         'List-Unsubscribe': `<mailto:${process.env.EMAIL_USER}?subject=unsubscribe>`,
         'Precedence': 'bulk'
@@ -797,7 +814,7 @@ async function enviarNotificacionPagoEstudiante(datosPago) {
             </div>
             
             <div class="footer">
-              <p style="margin: 5px 0;">Academia Jessica Vélez</p>
+              <p style="margin: 5px 0;">Escuela Jessica Vélez</p>
               <p style="margin: 5px 0;">Tu carrera en belleza estética comienza aquí</p>
               <p style="margin: 5px 0; color: #9ca3af;">Este es un email automático del sistema de gestión académica</p>
             </div>
@@ -810,7 +827,7 @@ async function enviarNotificacionPagoEstudiante(datosPago) {
     await transporter.sendMail(mailOptions);
     console.log('✅ Email de notificación de pago enviado al admin');
   } catch (error) {
-    console.error('❌ Error enviando email de notificación de pago:', error);
+    console.error('-Error enviando email de notificación de pago:', error);
     throw error;
   }
 }

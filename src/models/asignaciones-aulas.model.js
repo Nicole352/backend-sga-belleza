@@ -205,6 +205,105 @@ class AsignacionesAulasModel {
     return conflictos;
   }
 
+  // Verificar conflictos de horario para un docente (mismo docente en múltiples aulas al mismo tiempo)
+  static async verificarConflictosDocente(id_docente, hora_inicio, hora_fin, dias, exclude_id = null) {
+    const diasArray = dias.split(',').map(d => d.trim());
+    const diasConditions = diasArray.map(() => `
+      (FIND_IN_SET(?, aa.dias) > 0)
+    `).join(' OR ');
+    
+    let sql = `
+      SELECT 
+        aa.id_asignacion,
+        aa.hora_inicio,
+        aa.hora_fin,
+        aa.dias,
+        c.nombre AS curso_nombre,
+        aula.nombre AS aula_nombre,
+        aula.ubicacion AS aula_ubicacion
+      FROM asignaciones_aulas aa
+      INNER JOIN cursos c ON aa.id_curso = c.id_curso
+      INNER JOIN aulas aula ON aa.id_aula = aula.id_aula
+      WHERE aa.id_docente = ? 
+        AND aa.estado = 'activa'
+        AND c.estado IN ('planificado', 'activo')
+        AND (
+          -- Verificar solapamiento de horarios
+          (TIME(?) > TIME(aa.hora_inicio) AND TIME(?) < TIME(aa.hora_fin)) OR
+          (TIME(?) > TIME(aa.hora_inicio) AND TIME(?) < TIME(aa.hora_fin)) OR
+          (TIME(?) <= TIME(aa.hora_inicio) AND TIME(?) >= TIME(aa.hora_fin)) OR
+          (TIME(aa.hora_inicio) <= TIME(?) AND TIME(aa.hora_fin) >= TIME(?))
+        )
+        AND (${diasConditions})
+    `;
+    
+    const params = [
+      id_docente,
+      hora_inicio, hora_inicio,
+      hora_fin, hora_fin,
+      hora_inicio, hora_fin,
+      hora_inicio, hora_fin,
+      ...diasArray
+    ];
+    
+    if (exclude_id) {
+      sql += ' AND aa.id_asignacion != ?';
+      params.push(exclude_id);
+    }
+    
+    const [conflictos] = await pool.execute(sql, params);
+    return conflictos;
+  }
+
+  // Verificar conflictos de horario para un curso (mismo curso en múltiples aulas al mismo tiempo)
+  static async verificarConflictosCurso(id_curso, hora_inicio, hora_fin, dias, exclude_id = null) {
+    const diasArray = dias.split(',').map(d => d.trim());
+    const diasConditions = diasArray.map(() => `
+      (FIND_IN_SET(?, aa.dias) > 0)
+    `).join(' OR ');
+    
+    let sql = `
+      SELECT 
+        aa.id_asignacion,
+        aa.hora_inicio,
+        aa.hora_fin,
+        aa.dias,
+        aula.nombre AS aula_nombre,
+        aula.ubicacion AS aula_ubicacion,
+        CONCAT(d.nombres, ' ', d.apellidos) AS docente
+      FROM asignaciones_aulas aa
+      INNER JOIN aulas aula ON aa.id_aula = aula.id_aula
+      INNER JOIN docentes d ON aa.id_docente = d.id_docente
+      WHERE aa.id_curso = ? 
+        AND aa.estado = 'activa'
+        AND (
+          -- Verificar solapamiento de horarios
+          (TIME(?) > TIME(aa.hora_inicio) AND TIME(?) < TIME(aa.hora_fin)) OR
+          (TIME(?) > TIME(aa.hora_inicio) AND TIME(?) < TIME(aa.hora_fin)) OR
+          (TIME(?) <= TIME(aa.hora_inicio) AND TIME(?) >= TIME(aa.hora_fin)) OR
+          (TIME(aa.hora_inicio) <= TIME(?) AND TIME(aa.hora_fin) >= TIME(?))
+        )
+        AND (${diasConditions})
+    `;
+    
+    const params = [
+      id_curso,
+      hora_inicio, hora_inicio,
+      hora_fin, hora_fin,
+      hora_inicio, hora_fin,
+      hora_inicio, hora_fin,
+      ...diasArray
+    ];
+    
+    if (exclude_id) {
+      sql += ' AND aa.id_asignacion != ?';
+      params.push(exclude_id);
+    }
+    
+    const [conflictos] = await pool.execute(sql, params);
+    return conflictos;
+  }
+
   // Crear nueva asignación
   static async create(asignacionData) {
     const {
@@ -251,7 +350,7 @@ class AsignacionesAulasModel {
       throw new Error('El docente especificado no existe');
     }
 
-    // Verificar conflictos de horario
+    // Verificar conflictos de horario del aula
     const conflictos = await this.verificarConflictos(id_aula, hora_inicio, hora_fin, dias);
     
     if (conflictos.length > 0) {
@@ -260,6 +359,30 @@ class AsignacionesAulasModel {
         `Conflicto de horario: El aula ya está ocupada por el curso "${conflicto.curso_nombre}" ` +
         `con el docente ${conflicto.docente} en el horario ${conflicto.hora_inicio}-${conflicto.hora_fin}. ` +
         `La misma aula puede usarse para otros cursos en horarios diferentes.`
+      );
+    }
+
+    // Verificar conflictos de horario del docente (mismo docente en múltiples aulas)
+    const conflictosDocente = await this.verificarConflictosDocente(id_docente, hora_inicio, hora_fin, dias);
+    
+    if (conflictosDocente.length > 0) {
+      const conflicto = conflictosDocente[0];
+      throw new Error(
+        `Conflicto de horario del docente: Ya tiene asignada una clase del curso "${conflicto.curso_nombre}" ` +
+        `en el aula "${conflicto.aula_nombre}" en el horario ${conflicto.hora_inicio}-${conflicto.hora_fin}. ` +
+        `Un docente no puede estar en dos aulas al mismo tiempo.`
+      );
+    }
+
+    // Verificar conflictos de horario del curso (mismo curso en múltiples aulas)
+    const conflictosCurso = await this.verificarConflictosCurso(id_curso, hora_inicio, hora_fin, dias);
+    
+    if (conflictosCurso.length > 0) {
+      const conflicto = conflictosCurso[0];
+      throw new Error(
+        `Conflicto de horario del curso: Ya está asignado en el aula "${conflicto.aula_nombre}" ` +
+        `con el docente ${conflicto.docente} en el horario ${conflicto.hora_inicio}-${conflicto.hora_fin}. ` +
+        `Un curso no puede dictarse en dos aulas simultáneamente.`
       );
     }
 
@@ -285,18 +408,54 @@ class AsignacionesAulasModel {
       observaciones
     } = asignacionData;
 
-    // Verificar conflictos de horario (excluyendo la asignación actual)
-    if (id_aula && hora_inicio && hora_fin && dias) {
-      const conflictos = await this.verificarConflictos(id_aula, hora_inicio, hora_fin, dias, id);
-      
-      if (conflictos.length > 0) {
-        const conflicto = conflictos[0];
-        throw new Error(
-          `Conflicto de horario: El aula ya está ocupada por el curso "${conflicto.curso_nombre}" ` +
-          `con el docente ${conflicto.docente} en el horario ${conflicto.hora_inicio}-${conflicto.hora_fin}. ` +
-          `La misma aula puede usarse para otros cursos en horarios diferentes.`
-        );
-      }
+    // Obtener los datos actuales de la asignación para tener valores de referencia
+    const asignacionActual = await this.getById(id);
+    if (!asignacionActual) {
+      throw new Error('Asignación no encontrada');
+    }
+
+    // Usar los valores nuevos o los existentes para la validación
+    const aulaFinal = id_aula !== undefined ? id_aula : asignacionActual.id_aula;
+    const cursoFinal = id_curso !== undefined ? id_curso : asignacionActual.id_curso;
+    const docenteFinal = id_docente !== undefined ? id_docente : asignacionActual.id_docente;
+    const horaInicioFinal = hora_inicio !== undefined ? hora_inicio : asignacionActual.hora_inicio;
+    const horaFinFinal = hora_fin !== undefined ? hora_fin : asignacionActual.hora_fin;
+    const diasFinal = dias !== undefined ? dias : asignacionActual.dias;
+
+    // Verificar conflictos de horario del aula (excluyendo la asignación actual)
+    const conflictosAula = await this.verificarConflictos(aulaFinal, horaInicioFinal, horaFinFinal, diasFinal, id);
+    
+    if (conflictosAula.length > 0) {
+      const conflicto = conflictosAula[0];
+      throw new Error(
+        `Conflicto de horario: El aula ya está ocupada por el curso "${conflicto.curso_nombre}" ` +
+        `con el docente ${conflicto.docente} en el horario ${conflicto.hora_inicio}-${conflicto.hora_fin}. ` +
+        `La misma aula puede usarse para otros cursos en horarios diferentes.`
+      );
+    }
+
+    // Verificar conflictos de horario del docente
+    const conflictosDocente = await this.verificarConflictosDocente(docenteFinal, horaInicioFinal, horaFinFinal, diasFinal, id);
+    
+    if (conflictosDocente.length > 0) {
+      const conflicto = conflictosDocente[0];
+      throw new Error(
+        `Conflicto de horario del docente: Ya tiene asignada una clase del curso "${conflicto.curso_nombre}" ` +
+        `en el aula "${conflicto.aula_nombre}" en el horario ${conflicto.hora_inicio}-${conflicto.hora_fin}. ` +
+        `Un docente no puede estar en dos aulas al mismo tiempo.`
+      );
+    }
+
+    // Verificar conflictos de horario del curso
+    const conflictosCurso = await this.verificarConflictosCurso(cursoFinal, horaInicioFinal, horaFinFinal, diasFinal, id);
+    
+    if (conflictosCurso.length > 0) {
+      const conflicto = conflictosCurso[0];
+      throw new Error(
+        `Conflicto de horario del curso: Ya está asignado en el aula "${conflicto.aula_nombre}" ` +
+        `con el docente ${conflicto.docente} en el horario ${conflicto.hora_inicio}-${conflicto.hora_fin}. ` +
+        `Un curso no puede dictarse en dos aulas simultáneamente.`
+      );
     }
 
     const fields = [];

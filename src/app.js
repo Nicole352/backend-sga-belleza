@@ -106,4 +106,8 @@ inicializarTiposReportes().catch((err) => {
   console.error("Error en inicialización de tipos de reportes:", err);
 });
 
+// Middleware de manejo de errores (DEBE IR AL FINAL, después de todas las rutas)
+const { errorHandler } = require('./middleware/errorHandler');
+app.use(errorHandler);
+
 module.exports = app;

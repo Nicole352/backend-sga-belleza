@@ -193,7 +193,7 @@ exports.pagarCuota = async (req, res) => {
           console.log('✅ Email de notificación de pago enviado al admin');
         }
       } catch (emailError) {
-        console.error('❌ Error enviando email de notificación (no afecta el pago):', emailError);
+        console.error('-Error enviando email de notificación (no afecta el pago):', emailError);
       }
     });
 
@@ -204,8 +204,8 @@ exports.pagarCuota = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Error procesando pago:', error);
-    console.error('❌ Stack trace:', error.stack);
+    console.error('-Error procesando pago:', error);
+    console.error('-Stack trace:', error.stack);
     res.status(500).json({ 
       error: error.message || 'Error interno del servidor',
       details: error.stack

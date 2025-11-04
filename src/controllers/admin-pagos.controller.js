@@ -181,7 +181,7 @@ exports.verificarPago = async (req, res) => {
     console.log('🎭 Rol del usuario:', rolPermitido);
     
     if (rolPermitido !== 'admin' && rolPermitido !== 'administrativo') {
-      console.log('❌ Rol no permitido:', rolPermitido);
+      console.log('-Rol no permitido:', rolPermitido);
       return res.status(403).json({ 
         error: `Solo los administradores pueden verificar pagos. Rol actual: ${rolPermitido}` 
       });
@@ -308,10 +308,10 @@ exports.verificarPago = async (req, res) => {
           
           console.log('✅ Email con comprobante PDF enviado a:', pago.estudiante_email);
         } else {
-          console.log('❌ No se encontró el pago con ID:', id);
+          console.log('-No se encontró el pago con ID:', id);
         }
       } catch (emailError) {
-        console.error('❌ Error enviando email con comprobante (no afecta la verificación):', emailError);
+        console.error('-Error enviando email con comprobante (no afecta la verificación):', emailError);
       }
     });
 
@@ -410,7 +410,7 @@ exports.rechazarPago = async (req, res) => {
       WHERE id_pago = ?
     `, [observaciones, verificado_por, id]);
 
-    console.log(`❌ Pago ${id} rechazado por usuario ${verificado_por}`);
+    console.log(`-Pago ${id} rechazado por usuario ${verificado_por}`);
 
     res.json({ 
       success: true, 

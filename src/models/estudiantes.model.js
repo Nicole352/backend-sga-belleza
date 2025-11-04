@@ -7,7 +7,7 @@ class EstudiantesModel {
     const offset = (page - 1) * limit;
     
     let sql = `
-      SELECT 
+      SELECT DISTINCT
         u.id_usuario,
         u.cedula as identificacion,
         u.nombre,
@@ -25,23 +25,26 @@ class EstudiantesModel {
           WHEN u.foto_perfil IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(u.foto_perfil))
           ELSE NULL 
         END as foto_perfil,
-        s.contacto_emergencia,
-        s.id_solicitud,
-        CASE 
-          WHEN s.documento_identificacion IS NOT NULL THEN TRUE
-          ELSE FALSE
-        END as tiene_documento_identificacion,
-        CASE 
-          WHEN s.documento_estatus_legal IS NOT NULL THEN TRUE
-          ELSE FALSE
-        END as tiene_documento_estatus_legal,
+        (SELECT s.contacto_emergencia FROM solicitudes_matricula s 
+         WHERE s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado' 
+         LIMIT 1) as contacto_emergencia,
+        (SELECT s.id_solicitud FROM solicitudes_matricula s 
+         WHERE s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado' 
+         LIMIT 1) as id_solicitud,
+        (SELECT CASE WHEN s.documento_identificacion IS NOT NULL THEN TRUE ELSE FALSE END 
+         FROM solicitudes_matricula s 
+         WHERE s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado' 
+         LIMIT 1) as tiene_documento_identificacion,
+        (SELECT CASE WHEN s.documento_estatus_legal IS NOT NULL THEN TRUE ELSE FALSE END 
+         FROM solicitudes_matricula s 
+         WHERE s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado' 
+         LIMIT 1) as tiene_documento_estatus_legal,
         CASE
           WHEN LENGTH(u.cedula) > 10 THEN 'extranjero'
           ELSE 'ecuatoriano'
         END as tipo_documento
       FROM usuarios u
       INNER JOIN roles r ON u.id_rol = r.id_rol
-      LEFT JOIN solicitudes_matricula s ON s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado'
       WHERE r.nombre_rol = 'estudiante'
     `;
     
@@ -287,12 +290,12 @@ class EstudiantesModel {
             
             // Validar que tenemos los datos necesarios
             if (!numeroClases || numeroClases <= 0) {
-              console.error('❌ ERROR: numero_clases es inválido:', numeroClases);
+              console.error('-ERROR: numero_clases es inválido:', numeroClases);
               throw new Error(`Número de clases inválido: ${numeroClases}. Verifique la configuración del tipo de curso.`);
             }
             
             if (!precioPorClase || precioPorClase <= 0) {
-              console.error('❌ ERROR: precio_por_clase es inválido:', precioPorClase);
+              console.error('-ERROR: precio_por_clase es inválido:', precioPorClase);
               throw new Error(`Precio por clase inválido: ${precioPorClase}. Verifique la configuración del tipo de curso.`);
             }
             
@@ -497,7 +500,7 @@ class EstudiantesModel {
           
           console.log('✅ Debug - Cuotas generadas exitosamente');
         } else {
-          console.log('❌ Debug - No se encontró tipo de curso');
+          console.log('-Debug - No se encontró tipo de curso');
         }
       }
       

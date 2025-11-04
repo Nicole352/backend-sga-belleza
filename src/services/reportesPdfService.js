@@ -12,7 +12,7 @@ async function descargarLogo() {
     const response = await axios.get(LOGO_URL, { responseType: 'arraybuffer' });
     return Buffer.from(response.data);
   } catch (error) {
-    console.error('❌ Error descargando logo:', error.message);
+    console.error('-Error descargando logo:', error.message);
     return null;
   }
 }
@@ -227,6 +227,110 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
       });
 
       // ========================================
+      // PÁGINA DE RESUMEN DETALLADO
+      // ========================================
+      doc.addPage();
+      
+      // Título del resumen
+      doc.fontSize(16)
+         .fillColor(colors.primary)
+         .font('Helvetica-Bold')
+         .text('RESUMEN DETALLADO', { align: 'center' });
+      
+      doc.moveDown(1);
+      
+      // Información del período
+      doc.fontSize(11)
+         .fillColor(colors.dark)
+         .text('PERÍODO DEL REPORTE', { underline: true });
+      
+      doc.moveDown(0.5);
+      doc.fontSize(10)
+         .fillColor(colors.text)
+         .font('Helvetica')
+         .text(`Desde: ${formatearFecha(filtros.fechaInicio)}`);
+      doc.text(`Hasta: ${formatearFecha(filtros.fechaFin)}`);
+      
+      if (filtros.estado && filtros.estado !== 'todos') {
+        doc.text(`Estado filtrado: ${filtros.estado.toUpperCase()}`);
+      }
+      
+      doc.moveDown(1);
+      
+      // Estadísticas generales
+      doc.fontSize(11)
+         .fillColor(colors.dark)
+         .font('Helvetica-Bold')
+         .text('ESTADÍSTICAS GENERALES', { underline: true });
+      
+      doc.moveDown(0.5);
+      
+      const stats = [
+        { label: 'Total de Estudiantes:', value: estadisticas.total_estudiantes || 0, color: colors.text },
+        { label: 'Estudiantes Activos:', value: estadisticas.activos || 0, color: colors.success },
+        { label: 'Estudiantes Aprobados:', value: estadisticas.aprobados || 0, color: colors.success },
+        { label: 'Estudiantes Reprobados:', value: estadisticas.reprobados || 0, color: colors.error },
+        { label: 'Estudiantes Retirados:', value: estadisticas.retirados || 0, color: '#f59e0b' },
+        { label: 'Estudiantes Graduados:', value: estadisticas.graduados || 0, color: colors.primary },
+        { label: 'Promedio de Notas:', value: estadisticas.promedio_notas ? parseFloat(estadisticas.promedio_notas).toFixed(2) : 'N/A', color: colors.text }
+      ];
+      
+      stats.forEach(stat => {
+        doc.fontSize(10)
+           .fillColor(colors.text)
+           .font('Helvetica')
+           .text(stat.label, { continued: true })
+           .fillColor(stat.color)
+           .font('Helvetica-Bold')
+           .text(` ${stat.value}`);
+      });
+      
+      doc.moveDown(1);
+      
+      // Análisis de rendimiento
+      doc.fontSize(11)
+         .fillColor(colors.dark)
+         .font('Helvetica-Bold')
+         .text('ANÁLISIS DE RENDIMIENTO', { underline: true });
+      
+      doc.moveDown(0.5);
+      
+      const totalEstudiantes = estadisticas.total_estudiantes || 0;
+      const tasaAprobacion = totalEstudiantes > 0 ? ((estadisticas.aprobados / totalEstudiantes) * 100).toFixed(1) : 0;
+      const tasaRetencion = totalEstudiantes > 0 ? (((totalEstudiantes - (estadisticas.retirados || 0)) / totalEstudiantes) * 100).toFixed(1) : 0;
+      
+      doc.fontSize(10)
+         .fillColor(colors.text)
+         .font('Helvetica')
+         .text(`Tasa de Aprobación: `, { continued: true })
+         .fillColor(colors.success)
+         .font('Helvetica-Bold')
+         .text(`${tasaAprobacion}%`);
+      
+      doc.fillColor(colors.text)
+         .font('Helvetica')
+         .text(`Tasa de Retención: `, { continued: true })
+         .fillColor(colors.success)
+         .font('Helvetica-Bold')
+         .text(`${tasaRetencion}%`);
+      
+      doc.moveDown(1);
+      
+      // Observaciones
+      doc.fontSize(11)
+         .fillColor(colors.dark)
+         .font('Helvetica-Bold')
+         .text('OBSERVACIONES', { underline: true });
+      
+      doc.moveDown(0.5);
+      doc.fontSize(9)
+         .fillColor(colors.textGray)
+         .font('Helvetica')
+         .text('• Este reporte muestra el estado académico de los estudiantes en el período seleccionado.');
+      doc.text('• Los datos reflejan la información actualizada al momento de la generación del reporte.');
+      doc.text('• Para más detalles, consulte el sistema de gestión académica.');
+
+      // ========================================
       // FOOTER EN TODAS LAS PÁGINAS
       // ========================================
       const pages = doc.bufferedPageRange();
@@ -262,7 +366,7 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
 
       doc.end();
     } catch (error) {
-      console.error('❌ Error generando PDF de estudiantes:', error);
+      console.error('-Error generando PDF de estudiantes:', error);
       reject(error);
     }
   });
@@ -498,9 +602,115 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
         );
       }
 
+      // RESUMEN FINANCIERO
+      doc.addPage();
+      doc.fontSize(16).fillColor(colors.primary).font('Helvetica-Bold').text('RESUMEN FINANCIERO', { align: 'center' });
+      doc.moveDown(1);
+      
+      // ESTADÍSTICAS GENERALES
+      doc.fontSize(11).fillColor(colors.dark).text('ESTADÍSTICAS GENERALES', { underline: true });
+      doc.moveDown(0.5);
+      const ingresosTotales = parseFloat(estadisticas.ingresos_totales || 0);
+      const promedioPago = parseFloat(estadisticas.promedio_pago || 0);
+      doc.fontSize(10).fillColor(colors.text).font('Helvetica').text('Total Pagos: ', { continued: true }).font('Helvetica-Bold').text(`${estadisticas.total_pagos || 0}`);
+      doc.font('Helvetica').text('Verificados: ', { continued: true }).fillColor(colors.success).font('Helvetica-Bold').text(`${estadisticas.pagos_verificados || 0}`);
+      doc.fillColor(colors.text).font('Helvetica').text('Pendientes: ', { continued: true }).fillColor(colors.error).font('Helvetica-Bold').text(`${estadisticas.pagos_pendientes || 0}`);
+      doc.fillColor(colors.text).font('Helvetica').text('Ingresos: ', { continued: true }).fillColor(colors.success).font('Helvetica-Bold').text(`$${formatearMoneda(ingresosTotales)}`);
+      doc.fillColor(colors.text).font('Helvetica').text('Promedio: ', { continued: true }).font('Helvetica-Bold').text(`$${formatearMoneda(promedioPago)}`);
+      
+      doc.moveDown(1);
+      
+      // ESTUDIANTES CON PAGOS PENDIENTES
+      doc.fontSize(11).fillColor(colors.dark).font('Helvetica-Bold').text('ESTUDIANTES CON PAGOS PENDIENTES', { underline: true });
+      doc.moveDown(0.5);
+      
+      // Agrupar pagos por estudiante (todos los pagos)
+      const estudiantesPendientes = {};
+      datos.forEach(pago => {
+        const key = pago.cedula_estudiante || pago.nombre_estudiante;
+        
+        // Inicializar si no existe
+        if (!estudiantesPendientes[key]) {
+          estudiantesPendientes[key] = {
+            nombre: `${pago.nombre_estudiante} ${pago.apellido_estudiante}`,
+            cedula: pago.cedula_estudiante,
+            curso: pago.nombre_curso,
+            cuotasPendientes: 0,
+            montoPendiente: 0,
+            cuotasVerificadas: 0,
+            montoVerificado: 0
+          };
+        }
+        
+        // Contar pagos pendientes
+        if (pago.estado_pago === 'pendiente' || pago.estado_pago === 'vencido') {
+          estudiantesPendientes[key].cuotasPendientes++;
+          estudiantesPendientes[key].montoPendiente += parseFloat(pago.monto || 0);
+        }
+        
+        // Contar pagos verificados
+        if (pago.estado_pago === 'verificado') {
+          estudiantesPendientes[key].cuotasVerificadas++;
+          estudiantesPendientes[key].montoVerificado += parseFloat(pago.monto || 0);
+        }
+      });
+      
+      // Obtener todos los estudiantes (con o sin pagos pendientes)
+      const listaEstudiantes = Object.values(estudiantesPendientes);
+      
+      if (listaEstudiantes.length > 0) {
+        // Ordenar por cantidad de cuotas pendientes (mayor a menor)
+        listaEstudiantes.sort((a, b) => b.cuotasPendientes - a.cuotasPendientes);
+        
+        // Mostrar hasta 15 estudiantes
+        const maxEstudiantes = Math.min(15, listaEstudiantes.length);
+        
+        doc.fontSize(9).fillColor(colors.textGray).font('Helvetica-Oblique')
+           .text(`Mostrando ${maxEstudiantes} de ${listaEstudiantes.length} estudiantes con pagos pendientes`);
+        doc.moveDown(0.3);
+        
+        listaEstudiantes.slice(0, maxEstudiantes).forEach((est, index) => {
+          // Verificar si necesitamos nueva página
+          if (doc.y > doc.page.height - 120) {
+            doc.addPage();
+            doc.fontSize(11).fillColor(colors.dark).font('Helvetica-Bold')
+               .text('ESTUDIANTES CON PAGOS PENDIENTES (continuación)', { underline: true });
+            doc.moveDown(0.5);
+          }
+          
+          doc.fontSize(9).fillColor(colors.text).font('Helvetica-Bold')
+             .text(`${index + 1}. ${est.nombre}`, { continued: true })
+             .fillColor(colors.textGray).font('Helvetica')
+             .text(` (${est.cedula || 'Sin cédula'})`);
+          
+          doc.fontSize(8).fillColor(colors.textGray)
+             .text(`   Curso: ${est.curso}`);
+          
+          doc.fillColor(colors.success).font('Helvetica-Bold')
+             .text(`   Pagos verificados: ${est.cuotasVerificadas}`, { continued: true })
+             .fillColor(colors.text).font('Helvetica')
+             .text(` | Monto: $${formatearMoneda(est.montoVerificado)}`);
+          
+          doc.fillColor(colors.error).font('Helvetica-Bold')
+             .text(`   Cuotas pendientes: ${est.cuotasPendientes}`, { continued: true })
+             .fillColor(colors.text).font('Helvetica')
+             .text(` | Monto: $${formatearMoneda(est.montoPendiente)}`);
+          
+          doc.moveDown(0.3);
+        });
+        
+        if (listaEstudiantes.length > maxEstudiantes) {
+          doc.fontSize(8).fillColor(colors.textGray).font('Helvetica-Oblique')
+             .text(`... y ${listaEstudiantes.length - maxEstudiantes} estudiantes más con pagos pendientes.`);
+        }
+      } else {
+        doc.fontSize(9).fillColor(colors.success).font('Helvetica-Bold')
+           .text('¡Excelente! No hay estudiantes con pagos pendientes en este período.');
+      }
+
       doc.end();
     } catch (error) {
-      console.error('❌ Error generando PDF financiero:', error);
+      console.error('-Error generando PDF financiero:', error);
       reject(error);
     }
   });
@@ -691,9 +901,27 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
         );
       }
 
+      // RESUMEN DE CURSOS
+      doc.addPage();
+      doc.fontSize(16).fillColor(colors.primary).font('Helvetica-Bold').text('RESUMEN DE CURSOS', { align: 'center' });
+      doc.moveDown(1);
+      doc.fontSize(11).fillColor(colors.dark).text('ESTADÍSTICAS GENERALES', { underline: true });
+      doc.moveDown(0.5);
+      doc.fontSize(10).fillColor(colors.text).font('Helvetica').text('Total Cursos: ', { continued: true }).font('Helvetica-Bold').text(`${estadisticas.total_cursos || 0}`);
+      doc.font('Helvetica').text('Cursos Activos: ', { continued: true }).fillColor(colors.success).font('Helvetica-Bold').text(`${estadisticas.cursos_activos || 0}`);
+      doc.fillColor(colors.text).font('Helvetica').text('Estudiantes Inscritos: ', { continued: true }).font('Helvetica-Bold').text(`${estadisticas.total_estudiantes_inscritos || 0}`);
+      const promedioOcupacion = estadisticas.total_cursos > 0 ? ((estadisticas.total_estudiantes_inscritos / (estadisticas.promedio_capacidad * estadisticas.total_cursos)) * 100).toFixed(1) : 0;
+      doc.font('Helvetica').text('Ocupación Promedio: ', { continued: true }).fillColor(colors.primary).font('Helvetica-Bold').text(`${promedioOcupacion}%`);
+      doc.moveDown(1);
+      doc.fontSize(11).fillColor(colors.dark).font('Helvetica-Bold').text('ANÁLISIS', { underline: true });
+      doc.moveDown(0.5);
+      doc.fontSize(9).fillColor(colors.textGray).font('Helvetica').text('• Cursos con alta demanda requieren más secciones.');
+      doc.text('• Cursos con baja ocupación necesitan promoción.');
+      doc.text('• Revisar horarios para optimizar la asistencia.');
+
       doc.end();
     } catch (error) {
-      console.error('❌ Error generando PDF de cursos:', error);
+      console.error('-Error generando PDF de cursos:', error);
       reject(error);
     }
   });

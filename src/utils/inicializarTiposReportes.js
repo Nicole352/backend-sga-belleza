@@ -53,7 +53,7 @@ async function inicializarTiposReportes() {
     console.log('   3. Reporte de Cursos');
 
   } catch (error) {
-    console.error('❌ Error al inicializar tipos de reportes:', error);
+    console.error('-Error al inicializar tipos de reportes:', error);
     console.error('   El sistema de reportes puede no funcionar correctamente.');
     // No lanzamos el error para que el servidor pueda iniciar de todas formas
   }

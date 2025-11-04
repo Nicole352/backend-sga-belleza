@@ -464,7 +464,7 @@ module.exports = {
 
       console.log('✅ Reporte de cursos generado exitosamente');
     } catch (error) {
-      console.error('❌ Error generando reporte de cursos:', error);
+      console.error('-Error generando reporte de cursos:', error);
       res.status(500).json({ 
         error: 'Error interno del servidor',
         details: error.message 

@@ -47,7 +47,7 @@ async function registrarAuditoria(req, tabla, operacion, idRegistro, datosAnteri
     console.log(`✅ Auditoría registrada: ${operacion} en ${tabla} (ID: ${idRegistro}) por usuario ${usuarioId}`);
   } catch (error) {
     // No lanzar error para no afectar la operación principal
-    console.error('❌ Error al registrar auditoría:', error);
+    console.error('-Error al registrar auditoría:', error);
     console.error('Detalles:', { tabla, operacion, idRegistro });
   }
 }

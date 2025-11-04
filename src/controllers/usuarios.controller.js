@@ -152,7 +152,7 @@ async function getUsuarioById(req, res) {
         usuario.cursos_asignados = cursosAsignados[0]?.total || 0;
         usuario.estudiantes_activos = estudiantesActivos[0]?.total || 0;
       } else {
-        console.log(`❌ No se encontró id_docente para usuario ${id}`);
+        console.log(`-No se encontró id_docente para usuario ${id}`);
       }
     }
 
@@ -886,15 +886,16 @@ async function actualizarMiPerfil(req, res) {
     const usuarioActualizado = await usuariosModel.updateAdminUser(id_usuario, camposActualizar);
 
     // Registrar auditoría
-    await registrarAuditoria(
-      'usuarios',
-      'UPDATE',
-      id_usuario,
-      id_usuario,
-      datosAnteriores,
-      camposActualizar,
-      req
-    );
+    await registrarAuditoria({
+      tabla_afectada: 'usuarios',
+      operacion: 'UPDATE',
+      id_registro: id_usuario,
+      usuario_id: id_usuario,
+      datos_anteriores: datosAnteriores,
+      datos_nuevos: camposActualizar,
+      ip_address: req.ip || req.connection?.remoteAddress || '0.0.0.0',
+      user_agent: req.get('user-agent') || 'unknown'
+    });
 
     // Ocultar password en la respuesta
     delete usuarioActualizado.password;

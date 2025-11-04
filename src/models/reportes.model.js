@@ -97,7 +97,7 @@ const ReportesModel = {
    * REPORTE FINANCIERO
    * Obtiene pagos realizados en un período con filtros
    */
-  async getReporteFinanciero({ fechaInicio, fechaFin, tipoPago, estadoPago }) {
+  async getReporteFinanciero({ fechaInicio, fechaFin, tipoPago, estadoPago, idCurso, estadoCurso, metodoPago, horario }) {
     try {
       let query = `
         SELECT 
@@ -119,6 +119,8 @@ const ReportesModel = {
           u.email as email_estudiante,
           c.codigo_curso,
           c.nombre as nombre_curso,
+          c.horario,
+          c.estado as estado_curso,
           tc.nombre as tipo_curso,
           tc.modalidad_pago,
           m.codigo_matricula,
@@ -147,6 +149,24 @@ const ReportesModel = {
         params.push(fechaInicio, fechaFin, fechaInicio, fechaFin);
       }
 
+      // Filtro por curso específico
+      if (idCurso) {
+        query += ` AND c.id_curso = ?`;
+        params.push(idCurso);
+      }
+
+      // Filtro por estado del curso
+      if (estadoCurso && estadoCurso !== 'todos') {
+        query += ` AND c.estado = ?`;
+        params.push(estadoCurso);
+      }
+
+      // Filtro por horario del curso
+      if (horario && horario !== 'todos') {
+        query += ` AND c.horario = ?`;
+        params.push(horario);
+      }
+
       // Filtro por tipo de pago (primer mes = cuota 1)
       if (tipoPago && tipoPago !== 'todos') {
         if (tipoPago === 'primer_mes') {
@@ -162,6 +182,12 @@ const ReportesModel = {
       if (estadoPago && estadoPago !== 'todos') {
         query += ` AND pm.estado = ?`;
         params.push(estadoPago);
+      }
+
+      // Filtro por método de pago
+      if (metodoPago && metodoPago !== 'todos') {
+        query += ` AND pm.metodo_pago = ?`;
+        params.push(metodoPago);
       }
 
       query += ` ORDER BY pm.fecha_pago DESC`;
@@ -207,9 +233,9 @@ const ReportesModel = {
    * REPORTE DE CURSOS
    * Obtiene información de cursos con ocupación y popularidad
    */
-  async getReporteCursos({ fechaInicio, fechaFin }) {
+  async getReporteCursos({ fechaInicio, fechaFin, estado, ocupacion, horario }) {
     try {
-      const query = `
+      let query = `
         SELECT 
           c.id_curso,
           c.codigo_curso,
@@ -244,13 +270,42 @@ const ReportesModel = {
         LEFT JOIN docentes d ON aa.id_docente = d.id_docente
         LEFT JOIN aulas a ON aa.id_aula = a.id_aula
         WHERE DATE(c.fecha_inicio) BETWEEN ? AND ?
+      `;
+
+      const params = [fechaInicio, fechaFin];
+
+      // Filtro por estado del curso
+      if (estado && estado !== 'todos') {
+        query += ` AND c.estado = ?`;
+        params.push(estado);
+      }
+
+      // Filtro por horario
+      if (horario && horario !== 'todos') {
+        query += ` AND c.horario = ?`;
+        params.push(horario);
+      }
+
+      query += `
         GROUP BY c.id_curso, c.codigo_curso, c.nombre, c.horario, c.capacidad_maxima, 
                  c.cupos_disponibles, c.fecha_inicio, c.fecha_fin, c.estado,
                  tc.nombre, tc.duracion_meses, tc.precio_base, tc.modalidad_pago
-        ORDER BY total_estudiantes DESC, porcentaje_ocupacion DESC
       `;
 
-      const [rows] = await pool.query(query, [fechaInicio, fechaFin]);
+      // Filtro por ocupación (se aplica después del GROUP BY)
+      if (ocupacion && ocupacion !== 'todos') {
+        if (ocupacion === 'lleno') {
+          query += ` HAVING porcentaje_ocupacion >= 80`;
+        } else if (ocupacion === 'medio') {
+          query += ` HAVING porcentaje_ocupacion >= 40 AND porcentaje_ocupacion < 80`;
+        } else if (ocupacion === 'bajo') {
+          query += ` HAVING porcentaje_ocupacion < 40`;
+        }
+      }
+
+      query += ` ORDER BY total_estudiantes DESC, porcentaje_ocupacion DESC`;
+
+      const [rows] = await pool.query(query, params);
       return rows;
     } catch (error) {
       console.error('Error en getReporteCursos:', error);

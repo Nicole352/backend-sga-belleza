@@ -304,7 +304,7 @@ exports.createSolicitud = async (req, res) => {
         await enviarNotificacionNuevaMatricula(datosEmail);
         console.log('✅ Email de notificación enviado al admin');
       } catch (emailError) {
-        console.error('❌ Error enviando email de notificación (no afecta la solicitud):', emailError);
+        console.error('-Error enviando email de notificación (no afecta la solicitud):', emailError);
       }
     });
 

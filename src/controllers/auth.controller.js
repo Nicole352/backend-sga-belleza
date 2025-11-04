@@ -5,6 +5,11 @@ const { getUserByEmail, getUserByUsername, getUserById, updateLastLogin, setUser
 const { pool } = require('../config/database');
 const { registrarAuditoria } = require('../utils/auditoria');
 
+// JWT_SECRET seguro
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' 
+  ? (() => { throw new Error('JWT_SECRET no configurado en producción'); })()
+  : 'dev_secret');
+
 // Función para registrar sesión
 async function registrarSesion(id_usuario, token, req) {
   try {
@@ -57,7 +62,7 @@ async function loginController(req, res) {
 
     const token = jwt.sign(
       { id_usuario: user.id_usuario, rol: user.nombre_rol, email: user.email },
-      process.env.JWT_SECRET || 'dev_secret',
+      JWT_SECRET,
       { expiresIn: '8h' }
     );
 

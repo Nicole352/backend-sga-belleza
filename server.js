@@ -1,4 +1,5 @@
 require('dotenv').config();
+const validateEnv = require('./src/utils/validateEnv');
 const app = require('./src/app');
 const { testConnection } = require('./src/config/database');
 const initDatabase = require('./src/utils/initDatabase');
@@ -7,6 +8,9 @@ const PORT = process.env.PORT || 3000;
 
 const startServer = async () => {
   try {
+    // Validar variables de entorno antes de iniciar
+    validateEnv();
+    
     // Probar conexión a BD
     await testConnection();
     
@@ -31,7 +35,7 @@ const startServer = async () => {
       console.log(`🔗 API disponible en: http://localhost:${PORT}/api`);
     });
   } catch (error) {
-    console.error('❌ Error iniciando servidor:', error);
+    console.error('-Error iniciando servidor:', error);
     process.exit(1);
   }
 };

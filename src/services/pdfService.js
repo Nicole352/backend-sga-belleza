@@ -12,7 +12,7 @@ async function descargarLogo() {
     const response = await axios.get(LOGO_URL, { responseType: 'arraybuffer' });
     return Buffer.from(response.data);
   } catch (error) {
-    console.error('❌ Error descargando logo:', error.message);
+    console.error('-Error descargando logo:', error.message);
     return null;
   }
 }
@@ -70,7 +70,7 @@ async function generarComprobantePagoMensual(estudiante, pago, curso, clasesPaga
           
           doc.image(logoBuffer, logoX, logoY, { width: logoSize, height: logoSize });
         } catch (imgError) {
-          console.error('❌ Error insertando logo en PDF:', imgError.message);
+          console.error('-Error insertando logo en PDF:', imgError.message);
         }
       }
 
@@ -87,7 +87,7 @@ async function generarComprobantePagoMensual(estudiante, pago, curso, clasesPaga
       doc.fontSize(12)
          .fillColor(colors.textGray)
          .font('Helvetica')
-         .text('Academia Jessica Vélez', 0, 122, { 
+         .text('Escuela Jessica Vélez', 0, 122, { 
            align: 'center',
            width: doc.page.width
          });
@@ -193,7 +193,7 @@ async function generarComprobantePagoMensual(estudiante, pago, curso, clasesPaga
           { label: 'Clase Pagada', value: `CLASE ${pago.numero_cuota}` },
           { label: 'Fecha de Pago', value: new Date(pago.fecha_pago).toLocaleDateString('es-EC', { day: '2-digit', month: 'long', year: 'numeric' }) },
           { label: 'Método de Pago', value: pago.metodo_pago.toUpperCase() },
-          { label: 'Estado', value: '✓ APROBADO', color: colors.success }
+          { label: 'Estado', value: 'APROBADO', color: colors.success }
         ];
       } else {
         // Para cursos mensuales
@@ -201,7 +201,7 @@ async function generarComprobantePagoMensual(estudiante, pago, curso, clasesPaga
           { label: 'Mes Pagado', value: new Date(pago.mes_pago).toLocaleDateString('es-EC', { month: 'long', year: 'numeric' }).toUpperCase() },
           { label: 'Fecha de Pago', value: new Date(pago.fecha_pago).toLocaleDateString('es-EC', { day: '2-digit', month: 'long', year: 'numeric' }) },
           { label: 'Método de Pago', value: pago.metodo_pago.toUpperCase() },
-          { label: 'Estado', value: '✓ APROBADO', color: colors.success }
+          { label: 'Estado', value: 'APROBADO', color: colors.success }
         ];
       }
 
@@ -308,7 +308,7 @@ async function generarComprobantePagoMensual(estudiante, pago, curso, clasesPaga
          .fillColor(colors.textLight)
          .font('Helvetica')
          .text(
-           '• Sé puntual con tus pagos mensuales  • La academia NO cobra matrícula  • Conserva este comprobante',
+           '• Sé puntual con tus pagos mensuales  • La Escuela NO cobra matrícula  • Conserva este comprobante',
            margin,
            yPosition,
            { width: doc.page.width - (margin * 2), lineGap: 4 }
@@ -328,7 +328,7 @@ async function generarComprobantePagoMensual(estudiante, pago, curso, clasesPaga
       doc.fontSize(11)
          .fillColor(colors.text)
          .font('Helvetica-Bold')
-         .text('Academia Jessica Vélez', 0, yPosition, { 
+         .text('Escuela Jessica Vélez', 0, yPosition, { 
            align: 'center',
            width: doc.page.width
          });
@@ -409,7 +409,7 @@ async function generarComprobanteMatricula(estudiante, solicitud, curso) {
           
           doc.image(logoBuffer, logoX, logoY, { width: logoSize, height: logoSize });
         } catch (imgError) {
-          console.error('❌ Error insertando logo en PDF:', imgError.message);
+          console.error('-Error insertando logo en PDF:', imgError.message);
         }
       }
 
@@ -424,7 +424,7 @@ async function generarComprobanteMatricula(estudiante, solicitud, curso) {
       doc.fontSize(12)
          .fillColor(colors.textGray)
          .font('Helvetica')
-         .text('Academia Jessica Vélez', 0, 122, { 
+         .text('Escuela Jessica Vélez', 0, 122, { 
            align: 'center',
            width: doc.page.width
          });
@@ -542,7 +542,7 @@ async function generarComprobanteMatricula(estudiante, solicitud, curso) {
          .fillColor(colors.textLight)
          .font('Helvetica')
          .text(
-           '• La academia NO cobra matrícula  • Sé puntual con tus pagos  • Recibirás comprobantes PDF',
+           '• La Escuela NO cobra matrícula  • Sé puntual con tus pagos  • Recibirás comprobantes PDF',
            margin,
            yPosition,
            { width: doc.page.width - (margin * 2), lineGap: 4 }
@@ -562,7 +562,7 @@ async function generarComprobanteMatricula(estudiante, solicitud, curso) {
       doc.fontSize(11)
          .fillColor(colors.text)
          .font('Helvetica-Bold')
-         .text('Academia Jessica Vélez', 0, yPosition, { 
+         .text('Escuela Jessica Vélez', 0, yPosition, { 
            align: 'center',
            width: doc.page.width
          });

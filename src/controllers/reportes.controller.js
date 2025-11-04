@@ -57,7 +57,7 @@ const ReportesController = {
         }
       });
     } catch (error) {
-      console.error('❌ Error en getReporteEstudiantes:', error);
+      console.error('-Error en getReporteEstudiantes:', error);
       res.status(500).json({
         success: false,
         message: 'Error al generar reporte de estudiantes',
@@ -118,7 +118,7 @@ const ReportesController = {
       res.setHeader('Content-Length', pdfBuffer.length);
       res.send(pdfBuffer);
     } catch (error) {
-      console.error('❌ Error en descargarPDFEstudiantes:', error);
+      console.error('-Error en descargarPDFEstudiantes:', error);
       res.status(500).json({
         success: false,
         message: 'Error al generar PDF de estudiantes',
@@ -179,7 +179,7 @@ const ReportesController = {
       res.setHeader('Content-Length', excelBuffer.length);
       res.send(excelBuffer);
     } catch (error) {
-      console.error('❌ Error en descargarExcelEstudiantes:', error);
+      console.error('-Error en descargarExcelEstudiantes:', error);
       res.status(500).json({
         success: false,
         message: 'Error al generar Excel de estudiantes',
@@ -194,7 +194,7 @@ const ReportesController = {
    */
   async getReporteFinanciero(req, res) {
     try {
-      const { fechaInicio, fechaFin, tipoPago, estadoPago } = req.query;
+      const { fechaInicio, fechaFin, tipoPago, estadoPago, idCurso, estadoCurso, metodoPago, horario } = req.query;
 
       if (!fechaInicio || !fechaFin) {
         return res.status(400).json({
@@ -208,7 +208,11 @@ const ReportesController = {
         fechaInicio,
         fechaFin,
         tipoPago: tipoPago || 'todos',
-        estadoPago: estadoPago || 'todos'
+        estadoPago: estadoPago || 'todos',
+        idCurso: idCurso || null,
+        estadoCurso: estadoCurso || 'todos',
+        metodoPago: metodoPago || 'todos',
+        horario: horario || 'todos'
       });
 
       // Obtener estadísticas
@@ -226,13 +230,17 @@ const ReportesController = {
             fechaInicio,
             fechaFin,
             tipoPago: tipoPago || 'todos',
-            estadoPago: estadoPago || 'todos'
+            estadoPago: estadoPago || 'todos',
+            idCurso: idCurso || null,
+            estadoCurso: estadoCurso || 'todos',
+            metodoPago: metodoPago || 'todos',
+            horario: horario || 'todos'
           },
           total: datos.length
         }
       });
     } catch (error) {
-      console.error('❌ Error en getReporteFinanciero:', error);
+      console.error('-Error en getReporteFinanciero:', error);
       res.status(500).json({
         success: false,
         message: 'Error al generar reporte financiero',
@@ -247,7 +255,7 @@ const ReportesController = {
    */
   async descargarPDFFinanciero(req, res) {
     try {
-      const { fechaInicio, fechaFin, tipoPago, estadoPago } = req.query;
+      const { fechaInicio, fechaFin, tipoPago, estadoPago, idCurso, estadoCurso, metodoPago, horario } = req.query;
 
       if (!fechaInicio || !fechaFin) {
         return res.status(400).json({
@@ -261,7 +269,11 @@ const ReportesController = {
         fechaInicio,
         fechaFin,
         tipoPago: tipoPago || 'todos',
-        estadoPago: estadoPago || 'todos'
+        estadoPago: estadoPago || 'todos',
+        idCurso: idCurso || null,
+        estadoCurso: estadoCurso || 'todos',
+        metodoPago: metodoPago || 'todos',
+        horario: horario || 'todos'
       });
 
       const estadisticas = await ReportesModel.getEstadisticasFinancieras({
@@ -274,7 +286,11 @@ const ReportesController = {
         fechaInicio,
         fechaFin,
         tipoPago: tipoPago || 'todos',
-        estadoPago: estadoPago || 'todos'
+        estadoPago: estadoPago || 'todos',
+        idCurso: idCurso || null,
+        estadoCurso: estadoCurso || 'todos',
+        metodoPago: metodoPago || 'todos',
+        horario: horario || 'todos'
       }, estadisticas);
 
       // Nombre del archivo
@@ -286,7 +302,7 @@ const ReportesController = {
       res.setHeader('Content-Length', pdfBuffer.length);
       res.send(pdfBuffer);
     } catch (error) {
-      console.error('❌ Error en descargarPDFFinanciero:', error);
+      console.error('-Error en descargarPDFFinanciero:', error);
       res.status(500).json({
         success: false,
         message: 'Error al generar PDF financiero',
@@ -301,7 +317,7 @@ const ReportesController = {
    */
   async descargarExcelFinanciero(req, res) {
     try {
-      const { fechaInicio, fechaFin, tipoPago, estadoPago } = req.query;
+      const { fechaInicio, fechaFin, tipoPago, estadoPago, idCurso, estadoCurso, metodoPago, horario } = req.query;
 
       if (!fechaInicio || !fechaFin) {
         return res.status(400).json({
@@ -315,7 +331,11 @@ const ReportesController = {
         fechaInicio,
         fechaFin,
         tipoPago: tipoPago || 'todos',
-        estadoPago: estadoPago || 'todos'
+        estadoPago: estadoPago || 'todos',
+        idCurso: idCurso || null,
+        estadoCurso: estadoCurso || 'todos',
+        metodoPago: metodoPago || 'todos',
+        horario: horario || 'todos'
       });
 
       const estadisticas = await ReportesModel.getEstadisticasFinancieras({
@@ -340,7 +360,7 @@ const ReportesController = {
       res.setHeader('Content-Length', excelBuffer.length);
       res.send(excelBuffer);
     } catch (error) {
-      console.error('❌ Error en descargarExcelFinanciero:', error);
+      console.error('-Error en descargarExcelFinanciero:', error);
       res.status(500).json({
         success: false,
         message: 'Error al generar Excel financiero',
@@ -355,7 +375,7 @@ const ReportesController = {
    */
   async getReporteCursos(req, res) {
     try {
-      const { fechaInicio, fechaFin } = req.query;
+      const { fechaInicio, fechaFin, estado, ocupacion, horario } = req.query;
 
       if (!fechaInicio || !fechaFin) {
         return res.status(400).json({
@@ -367,7 +387,10 @@ const ReportesController = {
       // Obtener datos
       const datos = await ReportesModel.getReporteCursos({
         fechaInicio,
-        fechaFin
+        fechaFin,
+        estado: estado || 'todos',
+        ocupacion: ocupacion || 'todos',
+        horario: horario || 'todos'
       });
 
       // Obtener estadísticas
@@ -389,7 +412,7 @@ const ReportesController = {
         }
       });
     } catch (error) {
-      console.error('❌ Error en getReporteCursos:', error);
+      console.error('-Error en getReporteCursos:', error);
       res.status(500).json({
         success: false,
         message: 'Error al generar reporte de cursos',
@@ -411,7 +434,7 @@ const ReportesController = {
         data: cursos
       });
     } catch (error) {
-      console.error('❌ Error en getCursosParaFiltro:', error);
+      console.error('-Error en getCursosParaFiltro:', error);
       res.status(500).json({
         success: false,
         message: 'Error al obtener cursos',
@@ -426,7 +449,7 @@ const ReportesController = {
    */
   async descargarPDFCursos(req, res) {
     try {
-      const { fechaInicio, fechaFin } = req.query;
+      const { fechaInicio, fechaFin, estado, ocupacion, horario } = req.query;
 
       if (!fechaInicio || !fechaFin) {
         return res.status(400).json({
@@ -436,11 +459,23 @@ const ReportesController = {
       }
 
       // Obtener datos
-      const datos = await ReportesModel.getReporteCursos({ fechaInicio, fechaFin });
+      const datos = await ReportesModel.getReporteCursos({ 
+        fechaInicio, 
+        fechaFin,
+        estado: estado || 'todos',
+        ocupacion: ocupacion || 'todos',
+        horario: horario || 'todos'
+      });
       const estadisticas = await ReportesModel.getEstadisticasCursos({ fechaInicio, fechaFin });
 
       // Generar PDF
-      const pdfBuffer = await generarPDFCursos(datos, { fechaInicio, fechaFin }, estadisticas);
+      const pdfBuffer = await generarPDFCursos(datos, { 
+        fechaInicio, 
+        fechaFin,
+        estado: estado || 'todos',
+        ocupacion: ocupacion || 'todos',
+        horario: horario || 'todos'
+      }, estadisticas);
 
       // Nombre del archivo
       const nombreArchivo = `Reporte_cursos_${fechaInicio}_${fechaFin}.pdf`;
@@ -451,7 +486,7 @@ const ReportesController = {
       res.setHeader('Content-Length', pdfBuffer.length);
       res.send(pdfBuffer);
     } catch (error) {
-      console.error('❌ Error descargando PDF de cursos:', error);
+      console.error('-Error descargando PDF de cursos:', error);
       res.status(500).json({
         success: false,
         message: 'Error al generar PDF de cursos',
@@ -466,7 +501,7 @@ const ReportesController = {
    */
   async descargarExcelCursos(req, res) {
     try {
-      const { fechaInicio, fechaFin } = req.query;
+      const { fechaInicio, fechaFin, estado, ocupacion, horario } = req.query;
 
       if (!fechaInicio || !fechaFin) {
         return res.status(400).json({
@@ -476,11 +511,23 @@ const ReportesController = {
       }
 
       // Obtener datos
-      const datos = await ReportesModel.getReporteCursos({ fechaInicio, fechaFin });
+      const datos = await ReportesModel.getReporteCursos({ 
+        fechaInicio, 
+        fechaFin,
+        estado: estado || 'todos',
+        ocupacion: ocupacion || 'todos',
+        horario: horario || 'todos'
+      });
       const estadisticas = await ReportesModel.getEstadisticasCursos({ fechaInicio, fechaFin });
 
       // Generar Excel
-      const excelBuffer = await generarExcelCursos(datos, { fechaInicio, fechaFin }, estadisticas);
+      const excelBuffer = await generarExcelCursos(datos, { 
+        fechaInicio, 
+        fechaFin,
+        estado: estado || 'todos',
+        ocupacion: ocupacion || 'todos',
+        horario: horario || 'todos'
+      }, estadisticas);
 
       // Nombre del archivo
       const nombreArchivo = `Reporte_cursos_${fechaInicio}_${fechaFin}.xlsx`;
@@ -491,7 +538,7 @@ const ReportesController = {
       res.setHeader('Content-Length', excelBuffer.length);
       res.send(excelBuffer);
     } catch (error) {
-      console.error('❌ Error descargando Excel de cursos:', error);
+      console.error('-Error descargando Excel de cursos:', error);
       res.status(500).json({
         success: false,
         message: 'Error al generar Excel de cursos',
@@ -517,7 +564,7 @@ const ReportesController = {
         data: tipos
       });
     } catch (error) {
-      console.error('❌ Error en getTiposReportes:', error);
+      console.error('-Error en getTiposReportes:', error);
       res.status(500).json({
         success: false,
         message: 'Error al obtener tipos de reportes',
@@ -546,7 +593,7 @@ const ReportesController = {
         data: historial
       });
     } catch (error) {
-      console.error('❌ Error en getHistorialReportes:', error);
+      console.error('-Error en getHistorialReportes:', error);
       res.status(500).json({
         success: false,
         message: 'Error al obtener historial de reportes',
@@ -632,7 +679,7 @@ const ReportesController = {
       res.setHeader('Content-Length', excelBuffer.length);
       res.send(excelBuffer);
     } catch (error) {
-      console.error('❌ Error en descargarExcelEstudiantesV2:', error);
+      console.error('-Error en descargarExcelEstudiantesV2:', error);
       res.status(500).json({
         success: false,
         message: 'Error al generar Excel de estudiantes',
@@ -692,7 +739,7 @@ const ReportesController = {
       res.setHeader('Content-Length', excelBuffer.length);
       res.send(excelBuffer);
     } catch (error) {
-      console.error('❌ Error en descargarExcelFinancieroV2:', error);
+      console.error('-Error en descargarExcelFinancieroV2:', error);
       res.status(500).json({
         success: false,
         message: 'Error al generar Excel financiero',
@@ -744,7 +791,7 @@ const ReportesController = {
       res.setHeader('Content-Length', excelBuffer.length);
       res.send(excelBuffer);
     } catch (error) {
-      console.error('❌ Error en descargarExcelCursosV2:', error);
+      console.error('-Error en descargarExcelCursosV2:', error);
       res.status(500).json({
         success: false,
         message: 'Error al generar Excel de cursos',
@@ -778,7 +825,7 @@ const ReportesController = {
         data: estadisticas
       });
     } catch (error) {
-      console.error('❌ Error en getEstadisticasReportes:', error);
+      console.error('-Error en getEstadisticasReportes:', error);
       res.status(500).json({
         success: false,
         message: 'Error al obtener estadísticas de reportes',

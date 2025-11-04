@@ -39,8 +39,8 @@ exports.getPagosEstudiante = async (req, res) => {
       pagos
     });
   } catch (error) {
-    console.error('❌ Error al obtener pagos del estudiante:', error);
-    console.error('❌ SQL Error:', error.sqlMessage || error.message);
+    console.error('-Error al obtener pagos del estudiante:', error);
+    console.error('-SQL Error:', error.sqlMessage || error.message);
     res.status(500).json({
       success: false,
       message: 'Error al obtener pagos del estudiante',
@@ -92,8 +92,8 @@ exports.getDeberesEstudiante = async (req, res) => {
       deberes
     });
   } catch (error) {
-    console.error('❌ Error al obtener deberes del estudiante:', error);
-    console.error('❌ SQL Error:', error.sqlMessage || error.message);
+    console.error('-Error al obtener deberes del estudiante:', error);
+    console.error('-SQL Error:', error.sqlMessage || error.message);
     res.status(500).json({
       success: false,
       message: 'Error al obtener deberes del estudiante',
