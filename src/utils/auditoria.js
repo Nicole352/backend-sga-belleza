@@ -21,24 +21,27 @@ async function registrarAuditoria(params) {
       usuario_id,
       datos_anteriores = null,
       datos_nuevos = null,
-      ip_address = '0.0.0.0',
-      user_agent = 'unknown'
+      ip_address = null,
+      user_agent = null
     } = params;
+
+    // Validar que no haya undefined
+    const parametros = [
+      tabla_afectada || null,
+      operacion || null,
+      id_registro || null,
+      usuario_id || null,
+      datos_anteriores ? JSON.stringify(datos_anteriores) : null,
+      datos_nuevos ? JSON.stringify(datos_nuevos) : null,
+      ip_address || null,
+      user_agent || null
+    ];
 
     await pool.execute(
       `INSERT INTO auditoria_sistema 
        (tabla_afectada, operacion, id_registro, usuario_id, datos_anteriores, datos_nuevos, ip_address, user_agent) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        tabla_afectada,
-        operacion,
-        id_registro,
-        usuario_id || null,
-        datos_anteriores ? JSON.stringify(datos_anteriores) : null,
-        datos_nuevos ? JSON.stringify(datos_nuevos) : null,
-        ip_address,
-        user_agent
-      ]
+      parametros
     );
 
     console.log(`📝 Auditoría: ${operacion} en ${tabla_afectada} (ID: ${id_registro}) por usuario ${usuario_id || 'sistema'}`);

@@ -31,6 +31,8 @@ const reportesRoutes = require('./routes/reportes');
 const usuariosRoutes = require('./routes/usuarios');
 const auditoriaRoutes = require('./routes/auditoria');
 const asistenciasRoutes = require('./routes/asistencias');
+const dashboardRoutes = require('./routes/dashboard.routes');
+const promocionesRoutes = require('./routes/promociones');
 
 const app = express();
 
@@ -99,6 +101,8 @@ app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/usuarios-actividad', require('./routes/usuarios-actividad'));
 app.use('/api/auditoria', auditoriaRoutes);
 app.use('/api/asistencias', asistenciasRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/promociones', promocionesRoutes);
 
 // Inicializar tipos de reportes al cargar el módulo
 // Se ejecutará automáticamente cuando el servidor inicie

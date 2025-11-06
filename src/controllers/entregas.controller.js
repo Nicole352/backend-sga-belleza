@@ -24,9 +24,9 @@ const upload = multer({
 async function getEntregasByTarea(req, res) {
   try {
     const { id_tarea } = req.params;
-    
+
     const entregas = await EntregasModel.getAllByTarea(id_tarea);
-    
+
     return res.json({
       success: true,
       entregas
@@ -41,13 +41,13 @@ async function getEntregasByTarea(req, res) {
 async function getEntregaById(req, res) {
   try {
     const { id } = req.params;
-    
+
     const entrega = await EntregasModel.getById(id);
-    
+
     if (!entrega) {
       return res.status(404).json({ error: 'Entrega no encontrada' });
     }
-    
+
     return res.json({
       success: true,
       entrega
@@ -100,6 +100,37 @@ async function createEntrega(req, res) {
 
       const entrega = await EntregasModel.getById(id_entrega);
 
+      // 🔥 Emitir evento WebSocket para notificar al docente y actualizar estudiante
+      const io = req.app.get('io');
+      if (io) {
+        // Obtener id_modulo de la tarea para facilitar la actualización en frontend
+        const { pool } = require('../config/database');
+        const [tareaInfo] = await pool.execute(
+          'SELECT id_modulo FROM tareas_modulo WHERE id_tarea = ?',
+          [id_tarea]
+        );
+        const id_modulo = tareaInfo.length > 0 ? tareaInfo[0].id_modulo : null;
+        
+        // Notificar al docente
+        io.emit('entrega_nueva', {
+          id_entrega,
+          id_tarea,
+          id_modulo,
+          id_estudiante,
+          entrega
+        });
+
+        // Notificar al estudiante que su entrega fue exitosa
+        io.to(`user_${id_estudiante}`).emit('tarea_entregada', {
+          id_entrega,
+          id_tarea,
+          id_modulo,
+          mensaje: 'Tarea entregada exitosamente'
+        });
+        
+        console.log(`📢 [WebSocket] Nueva entrega emitida: ID ${id_entrega} para tarea ${id_tarea} módulo ${id_modulo}`);
+      }
+
       return res.status(201).json({
         success: true,
         message: 'Entrega realizada exitosamente',
@@ -151,6 +182,27 @@ async function updateEntrega(req, res) {
       }
 
       const entrega = await EntregasModel.getById(id);
+
+      // 🔥 Emitir evento WebSocket para notificar al docente
+      const io = req.app.get('io');
+      if (io) {
+        // Obtener id_modulo de la tarea
+        const { pool } = require('../config/database');
+        const [tareaInfo] = await pool.execute(
+          'SELECT id_modulo FROM tareas_modulo WHERE id_tarea = ?',
+          [entrega.id_tarea]
+        );
+        const id_modulo = tareaInfo.length > 0 ? tareaInfo[0].id_modulo : null;
+        
+        io.emit('entrega_actualizada', {
+          id_entrega: id,
+          id_tarea: entrega.id_tarea,
+          id_modulo,
+          id_estudiante: entrega.id_estudiante,
+          entrega
+        });
+        console.log(`📢 [WebSocket] Entrega actualizada emitida: ID ${id} módulo ${id_modulo}`);
+      }
 
       return res.json({
         success: true,
@@ -207,13 +259,13 @@ async function deleteEntrega(req, res) {
 async function getArchivoEntrega(req, res) {
   try {
     const { id } = req.params;
-    
+
     const archivo = await EntregasModel.getArchivo(id);
-    
+
     if (!archivo) {
       return res.status(404).json({ error: 'Archivo no encontrado' });
     }
-    
+
     res.setHeader('Content-Type', archivo.mime);
     res.setHeader('Content-Disposition', `attachment; filename="${archivo.filename}"`);
     return res.send(archivo.buffer);
@@ -228,9 +280,9 @@ async function getEntregaByTareaEstudiante(req, res) {
   try {
     const { id_tarea } = req.params;
     const id_estudiante = req.user.id_usuario;
-    
+
     const entrega = await EntregasModel.getByTareaEstudiante(id_tarea, id_estudiante);
-    
+
     return res.json({
       success: true,
       entrega
@@ -254,7 +306,7 @@ async function calificarEntrega(req, res) {
 
     // Obtener id_docente del usuario autenticado
     const id_docente = await DocentesModel.getDocenteIdByUserId(req.user.id_usuario);
-    
+
     if (!id_docente) {
       return res.status(403).json({ error: 'Usuario no es docente' });
     }
@@ -267,6 +319,44 @@ async function calificarEntrega(req, res) {
     });
 
     const calificacion = await CalificacionesModel.getByEntrega(id);
+
+    const io = req.app.get('io');
+    if (io) {
+      const entrega = await EntregasModel.getById(id);
+      
+      // Emitir evento específico al estudiante
+      io.to(`user_${entrega.id_estudiante}`).emit('tarea_calificada', {
+        id_entrega: id,
+        id_tarea: entrega.id_tarea,
+        id_estudiante: entrega.id_estudiante,
+        id_curso: entrega.id_curso,
+        tarea_titulo: entrega.tarea_titulo,
+        nota,
+        comentario_docente,
+        calificacion
+      });
+      
+      // Evento general para docentes
+      io.emit('entrega_calificada', {
+        id_entrega: id,
+        id_tarea: entrega.id_tarea,
+        id_estudiante: entrega.id_estudiante,
+        id_curso: entrega.id_curso,
+        id_modulo: entrega.id_modulo,
+        tarea_titulo: entrega.tarea_titulo,
+        estudiante_nombre: entrega.estudiante_nombre,
+        estudiante_apellido: entrega.estudiante_apellido,
+        nota,
+        comentario_docente,
+        calificacion
+      });
+      
+      console.log('📊 [WebSocket] Eventos de calificación emitidos:', {
+        estudiante_notificado: entrega.id_estudiante,
+        id_entrega: id,
+        id_curso: entrega.id_curso
+      });
+    }
 
     return res.json({
       success: true,

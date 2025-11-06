@@ -147,6 +147,16 @@ async function createTarea(req, res) {
       user_agent: req.get('user-agent') || 'unknown'
     });
 
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('tarea_creada', {
+        id_tarea,
+        id_modulo,
+        titulo,
+        tarea
+      });
+    }
+
     return res.status(201).json({
       success: true,
       message: 'Tarea creada exitosamente',

@@ -1,6 +1,7 @@
 const { pool } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const EstudiantesModel = require('../models/estudiantes.model');
+const PromocionesModel = require('../models/promociones.model');
 const { enviarEmailBienvenidaEstudiante } = require('../services/emailService');
 const { generarComprobantePagoMensual } = require('../services/pdfService');
 const { registrarAuditoria } = require('../utils/auditoria');
@@ -283,9 +284,9 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
       const id_matricula = matriculaResult.insertId;
       console.log('✅ Matrícula creada:', codigoMatricula, 'ID:', id_matricula);
 
-      // *** INSERTAR EN ESTUDIANTE_CURSO PARA REPORTES ***
+      // *** INSERTAR EN ESTUDIANTE_CURSO PARA REPORTES (si no existe) ***
       await connection.execute(`
-        INSERT INTO estudiante_curso (id_estudiante, id_curso, fecha_inscripcion, estado)
+        INSERT IGNORE INTO estudiante_curso (id_estudiante, id_curso, fecha_inscripcion, estado)
         VALUES (?, ?, NOW(), 'activo')
       `, [id_estudiante, id_curso]);
       console.log('✅ Estudiante agregado a estudiante_curso para reportes');
@@ -439,7 +440,154 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
           console.log('✅ Cuotas mensuales generadas exitosamente para matrícula:', id_matricula);
         }
       } else {
-        console.log('-No se encontró tipo de curso para generar cuotas');
+        console.log('⚠️ No se encontró tipo de curso para generar cuotas');
+      }
+
+      // ========================================
+      // CREAR MATRÍCULA DEL CURSO PROMOCIONAL SI LA SOLICITUD TIENE PROMOCIÓN
+      // ========================================
+      if (solicitud.id_promocion_seleccionada) {
+        console.log(`🎁 Solicitud tiene promoción ID: ${solicitud.id_promocion_seleccionada}`);
+        
+        // Obtener datos de la promoción
+        const [promoRows] = await connection.execute(`
+          SELECT p.id_curso_promocional, p.meses_gratis, p.nombre_promocion,
+                 c.nombre as curso_nombre, c.horario as curso_horario
+          FROM promociones p
+          INNER JOIN cursos c ON p.id_curso_promocional = c.id_curso
+          WHERE p.id_promocion = ?
+        `, [solicitud.id_promocion_seleccionada]);
+
+        if (promoRows.length > 0) {
+          const promo = promoRows[0];
+          console.log(`🎓 Creando matrícula del curso promocional: ${promo.curso_nombre} (ID: ${promo.id_curso_promocional})`);
+
+          // Verificar si ya existe matrícula del curso promocional
+          const [matriculaPromoExistente] = await connection.execute(`
+            SELECT id_matricula FROM matriculas 
+            WHERE id_estudiante = ? AND id_curso = ?
+          `, [id_estudiante, promo.id_curso_promocional]);
+
+          if (matriculaPromoExistente.length === 0) {
+            // Generar código de matrícula para el curso promocional
+            const codigoMatriculaPromo = `MAT-PROMO-${Date.now()}-${id_estudiante}`;
+            
+            // Obtener id_tipo_curso del curso promocional
+            const [tipoCursoPromo] = await connection.execute(`
+              SELECT id_tipo_curso FROM cursos WHERE id_curso = ?
+            `, [promo.id_curso_promocional]);
+            
+            // Crear matrícula del curso promocional con monto 0 (gratis)
+            const [resultMatriculaPromo] = await connection.execute(`
+              INSERT INTO matriculas 
+              (id_solicitud, id_tipo_curso, id_estudiante, id_curso, codigo_matricula, 
+               fecha_matricula, monto_matricula, email_generado, estado, creado_por)
+              VALUES (?, ?, ?, ?, ?, NOW(), 0, ?, 'activa', ?)
+            `, [
+              solicitud.id_solicitud,
+              tipoCursoPromo[0].id_tipo_curso,
+              id_estudiante,
+              promo.id_curso_promocional,
+              codigoMatriculaPromo,
+              emailParaMatricula,
+              aprobado_por
+            ]);
+
+            const id_matricula_promo = resultMatriculaPromo.insertId;
+            console.log(`✅ Matrícula promocional creada: ${codigoMatriculaPromo} (ID: ${id_matricula_promo})`);
+
+            // Agregar a estudiante_curso para reportes (si no existe)
+            await connection.execute(`
+              INSERT IGNORE INTO estudiante_curso (id_estudiante, id_curso, fecha_inscripcion, estado)
+              VALUES (?, ?, NOW(), 'activo')
+            `, [id_estudiante, promo.id_curso_promocional]);
+            console.log(`✅ Estudiante agregado a estudiante_curso para curso promocional`);
+
+            // Obtener información del tipo de curso promocional para generar cuotas
+            console.log(`🔍 Buscando tipo de curso con ID: ${tipoCursoPromo[0].id_tipo_curso}`);
+            const [tipoCursoPromoInfo] = await connection.execute(`
+              SELECT 
+                duracion_meses, 
+                precio_base,
+                modalidad_pago,
+                numero_clases,
+                precio_por_clase
+              FROM tipos_cursos 
+              WHERE id_tipo_curso = ?
+            `, [tipoCursoPromo[0].id_tipo_curso]);
+
+            console.log(`🔍 Tipo de curso encontrado:`, tipoCursoPromoInfo);
+            
+            if (tipoCursoPromoInfo.length > 0) {
+              const tipoCursoPromoData = tipoCursoPromoInfo[0];
+              const mesesGratis = promo.meses_gratis || 0;
+              const duracionTotal = tipoCursoPromoData.duracion_meses;
+              const precioMensual = parseFloat(tipoCursoPromoData.precio_base) / duracionTotal;
+
+              console.log(`🎁 Generando cuotas para curso promocional: ${mesesGratis} meses gratis de ${duracionTotal} total`);
+
+              const fechaAprobacion = new Date();
+              const diaAprobacion = fechaAprobacion.getDate();
+
+              for (let i = 1; i <= duracionTotal; i++) {
+                const fechaVencimiento = new Date(fechaAprobacion);
+                fechaVencimiento.setMonth(fechaAprobacion.getMonth() + (i - 1));
+                fechaVencimiento.setDate(diaAprobacion);
+
+                // Las primeras cuotas (meses gratis) tienen monto 0
+                const montoCuota = i <= mesesGratis ? 0 : precioMensual;
+                const estadoCuota = i <= mesesGratis ? 'verificado' : 'pendiente';
+
+                await connection.execute(`
+                  INSERT INTO pagos_mensuales (
+                    id_matricula, numero_cuota, monto, fecha_vencimiento, estado, metodo_pago, observaciones
+                  ) VALUES (?, ?, ?, ?, ?, 'transferencia', ?)
+                `, [
+                  id_matricula_promo, 
+                  i, 
+                  montoCuota, 
+                  fechaVencimiento.toISOString().split('T')[0],
+                  estadoCuota,
+                  i <= mesesGratis ? `🎁 Mes ${i} de ${mesesGratis} - PROMOCIONAL GRATIS` : `Cuota mensual ${i}`
+                ]);
+
+                console.log(`${i <= mesesGratis ? '🎁' : '💰'} Cuota #${i}: ${montoCuota === 0 ? 'GRATIS (Promocional)' : `$${montoCuota.toFixed(2)}`}`);
+              }
+
+              console.log(`✅ ${duracionTotal} cuotas generadas para curso promocional (${mesesGratis} gratis + ${duracionTotal - mesesGratis} normales)`);
+            } else {
+              console.log(`❌ ERROR: No se encontró información del tipo de curso con ID: ${tipoCursoPromo[0].id_tipo_curso}`);
+            }
+
+            // Crear registro en estudiante_promocion
+            await connection.execute(`
+              INSERT INTO estudiante_promocion 
+              (id_estudiante, id_promocion, id_matricula, horario_seleccionado, 
+               acepto_promocion, meses_gratis_aplicados, fecha_inicio_cobro)
+              VALUES (?, ?, ?, ?, 1, 0, DATE_ADD(NOW(), INTERVAL ? MONTH))
+            `, [
+              id_estudiante,
+              solicitud.id_promocion_seleccionada,
+              id_matricula_promo,
+              solicitud.horario_preferido || promo.curso_horario,
+              promo.meses_gratis || 1
+            ]);
+            console.log(`🎉 Registro de promoción creado para estudiante ${id_estudiante}`);
+
+            // Incrementar cupos_utilizados de la promoción
+            await connection.execute(`
+              UPDATE promociones 
+              SET cupos_utilizados = cupos_utilizados + 1 
+              WHERE id_promocion = ?
+            `, [solicitud.id_promocion_seleccionada]);
+            console.log(`📊 Cupo de promoción utilizado (ID: ${solicitud.id_promocion_seleccionada})`);
+
+          } else {
+            console.log(`⚠️ Ya existe matrícula del curso promocional para este estudiante`);
+          }
+        } else {
+          console.log(`⚠️ No se encontró la promoción ID ${solicitud.id_promocion_seleccionada}`);
+        }
       }
     }
     

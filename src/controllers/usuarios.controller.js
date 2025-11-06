@@ -208,15 +208,16 @@ async function cambiarEstado(req, res) {
     const usuarioActualizado = await usuariosModel.changeUserStatus(id, estado);
 
     // Registrar auditoría - Cambio de estado
-    await registrarAuditoria(
-      'usuarios',
-      'UPDATE',
-      parseInt(id),
-      req.user?.id_usuario || parseInt(id),
-      { estado: estadoAnterior },
-      { estado: estado },
-      req
-    );
+    await registrarAuditoria({
+      tabla_afectada: 'usuarios',
+      operacion: 'UPDATE',
+      id_registro: parseInt(id),
+      usuario_id: req.user?.id_usuario || parseInt(id),
+      datos_anteriores: { estado: estadoAnterior },
+      datos_nuevos: { estado: estado },
+      ip_address: req.ip || req.connection?.remoteAddress || null,
+      user_agent: req.get('user-agent') || null
+    });
 
     res.json({
       success: true,
@@ -264,15 +265,16 @@ async function resetPassword(req, res) {
     await usuariosModel.resetUserPassword(id, nuevaPasswordTemporal, passwordHash);
 
     // Registrar auditoría - Reset de contraseña
-    await registrarAuditoria(
-      'usuarios',
-      'UPDATE',
-      parseInt(id),
-      req.user?.id_usuario || parseInt(id),
-      null,
-      { accion: 'reset_password', needs_password_reset: true },
-      req
-    );
+    await registrarAuditoria({
+      tabla_afectada: 'usuarios',
+      operacion: 'UPDATE',
+      id_registro: parseInt(id),
+      usuario_id: req.user?.id_usuario || parseInt(id),
+      datos_anteriores: null,
+      datos_nuevos: { accion: 'reset_password', needs_password_reset: true },
+      ip_address: req.ip || req.connection?.remoteAddress || null,
+      user_agent: req.get('user-agent') || null
+    });
 
     res.json({
       success: true,
@@ -720,15 +722,16 @@ async function subirFotoPerfil(req, res) {
     await usuariosModel.updateFotoPerfil(id, fotoBuffer);
 
     // Registrar auditoría
-    await registrarAuditoria(
-      'usuarios',
-      'UPDATE',
-      parseInt(id),
-      req.user?.id_usuario || parseInt(id),
-      null,
-      { accion: 'actualizar_foto_perfil' },
-      req
-    );
+    await registrarAuditoria({
+      tabla_afectada: 'usuarios',
+      operacion: 'UPDATE',
+      id_registro: parseInt(id),
+      usuario_id: req.user?.id_usuario || parseInt(id),
+      datos_anteriores: null,
+      datos_nuevos: { accion: 'actualizar_foto_perfil' },
+      ip_address: req.ip || req.connection?.remoteAddress || null,
+      user_agent: req.get('user-agent') || null
+    });
 
     res.json({
       success: true,
@@ -808,15 +811,16 @@ async function eliminarFotoPerfil(req, res) {
     await usuariosModel.deleteFotoPerfil(id);
 
     // Registrar auditoría
-    await registrarAuditoria(
-      'usuarios',
-      'UPDATE',
-      parseInt(id),
-      req.user?.id_usuario || parseInt(id),
-      null,
-      { accion: 'eliminar_foto_perfil' },
-      req
-    );
+    await registrarAuditoria({
+      tabla_afectada: 'usuarios',
+      operacion: 'UPDATE',
+      id_registro: parseInt(id),
+      usuario_id: req.user?.id_usuario || parseInt(id),
+      datos_anteriores: null,
+      datos_nuevos: { accion: 'eliminar_foto_perfil' },
+      ip_address: req.ip || req.connection?.remoteAddress || null,
+      user_agent: req.get('user-agent') || null
+    });
 
     res.json({
       success: true,
@@ -965,15 +969,16 @@ async function cambiarMiPassword(req, res) {
     await usuariosModel.updateUserPassword(id_usuario, passwordHash);
 
     // Registrar auditoría
-    await registrarAuditoria(
-      'usuarios',
-      'UPDATE',
-      id_usuario,
-      id_usuario,
-      null,
-      { accion: 'cambio_password' },
-      req
-    );
+    await registrarAuditoria({
+      tabla_afectada: 'usuarios',
+      operacion: 'UPDATE',
+      id_registro: id_usuario,
+      usuario_id: id_usuario,
+      datos_anteriores: null,
+      datos_nuevos: { accion: 'cambio_password' },
+      ip_address: req.ip || req.connection?.remoteAddress || null,
+      user_agent: req.get('user-agent') || null
+    });
 
     res.json({
       success: true,

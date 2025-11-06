@@ -1,5 +1,6 @@
 const PagosMenualesModel = require('../models/pagos-mensuales.model');
 const { enviarNotificacionPagoEstudiante } = require('../services/emailService');
+const { emitSocketEvent } = require('../services/socket.service');
 const { pool } = require('../config/database');
 const ExcelJS = require('exceljs');
 
@@ -9,17 +10,29 @@ exports.getCuotasByMatricula = async (req, res) => {
     const id_matricula = Number(req.params.id_matricula);
     const id_estudiante = req.user?.id_usuario;
 
+    console.log('🔍 getCuotasByMatricula - Parámetros recibidos:', {
+      id_matricula,
+      id_estudiante,
+      user: req.user
+    });
+
     if (!id_matricula || !id_estudiante) {
+      console.log('❌ Parámetros inválidos:', { id_matricula, id_estudiante });
       return res.status(400).json({ error: 'Parámetros inválidos' });
     }
 
     const cuotas = await PagosMenualesModel.getCuotasByMatricula(id_matricula, id_estudiante);
+    console.log('✅ Cuotas obtenidas exitosamente:', cuotas.length);
     res.json(cuotas);
 
   } catch (error) {
-    console.error('Error obteniendo cuotas:', error);
-    res.status(500).json({ 
-      error: error.message || 'Error interno del servidor' 
+    console.error('❌ Error obteniendo cuotas:', {
+      message: error.message,
+      id_matricula: req.params.id_matricula,
+      id_estudiante: req.user?.id_usuario
+    });
+    res.status(500).json({
+      error: error.message || 'Error interno del servidor'
     });
   }
 };
@@ -35,7 +48,7 @@ exports.getPagoById = async (req, res) => {
     }
 
     const pago = await PagosMenualesModel.getPagoById(id_pago, id_estudiante);
-    
+
     if (!pago) {
       return res.status(404).json({ error: 'Pago no encontrado' });
     }
@@ -44,9 +57,9 @@ exports.getPagoById = async (req, res) => {
 
   } catch (error) {
     console.error('Error obteniendo pago:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -55,14 +68,14 @@ exports.getPagoById = async (req, res) => {
 exports.pagarCuota = async (req, res) => {
   try {
     const { id_pago } = req.params;
-    const { 
+    const {
       metodo_pago,
       monto_pagado,
-      numero_comprobante, 
-      banco_comprobante, 
+      numero_comprobante,
+      banco_comprobante,
       fecha_transferencia,
       recibido_por,
-      observaciones 
+      observaciones
     } = req.body;
 
     const id_estudiante = req.user?.id_usuario;
@@ -82,7 +95,7 @@ exports.pagarCuota = async (req, res) => {
 
     // Validar que la cuota pertenece al estudiante
     const cuotaValida = await PagosMenualesModel.validarCuotaEstudiante(id_pago, id_estudiante);
-    
+
     if (!cuotaValida) {
       return res.status(403).json({ error: 'Cuota no encontrada o no pertenece al estudiante' });
     }
@@ -119,8 +132,8 @@ exports.pagarCuota = async (req, res) => {
     if (metodo_pago === 'transferencia' && numero_comprobante) {
       const exists = await PagosMenualesModel.existeNumeroComprobante(numero_comprobante, id_pago);
       if (exists) {
-        return res.status(400).json({ 
-          error: 'Este número de comprobante ya fue utilizado en otro pago' 
+        return res.status(400).json({
+          error: 'Este número de comprobante ya fue utilizado en otro pago'
         });
       }
     }
@@ -148,7 +161,7 @@ exports.pagarCuota = async (req, res) => {
     };
 
     const resultado = await PagosMenualesModel.procesarPago(id_pago, pagoData, archivoData, id_estudiante);
-    
+
     console.log('✅ Pago procesado exitosamente:', resultado);
 
     // ENVIAR EMAIL AL ADMIN NOTIFICANDO EL NUEVO PAGO (asíncrono)
@@ -156,7 +169,7 @@ exports.pagarCuota = async (req, res) => {
       try {
         // Obtener datos completos del pago para el email
         const [pagoCompleto] = await pool.execute(`
-          SELECT 
+          SELECT
             pm.id_pago,
             pm.numero_cuota,
             pm.monto,
@@ -176,7 +189,7 @@ exports.pagarCuota = async (req, res) => {
 
         if (pagoCompleto.length > 0) {
           const pago = pagoCompleto[0];
-          
+
           const datosPagoEmail = {
             estudiante_nombre: pago.estudiante_nombre,
             estudiante_apellido: pago.estudiante_apellido,
@@ -193,9 +206,53 @@ exports.pagarCuota = async (req, res) => {
           console.log('✅ Email de notificación de pago enviado al admin');
         }
       } catch (emailError) {
-        console.error('-Error enviando email de notificación (no afecta el pago):', emailError);
+        console.error('❌ Error enviando email de notificación (no afecta el pago):', emailError);
       }
     });
+
+    // Emitir evento socket para notificar que se registró un nuevo pago
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        // Obtener info del estudiante
+        const [estudiante] = await pool.execute(`
+          SELECT u.nombre, u.apellido, c.nombre as curso_nombre
+          FROM usuarios u
+          INNER JOIN matriculas m ON u.id_usuario = m.id_estudiante
+          INNER JOIN cursos c ON m.id_curso = c.id_curso
+          INNER JOIN pagos_mensuales pm ON m.id_matricula = pm.id_matricula
+          WHERE pm.id_pago = ?
+          LIMIT 1
+        `, [id_pago]);
+
+        const pagoId = (resultado && resultado.id_pago) ? Number(resultado.id_pago) : (typeof id_pago !== 'undefined' ? Number(id_pago) : null);
+        
+        // Evento general
+        io.emit('nuevo_pago', {
+          id_pago: pagoId,
+          estado: 'pagado',
+          fecha_pago: new Date()
+        });
+
+        // Evento específico para admin (notificación)
+        if (estudiante.length > 0) {
+          io.emit('pago_subido', {
+            id_pago: pagoId,
+            estudiante_nombre: estudiante[0].nombre,
+            estudiante_apellido: estudiante[0].apellido,
+            curso_nombre: estudiante[0].curso_nombre,
+            monto: monto_pagado,
+            metodo_pago,
+            fecha: new Date(),
+            mensaje: `${estudiante[0].nombre} ${estudiante[0].apellido} ha subido un comprobante de pago`
+          });
+        }
+        
+        console.log('🔔 Eventos socket "nuevo_pago" y "pago_subido" emitidos');
+      }
+    } catch (socketError) {
+      console.error('❌ Error emitiendo evento socket (no afecta el pago):', socketError);
+    }
 
     res.json({
       success: true,
@@ -206,7 +263,7 @@ exports.pagarCuota = async (req, res) => {
   } catch (error) {
     console.error('-Error procesando pago:', error);
     console.error('-Stack trace:', error.stack);
-    res.status(500).json({ 
+    res.status(500).json({
       error: error.message || 'Error interno del servidor',
       details: error.stack
     });
@@ -272,7 +329,9 @@ exports.getCursosConPagosPendientes = async (req, res) => {
       return res.status(401).json({ error: 'Usuario no autenticado' });
     }
 
+    console.log(`📚 Buscando cursos para estudiante ID: ${id_estudiante}`);
     const cursos = await PagosMenualesModel.getCursosConPagosPendientes(id_estudiante);
+    console.log(`✅ Cursos devueltos al frontend:`, JSON.stringify(cursos, null, 2));
     res.json(cursos);
 
   } catch (error) {

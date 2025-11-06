@@ -34,15 +34,33 @@ class PagosMenualesModel {
 
   // Obtener cuotas de una matrícula específica
   static async getCuotasByMatricula(id_matricula, id_estudiante) {
+    console.log('🔍 Model getCuotasByMatricula - Verificando matrícula:', {
+      id_matricula,
+      id_estudiante
+    });
+
     // Verificar que la matrícula pertenece al estudiante
     const [verificacion] = await pool.execute(`
-      SELECT m.id_matricula 
+      SELECT m.id_matricula, m.id_estudiante
       FROM matriculas m 
       WHERE m.id_matricula = ? AND m.id_estudiante = ?
     `, [id_matricula, id_estudiante]);
 
+    console.log('🔍 Resultado de verificación:', verificacion);
+
     if (verificacion.length === 0) {
-      throw new Error('Matrícula no encontrada o no pertenece al estudiante');
+      // Intentar encontrar la matrícula sin importar el estudiante para debugging
+      const [matriculaInfo] = await pool.execute(`
+        SELECT m.id_matricula, m.id_estudiante, m.codigo_matricula,
+               u.nombres, u.apellidos
+        FROM matriculas m
+        LEFT JOIN usuarios u ON m.id_estudiante = u.id_usuario
+        WHERE m.id_matricula = ?
+      `, [id_matricula]);
+
+      console.log('❌ Matrícula encontrada pero con diferente estudiante:', matriculaInfo);
+      
+      throw new Error(`Matrícula no encontrada o no pertenece al estudiante. Matrícula: ${id_matricula}, Estudiante: ${id_estudiante}`);
     }
 
     const [cuotas] = await pool.execute(`
@@ -363,20 +381,42 @@ class PagosMenualesModel {
           c.nombre as curso_nombre,
           c.codigo_curso,
           tc.nombre as tipo_curso_nombre,
-          COUNT(pm.id_pago) as total_cuotas,
-          SUM(CASE WHEN pm.estado = 'pendiente' THEN 1 ELSE 0 END) as cuotas_pendientes,
-          SUM(CASE WHEN pm.estado = 'vencido' THEN 1 ELSE 0 END) as cuotas_vencidas,
+          COALESCE(COUNT(pm.id_pago), 0) as total_cuotas,
+          COALESCE(SUM(CASE WHEN pm.estado = 'pendiente' THEN 1 ELSE 0 END), 0) as cuotas_pendientes,
+          COALESCE(SUM(CASE WHEN pm.estado = 'vencido' THEN 1 ELSE 0 END), 0) as cuotas_vencidas,
           MIN(CASE WHEN pm.estado IN ('pendiente', 'vencido') THEN pm.fecha_vencimiento END) as proxima_fecha_vencimiento,
-          SUM(CASE WHEN pm.estado IN ('pendiente', 'vencido') THEN pm.monto ELSE 0 END) as monto_pendiente
+          COALESCE(SUM(CASE WHEN pm.estado IN ('pendiente', 'vencido') THEN pm.monto ELSE 0 END), 0) as monto_pendiente,
+          m.monto_matricula,
+          ep.id_estudiante_promocion,
+          ep.id_promocion,
+          ep.meses_gratis_aplicados,
+          ep.fecha_inicio_cobro,
+          p.nombre_promocion,
+          p.meses_gratis,
+          p.id_curso_principal,
+          CASE 
+            WHEN ep.id_estudiante_promocion IS NOT NULL AND m.monto_matricula = 0 THEN 1
+            ELSE 0
+          END as es_curso_promocional
         FROM matriculas m
         INNER JOIN cursos c ON m.id_curso = c.id_curso
         INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
         LEFT JOIN pagos_mensuales pm ON m.id_matricula = pm.id_matricula
+        LEFT JOIN estudiante_promocion ep ON m.id_matricula = ep.id_matricula
+        LEFT JOIN promociones p ON ep.id_promocion = p.id_promocion
         WHERE m.id_estudiante = ? AND m.estado = 'activa'
-        GROUP BY m.id_matricula, m.codigo_matricula, c.nombre, c.codigo_curso, tc.nombre
-        HAVING cuotas_pendientes > 0 OR cuotas_vencidas > 0
-        ORDER BY proxima_fecha_vencimiento ASC
+        GROUP BY m.id_matricula, m.codigo_matricula, c.nombre, c.codigo_curso, tc.nombre, 
+                 m.monto_matricula, ep.id_estudiante_promocion, ep.id_promocion, 
+                 ep.meses_gratis_aplicados, ep.fecha_inicio_cobro, p.nombre_promocion, 
+                 p.meses_gratis, p.id_curso_principal
+        HAVING cuotas_pendientes > 0 OR cuotas_vencidas > 0 OR es_curso_promocional = 1
+        ORDER BY es_curso_promocional DESC, proxima_fecha_vencimiento ASC
       `, [id_estudiante]);
+
+      console.log(`🔍 Cursos encontrados para estudiante ${id_estudiante}:`, cursos.length);
+      cursos.forEach(curso => {
+        console.log(`📚 ${curso.curso_nombre} - Promocional: ${curso.es_curso_promocional} - Total cuotas: ${curso.total_cuotas}`);
+      });
 
       return cursos || [];
     } catch (error) {

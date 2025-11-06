@@ -572,6 +572,19 @@ class EstudiantesModel {
         m.fecha_matricula,
         m.codigo_matricula,
         m.monto_matricula,
+        -- Información de promoción
+        ep.id_estudiante_promocion,
+        ep.id_promocion,
+        ep.fecha_aceptacion as promocion_fecha_aceptacion,
+        ep.horario_seleccionado as promocion_horario,
+        ep.acepto_promocion,
+        ep.meses_gratis_aplicados,
+        ep.fecha_inicio_cobro,
+        p.nombre_promocion,
+        p.descripcion as promocion_descripcion,
+        p.meses_gratis as promocion_meses_gratis,
+        cp.nombre as curso_promocional_nombre,
+        cp.codigo_curso as curso_promocional_codigo,
         -- Información del aula y horarios
         a.codigo_aula,
         a.nombre as aula_nombre,
@@ -616,6 +629,12 @@ class EstudiantesModel {
       FROM matriculas m
       LEFT JOIN cursos c ON m.id_curso = c.id_curso
       LEFT JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
+      -- JOIN para obtener promociones del estudiante
+      LEFT JOIN estudiante_promocion ep ON m.id_estudiante = ep.id_estudiante 
+        AND ep.id_promocion IS NOT NULL
+        AND ep.acepto_promocion = 1
+      LEFT JOIN promociones p ON ep.id_promocion = p.id_promocion
+      LEFT JOIN cursos cp ON p.id_curso_promocional = cp.id_curso
       LEFT JOIN asignaciones_aulas aa ON c.id_curso = aa.id_curso AND aa.estado = 'activa'
       LEFT JOIN aulas a ON aa.id_aula = a.id_aula
       LEFT JOIN docentes d ON aa.id_docente = d.id_docente

@@ -1,6 +1,7 @@
 const { pool } = require('../config/database');
 const { enviarComprobantePagoMensual } = require('../services/emailService');
 const { generarComprobantePagoMensual } = require('../services/pdfService');
+const { emitSocketEvent, emitToUser } = require('../services/socket.service');
 
 // Obtener todos los pagos con información de estudiantes
 exports.getAllPagos = async (req, res) => {
@@ -8,7 +9,7 @@ exports.getAllPagos = async (req, res) => {
     const { estado, search, limit = 50, offset = 0 } = req.query;
 
     let sql = `
-      SELECT 
+      SELECT
         pm.id_pago,
         pm.numero_cuota,
         pm.monto,
@@ -51,9 +52,9 @@ exports.getAllPagos = async (req, res) => {
     // Búsqueda
     if (search) {
       sql += ` AND (
-        u.nombre LIKE ? OR 
-        u.apellido LIKE ? OR 
-        u.cedula LIKE ? OR 
+        u.nombre LIKE ? OR
+        u.apellido LIKE ? OR
+        u.cedula LIKE ? OR
         c.nombre LIKE ? OR
         m.codigo_matricula LIKE ?
       )`;
@@ -64,7 +65,7 @@ exports.getAllPagos = async (req, res) => {
     // Agregar limit y offset como números directamente en el SQL (no como parámetros)
     const limitNum = parseInt(limit) || 50;
     const offsetNum = parseInt(offset) || 0;
-    
+
     sql += ` ORDER BY pm.fecha_vencimiento DESC, pm.id_pago DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
 
     const [pagos] = await pool.execute(sql, params);
@@ -81,9 +82,9 @@ exports.getAllPagos = async (req, res) => {
     res.json(pagos);
   } catch (error) {
     console.error('Error obteniendo pagos:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -92,7 +93,7 @@ exports.getAllPagos = async (req, res) => {
 exports.getEstadisticas = async (req, res) => {
   try {
     const [stats] = await pool.execute(`
-      SELECT 
+      SELECT
         COUNT(*) as total_pagos,
         SUM(CASE WHEN estado = 'pendiente' THEN 1 ELSE 0 END) as pagos_pendientes,
         SUM(CASE WHEN estado = 'pagado' THEN 1 ELSE 0 END) as pagos_pagados,
@@ -106,9 +107,9 @@ exports.getEstadisticas = async (req, res) => {
     res.json(stats[0]);
   } catch (error) {
     console.error('Error obteniendo estadísticas:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -119,7 +120,7 @@ exports.getPagoDetalle = async (req, res) => {
     const { id } = req.params;
 
     const [pagos] = await pool.execute(`
-      SELECT 
+      SELECT
         pm.*,
         u.nombre as estudiante_nombre,
         u.apellido as estudiante_apellido,
@@ -149,9 +150,9 @@ exports.getPagoDetalle = async (req, res) => {
     res.json(pagos[0]);
   } catch (error) {
     console.error('Error obteniendo detalle del pago:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -179,14 +180,14 @@ exports.verificarPago = async (req, res) => {
 
     const rolPermitido = usuario[0].nombre_rol.toLowerCase();
     console.log('🎭 Rol del usuario:', rolPermitido);
-    
+
     if (rolPermitido !== 'admin' && rolPermitido !== 'administrativo') {
       console.log('-Rol no permitido:', rolPermitido);
-      return res.status(403).json({ 
-        error: `Solo los administradores pueden verificar pagos. Rol actual: ${rolPermitido}` 
+      return res.status(403).json({
+        error: `Solo los administradores pueden verificar pagos. Rol actual: ${rolPermitido}`
       });
     }
-    
+
     console.log('✅ Rol permitido, continuando con verificación...');
 
     // Verificar que el pago existe y está en estado 'pagado'
@@ -200,15 +201,15 @@ exports.verificarPago = async (req, res) => {
     }
 
     if (pago[0].estado !== 'pagado') {
-      return res.status(400).json({ 
-        error: `No se puede verificar un pago en estado '${pago[0].estado}'. Solo se pueden verificar pagos en estado 'pagado'.` 
+      return res.status(400).json({
+        error: `No se puede verificar un pago en estado '${pago[0].estado}'. Solo se pueden verificar pagos en estado 'pagado'.`
       });
     }
 
     // Actualizar el pago a verificado
     await pool.execute(`
-      UPDATE pagos_mensuales 
-      SET 
+      UPDATE pagos_mensuales
+      SET
         estado = 'verificado',
         verificado_por = ?,
         fecha_verificacion = NOW()
@@ -217,13 +218,30 @@ exports.verificarPago = async (req, res) => {
 
     console.log(`✅ Pago ${id} verificado por usuario ${verificado_por}`);
 
+    // Obtener información del pago y estudiante para notificaciones
+    const [estudianteInfo] = await pool.execute(`
+      SELECT 
+        m.id_estudiante,
+        pm.numero_cuota,
+        pm.monto,
+        pm.fecha_vencimiento,
+        c.nombre as curso_nombre
+      FROM pagos_mensuales pm
+      INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
+      INNER JOIN cursos c ON m.id_curso = c.id_curso
+      WHERE pm.id_pago = ?
+    `, [id]);
+
+    const id_estudiante = estudianteInfo[0]?.id_estudiante;
+    console.log(`🔍 ID Estudiante obtenido: ${id_estudiante}`);
+
     // ENVIAR EMAIL CON PDF DEL COMPROBANTE AL ESTUDIANTE (asíncrono)
     // ⚠️ IMPORTANTE: NO enviar email para cuota #1 (ya se envió con email de bienvenida)
     setImmediate(async () => {
       try {
         // Obtener datos completos del pago para el PDF y email
         const [pagoCompleto] = await pool.execute(`
-          SELECT 
+          SELECT
             pm.id_pago,
             pm.numero_cuota,
             pm.monto,
@@ -249,15 +267,15 @@ exports.verificarPago = async (req, res) => {
 
         if (pagoCompleto.length > 0) {
           const pago = pagoCompleto[0];
-          
+
           // ⚠️ NO ENVIAR EMAIL PARA CUOTA #1 (ya se envió con el email de bienvenida)
           if (pago.numero_cuota === 1) {
             console.log('⏭️ Cuota #1 detectada - Email ya enviado con bienvenida, omitiendo envío duplicado');
             return;
           }
-          
+
           console.log('📧 Enviando email a:', pago.estudiante_email);
-          
+
           const datosEstudiante = {
             nombres: pago.estudiante_nombres,
             apellidos: pago.estudiante_apellidos,
@@ -284,17 +302,17 @@ exports.verificarPago = async (req, res) => {
           if (pago.modalidad_pago === 'clases') {
             const [clasesResult] = await pool.execute(`
               SELECT numero_cuota, monto, fecha_pago
-              FROM pagos_mensuales 
+              FROM pagos_mensuales
               WHERE id_matricula = ? AND estado IN ('pagado', 'verificado')
               ORDER BY numero_cuota ASC
             `, [pago.id_matricula]);
-            
+
             clasesPagadas = clasesResult.map(clase => ({
               numero: clase.numero_cuota,
               monto: parseFloat(clase.monto),
               fecha: clase.fecha_pago
             }));
-            
+
             console.log('🔍 Clases pagadas encontradas:', clasesPagadas);
           }
 
@@ -305,7 +323,7 @@ exports.verificarPago = async (req, res) => {
           console.log('📧 Enviando email con PDF adjunto...');
           // Enviar email con PDF adjunto
           await enviarComprobantePagoMensual(datosEstudiante, datosPago, pdfBuffer);
-          
+
           console.log('✅ Email con comprobante PDF enviado a:', pago.estudiante_email);
         } else {
           console.log('-No se encontró el pago con ID:', id);
@@ -315,15 +333,40 @@ exports.verificarPago = async (req, res) => {
       }
     });
 
-    res.json({ 
-      success: true, 
-      message: 'Pago verificado exitosamente' 
+    emitSocketEvent(req, 'pago_verificado', {
+      id_pago: Number(id),
+      estado: 'verificado',
+      fecha_verificacion: new Date()
+    });
+
+    // Enviar notificación al estudiante
+    if (id_estudiante && estudianteInfo[0]) {
+      console.log(`📤 Enviando evento pago_verificado_estudiante al estudiante ${id_estudiante}`);
+      
+      emitToUser(req, id_estudiante, 'pago_verificado_estudiante', {
+        id_pago: Number(id),
+        numero_cuota: estudianteInfo[0].numero_cuota,
+        monto: parseFloat(estudianteInfo[0].monto),
+        fecha_vencimiento: estudianteInfo[0].fecha_vencimiento,
+        curso_nombre: estudianteInfo[0].curso_nombre,
+        estado: 'verificado',
+        fecha_verificacion: new Date()
+      });
+      
+      console.log(`✅ Evento enviado al estudiante ${id_estudiante}: Cuota #${estudianteInfo[0].numero_cuota} - $${estudianteInfo[0].monto}`);
+    } else {
+      console.log(`⚠️ No se pudo obtener id_estudiante para el pago ${id}`);
+    }
+
+    res.json({
+      success: true,
+      message: 'Pago verificado exitosamente'
     });
   } catch (error) {
     console.error('Error verificando pago:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -334,7 +377,7 @@ exports.descargarComprobante = async (req, res) => {
     const { id } = req.params;
 
     const [pagos] = await pool.execute(`
-      SELECT 
+      SELECT
         comprobante_pago_blob,
         comprobante_mime,
         comprobante_nombre_original
@@ -347,15 +390,15 @@ exports.descargarComprobante = async (req, res) => {
     }
 
     const pago = pagos[0];
-    
+
     res.setHeader('Content-Type', pago.comprobante_mime || 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${pago.comprobante_nombre_original || `comprobante-${id}`}"`);
     res.send(pago.comprobante_pago_blob);
   } catch (error) {
     console.error('Error descargando comprobante:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -384,8 +427,8 @@ exports.rechazarPago = async (req, res) => {
 
     const rolPermitido = usuario[0].nombre_rol.toLowerCase();
     if (rolPermitido !== 'admin' && rolPermitido !== 'administrativo') {
-      return res.status(403).json({ 
-        error: 'Solo los administradores pueden rechazar pagos. Los superadministradores no tienen permiso para esta acción.' 
+      return res.status(403).json({
+        error: 'Solo los administradores pueden rechazar pagos. Los superadministradores no tienen permiso para esta acción.'
       });
     }
 
@@ -401,8 +444,8 @@ exports.rechazarPago = async (req, res) => {
 
     // Actualizar el pago a pendiente con observaciones
     await pool.execute(`
-      UPDATE pagos_mensuales 
-      SET 
+      UPDATE pagos_mensuales
+      SET
         estado = 'pendiente',
         observaciones = ?,
         verificado_por = ?,
@@ -410,17 +453,42 @@ exports.rechazarPago = async (req, res) => {
       WHERE id_pago = ?
     `, [observaciones, verificado_por, id]);
 
-    console.log(`-Pago ${id} rechazado por usuario ${verificado_por}`);
+    console.log(`❌ Pago ${id} rechazado por usuario ${verificado_por}`);
 
-    res.json({ 
-      success: true, 
-      message: 'Pago rechazado. El estudiante deberá volver a subir el comprobante.' 
+    const [estudianteInfo] = await pool.execute(`
+      SELECT m.id_estudiante
+      FROM pagos_mensuales pm
+      INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
+      WHERE pm.id_pago = ?
+    `, [id]);
+
+    const id_estudiante = estudianteInfo[0]?.id_estudiante;
+
+    emitSocketEvent(req, 'pago_rechazado', {
+      id_pago: Number(id),
+      estado: 'pendiente',
+      observaciones: observaciones,
+      fecha_verificacion: new Date()
+    });
+
+    if (id_estudiante) {
+      emitToUser(req, id_estudiante, 'pago_rechazado', {
+        id_pago: Number(id),
+        estado: 'pendiente',
+        observaciones: observaciones,
+        fecha_verificacion: new Date()
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Pago rechazado. El estudiante deberá volver a subir el comprobante.'
     });
   } catch (error) {
     console.error('Error rechazando pago:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };

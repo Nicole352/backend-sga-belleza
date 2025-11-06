@@ -42,17 +42,14 @@ async function getModuloById(req, res) {
   }
 }
 
-// POST /api/modulos - Crear nuevo módulo
 async function createModulo(req, res) {
   try {
     const { id_curso, nombre, descripcion, fecha_inicio, fecha_fin } = req.body;
 
-    // Validaciones
     if (!id_curso || !nombre) {
       return res.status(400).json({ error: "Curso y nombre son obligatorios" });
     }
 
-    // Obtener id_docente del usuario autenticado
     const id_docente = await DocentesModel.getDocenteIdByUserId(
       req.user.id_usuario,
     );
@@ -72,7 +69,6 @@ async function createModulo(req, res) {
 
     const modulo = await ModulosModel.getById(id_modulo);
 
-    // Registrar auditoría
     await registrarAuditoria({
       tabla_afectada: "modulos_curso",
       operacion: "INSERT",
@@ -82,6 +78,16 @@ async function createModulo(req, res) {
       ip_address: req.ip || "0.0.0.0",
       user_agent: req.get("user-agent") || "unknown",
     });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('modulo_creado', {
+        id_modulo,
+        id_curso,
+        nombre,
+        modulo
+      });
+    }
 
     return res.status(201).json({
       success: true,

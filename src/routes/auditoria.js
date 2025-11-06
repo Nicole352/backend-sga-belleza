@@ -29,6 +29,14 @@ router.get('/stats', auditoriaController.obtenerEstadisticas);
 router.get('/tablas', auditoriaController.obtenerTablasUnicas);
 
 /**
+ * @route   GET /api/auditoria/usuario/:userId/historial-detallado
+ * @desc    Obtener historial detallado de acciones de un usuario (administrativas/académicas)
+ * @access  Private (Admin)
+ * @query   tipo (todas|administrativas|academicas), limite
+ */
+router.get('/usuario/:userId/historial-detallado', auditoriaController.obtenerHistorialDetallado);
+
+/**
  * @route   GET /api/auditoria/usuario/:userId
  * @desc    Obtener auditorías de un usuario específico
  * @access  Private (Admin)

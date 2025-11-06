@@ -1,6 +1,7 @@
 const { pool } = require('../config/database');
 const SolicitudesModel = require('../models/solicitudes.model');
 const { enviarNotificacionNuevaMatricula } = require('../services/emailService');
+const { emitSocketEvent } = require('../services/socket.service');
 const ExcelJS = require('exceljs');
 
 // Util: generar código de solicitud
@@ -35,25 +36,27 @@ exports.createSolicitud = async (req, res) => {
     // Campo para estudiantes existentes
     id_estudiante_existente,
     // Nuevo campo de contacto de emergencia
-    contacto_emergencia
+    contacto_emergencia,
+    // Campo de promoción
+    id_promocion_seleccionada
   } = req.body;
 
   // Función para convertir fecha a formato MySQL (YYYY-MM-DD)
   const convertirFecha = (fecha) => {
     if (!fecha) return null;
-    
+
     // Si ya está en formato YYYY-MM-DD, retornar
     if (/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
       return fecha;
     }
-    
+
     // Si está en formato DD/MM/YYYY, convertir
     const match = fecha.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     if (match) {
       const [_, dd, mm, yyyy] = match;
       return `${yyyy}-${mm}-${dd}`;
     }
-    
+
     return null;
   };
 
@@ -61,7 +64,7 @@ exports.createSolicitud = async (req, res) => {
   if (!identificacion_solicitante) {
     return res.status(400).json({ error: 'La identificación es obligatoria' });
   }
-  
+
   // Si NO es estudiante existente, validar campos completos
   if (!id_estudiante_existente) {
     if (!nombre_solicitante || !apellido_solicitante || !email_solicitante) {
@@ -96,7 +99,7 @@ exports.createSolicitud = async (req, res) => {
       return res.status(400).json({ error: 'El nombre de quien recibió el pago es obligatorio para efectivo' });
     }
   }
-  
+
   // Comprobante obligatorio para transferencia y efectivo
   const comprobanteFile = req.files?.comprobante?.[0];
   if ((metodo_pago === 'transferencia' || metodo_pago === 'efectivo') && !comprobanteFile) {
@@ -123,15 +126,55 @@ exports.createSolicitud = async (req, res) => {
     return res.status(500).json({ error: 'Error validando tipo de curso' });
   }
 
+  // ========================================
+  // VALIDAR QUE EL ESTUDIANTE NO ESTÉ YA MATRICULADO EN ESTE TIPO DE CURSO
+  // (incluyendo matrículas por promoción ACEPTADAS)
+  // ========================================
+  if (id_estudiante_existente) {
+    try {
+      const [matriculasExistentes] = await pool.execute(`
+        SELECT m.id_matricula, m.codigo_matricula, c.nombre as curso_nombre,
+               tc.nombre as tipo_curso_nombre,
+               CASE 
+                 WHEN ep.id_estudiante_promocion IS NOT NULL AND ep.acepto_promocion = 1 THEN 'Matrícula promocional'
+                 ELSE 'Matrícula regular'
+               END as tipo_matricula
+        FROM matriculas m
+        INNER JOIN cursos c ON m.id_curso = c.id_curso
+        INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
+        LEFT JOIN estudiante_promocion ep ON m.id_matricula = ep.id_matricula
+        WHERE m.id_estudiante = ?
+        AND tc.id_tipo_curso = ?
+        AND m.estado = 'activa'
+        AND (
+          ep.id_estudiante_promocion IS NULL 
+          OR ep.acepto_promocion = 1
+        )
+      `, [id_estudiante_existente, id_tipo_curso]);
+
+      if (matriculasExistentes.length > 0) {
+        const matricula = matriculasExistentes[0];
+        return res.status(400).json({
+          error: `Ya estás matriculado en el curso "${matricula.curso_nombre}" (${matricula.tipo_matricula}). No puedes matricularte nuevamente en este tipo de curso.`,
+          codigo_matricula: matricula.codigo_matricula,
+          tipo_matricula: matricula.tipo_matricula
+        });
+      }
+    } catch (e) {
+      console.error('Error validando matrículas existentes:', e);
+      return res.status(500).json({ error: 'Error verificando matrículas existentes' });
+    }
+  }
+
   // VALIDAR CUPOS DISPONIBLES Y BUSCAR CURSO ACTIVO CON HORARIO
   let cursoSeleccionado = null;
   try {
     const [cursosDisponibles] = await pool.execute(
-      `SELECT id_curso, codigo_curso, nombre, horario, capacidad_maxima, cupos_disponibles 
-       FROM cursos 
-       WHERE id_tipo_curso = ? 
-       AND horario = ? 
-       AND estado = 'activo' 
+      `SELECT id_curso, codigo_curso, nombre, horario, capacidad_maxima, cupos_disponibles
+       FROM cursos
+       WHERE id_tipo_curso = ?
+       AND horario = ?
+       AND estado = 'activo'
        AND cupos_disponibles > 0
        ORDER BY fecha_inicio ASC
        LIMIT 1`,
@@ -139,8 +182,8 @@ exports.createSolicitud = async (req, res) => {
     );
 
     if (!cursosDisponibles.length) {
-      return res.status(400).json({ 
-        error: `No hay cupos disponibles para el horario ${horario_preferido}. Por favor, intenta con otro horario o contacta con la institución.` 
+      return res.status(400).json({
+        error: `No hay cupos disponibles para el horario ${horario_preferido}. Por favor, intenta con otro horario o contacta con la institución.`
       });
     }
 
@@ -155,12 +198,12 @@ exports.createSolicitud = async (req, res) => {
   if (numero_comprobante && numero_comprobante.trim()) {
     try {
       const [existingRows] = await pool.execute(
-        'SELECT id_solicitud FROM solicitudes_matricula WHERE numero_comprobante = ?', 
+        'SELECT id_solicitud FROM solicitudes_matricula WHERE numero_comprobante = ?',
         [numero_comprobante.trim().toUpperCase()]
       );
       if (existingRows.length > 0) {
-        return res.status(400).json({ 
-          error: 'Este número de comprobante ya fue utilizado en otra solicitud. Cada comprobante debe ser único.' 
+        return res.status(400).json({
+          error: 'Este número de comprobante ya fue utilizado en otra solicitud. Cada comprobante debe ser único.'
         });
       }
     } catch (e) {
@@ -190,11 +233,11 @@ exports.createSolicitud = async (req, res) => {
 
   // USAR TRANSACCIÓN PARA GARANTIZAR CONSISTENCIA (insertar solicitud + restar cupo)
   const connection = await pool.getConnection();
-  
+
   try {
     await connection.beginTransaction();
 
-    // 1. INSERTAR SOLICITUD CON id_curso (32 columnas + contacto_emergencia = 33 total)
+    // 1. INSERTAR SOLICITUD CON id_curso (33 columnas)
     const sql = `INSERT INTO solicitudes_matricula (
       codigo_solicitud,
       identificacion_solicitante,
@@ -227,8 +270,9 @@ exports.createSolicitud = async (req, res) => {
       documento_estatus_legal_size_kb,
       documento_estatus_legal_nombre_original,
       id_estudiante_existente,
-      contacto_emergencia
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+      contacto_emergencia,
+      id_promocion_seleccionada
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const values = [
       codigo,
@@ -262,7 +306,8 @@ exports.createSolicitud = async (req, res) => {
       documentoEstatusLegalSizeKb,
       documentoEstatusLegalNombreOriginal,
       id_estudiante_existente ? Number(id_estudiante_existente) : null,
-      contacto_emergencia || null
+      contacto_emergencia || null,
+      id_promocion_seleccionada ? Number(id_promocion_seleccionada) : null
     ];
 
     const [result] = await connection.execute(sql, values);
@@ -304,7 +349,22 @@ exports.createSolicitud = async (req, res) => {
         await enviarNotificacionNuevaMatricula(datosEmail);
         console.log('✅ Email de notificación enviado al admin');
       } catch (emailError) {
-        console.error('-Error enviando email de notificación (no afecta la solicitud):', emailError);
+        console.error('❌ Error enviando email de notificación (no afecta la solicitud):', emailError);
+      }
+    });
+
+    emitSocketEvent(req, 'nueva_solicitud', {
+      id_solicitud: result.insertId,
+      codigo_solicitud: codigo,
+      nombre_solicitante,
+      apellido_solicitante,
+      email_solicitante,
+      estado: 'pendiente',
+      fecha_solicitud: new Date(),
+      curso: {
+        id_curso: cursoSeleccionado.id_curso,
+        nombre: cursoSeleccionado.nombre,
+        horario: cursoSeleccionado.horario
       }
     });
 
@@ -489,9 +549,13 @@ exports.updateDecision = async (req, res) => {
 
     await connection.beginTransaction();
 
-    // 1. Obtener información de la solicitud (incluyendo id_curso)
+    // 1. Obtener información de la solicitud (incluyendo id_curso y id_promocion_seleccionada)
     const [solicitudRows] = await connection.execute(
-      'SELECT id_curso, estado FROM solicitudes_matricula WHERE id_solicitud = ?',
+      `SELECT s.id_curso, s.estado, s.id_promocion_seleccionada, s.id_estudiante_existente,
+              s.identificacion_solicitante, s.nombre_solicitante, s.apellido_solicitante,
+              s.horario_preferido
+       FROM solicitudes_matricula s
+       WHERE s.id_solicitud = ?`,
       [id]
     );
 
@@ -517,7 +581,78 @@ exports.updateDecision = async (req, res) => {
 
     await connection.execute(sql, params);
 
-    // 3. SI SE RECHAZA Y TIENE id_curso → SUMAR 1 CUPO DE VUELTA
+    // 3. SI SE APRUEBA Y TIENE PROMOCIÓN → CREAR MATRÍCULA DEL CURSO PROMOCIONAL
+    if (estado === 'aprobado' && solicitud.id_promocion_seleccionada) {
+      console.log(`🎁 Solicitud aprobada con promoción ID ${solicitud.id_promocion_seleccionada}`);
+      
+      // Obtener datos de la promoción
+      const [promoRows] = await connection.execute(
+        `SELECT p.id_curso_promocional, p.meses_gratis, p.nombre_promocion,
+                c.nombre as curso_nombre, c.horario as curso_horario
+         FROM promociones p
+         INNER JOIN cursos c ON p.id_curso_promocional = c.id_curso
+         WHERE p.id_promocion = ?`,
+        [solicitud.id_promocion_seleccionada]
+      );
+
+      if (promoRows.length > 0) {
+        const promo = promoRows[0];
+        console.log(`🎓 Curso promocional: ${promo.curso_nombre} (ID: ${promo.id_curso_promocional})`);
+
+        // Verificar si ya existe matrícula del curso promocional
+        const [matriculaExistenteRows] = await connection.execute(
+          `SELECT id_matricula FROM matriculas 
+           WHERE id_estudiante = ? AND id_curso = ?`,
+          [solicitud.id_estudiante_existente, promo.id_curso_promocional]
+        );
+
+        if (matriculaExistenteRows.length === 0) {
+          // Generar código de matrícula para el curso promocional
+          const codigoMatricula = `MAT-PROMO-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+          
+          // Crear matrícula del curso promocional con monto 0 (gratis)
+          const [resultMatricula] = await connection.execute(
+            `INSERT INTO matriculas 
+             (id_estudiante, id_curso, codigo_matricula, fecha_matricula, monto_matricula, estado)
+             VALUES (?, ?, ?, NOW(), 0, 'activa')`,
+            [solicitud.id_estudiante_existente, promo.id_curso_promocional, codigoMatricula]
+          );
+
+          console.log(`✅ Matrícula promocional creada: ${codigoMatricula} para curso ${promo.curso_nombre}`);
+
+          // Crear registro en estudiante_promocion
+          await connection.execute(
+            `INSERT INTO estudiante_promocion 
+             (id_estudiante, id_promocion, id_matricula, horario_seleccionado, 
+              acepto_promocion, meses_gratis_aplicados, fecha_inicio_cobro)
+             VALUES (?, ?, ?, ?, 1, 0, DATE_ADD(NOW(), INTERVAL ? MONTH))`,
+            [
+              solicitud.id_estudiante_existente,
+              solicitud.id_promocion_seleccionada,
+              resultMatricula.insertId,
+              solicitud.horario_preferido,
+              promo.meses_gratis || 1
+            ]
+          );
+
+          console.log(`🎉 Registro de promoción creado para estudiante ${solicitud.id_estudiante_existente}`);
+
+          // Incrementar cupos_utilizados de la promoción
+          await connection.execute(
+            'UPDATE promociones SET cupos_utilizados = cupos_utilizados + 1 WHERE id_promocion = ?',
+            [solicitud.id_promocion_seleccionada]
+          );
+
+          console.log(`📊 Cupo de promoción utilizado (ID: ${solicitud.id_promocion_seleccionada})`);
+        } else {
+          console.log(`⚠️ Ya existe matrícula del curso promocional para este estudiante`);
+        }
+      } else {
+        console.log(`⚠️ No se encontró la promoción ID ${solicitud.id_promocion_seleccionada}`);
+      }
+    }
+
+    // 4. SI SE RECHAZA Y TIENE id_curso → SUMAR 1 CUPO DE VUELTA
     if (estado === 'rechazado' && solicitud.id_curso && estadoAnterior === 'pendiente') {
       await connection.execute(
         'UPDATE cursos SET cupos_disponibles = cupos_disponibles + 1 WHERE id_curso = ?',
@@ -529,6 +664,13 @@ exports.updateDecision = async (req, res) => {
     await connection.commit();
     connection.release();
 
+    emitSocketEvent(req, 'solicitud_actualizada', {
+      id_solicitud: id,
+      estado,
+      observaciones,
+      fecha_verificacion: new Date()
+    });
+
     return res.json({ ok: true });
   } catch (err) {
     if (connection) {
@@ -537,6 +679,71 @@ exports.updateDecision = async (req, res) => {
     }
     console.error('Error actualizando decisión:', err);
     return res.status(500).json({ error: 'Error al actualizar la solicitud' });
+  }
+};
+
+// 🎁 ACTUALIZAR PROMOCIÓN SELECCIONADA EN UNA SOLICITUD
+exports.updatePromocionSeleccionada = async (req, res) => {
+  try {
+    const id_solicitud = Number(req.params.id);
+    const { id_promocion_seleccionada } = req.body;
+
+    if (!id_solicitud) {
+      return res.status(400).json({ error: 'ID de solicitud inválido' });
+    }
+
+    if (!id_promocion_seleccionada) {
+      return res.status(400).json({ error: 'ID de promoción requerido' });
+    }
+
+    console.log(`🎁 Actualizando solicitud ${id_solicitud} con promoción ${id_promocion_seleccionada}`);
+
+    // Verificar que la promoción existe y está activa
+    const [promoRows] = await pool.execute(
+      `SELECT id_promocion, nombre_promocion, activa, cupos_disponibles, cupos_utilizados
+       FROM promociones
+       WHERE id_promocion = ?`,
+      [id_promocion_seleccionada]
+    );
+
+    if (promoRows.length === 0) {
+      return res.status(404).json({ error: 'Promoción no encontrada' });
+    }
+
+    const promo = promoRows[0];
+
+    if (!promo.activa) {
+      return res.status(400).json({ error: 'La promoción no está activa' });
+    }
+
+    // Validar cupos solo si cupos_disponibles no es NULL (NULL = ilimitados)
+    if (promo.cupos_disponibles !== null && promo.cupos_utilizados >= promo.cupos_disponibles) {
+      return res.status(400).json({ error: 'La promoción no tiene cupos disponibles' });
+    }
+
+    // Actualizar la solicitud con la promoción seleccionada
+    await pool.execute(
+      `UPDATE solicitudes_matricula 
+       SET id_promocion_seleccionada = ?
+       WHERE id_solicitud = ?`,
+      [id_promocion_seleccionada, id_solicitud]
+    );
+
+    console.log(`✅ Solicitud ${id_solicitud} actualizada con promoción "${promo.nombre_promocion}"`);
+
+    return res.json({ 
+      ok: true, 
+      message: 'Promoción guardada exitosamente',
+      data: {
+        id_solicitud,
+        id_promocion_seleccionada,
+        nombre_promocion: promo.nombre_promocion
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error actualizando promoción en solicitud:', error);
+    return res.status(500).json({ error: 'Error al actualizar la promoción' });
   }
 };
 
