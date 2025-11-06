@@ -38,32 +38,62 @@ const startServer = async () => {
 
     // Mapa para relacionar userId -> socketId y permitir enviar eventos a usuarios específicos
     const userSockets = new Map();
+    const userRoles = new Map(); // Mapa para relacionar userId -> rol
 
     io.on('connection', (socket) => {
       console.log('🔌 Cliente conectado:', socket.id);
 
-      // Evento para registrar un usuario con su socket
-      socket.on('register', (userId) => {
+      // Evento para registrar un usuario con su socket y rol
+      socket.on('register', (userData) => {
+        // userData puede ser un número (userId) o un objeto {userId, rol}
+        let userId, rol;
+        
+        if (typeof userData === 'number') {
+          userId = userData;
+          // Si es solo número, intentar obtener rol del token (si está disponible)
+          rol = 'unknown';
+        } else if (typeof userData === 'object') {
+          userId = userData.userId || userData.id_usuario;
+          rol = userData.rol;
+        } else {
+          return;
+        }
+
         if (userId) {
-          // Guardar en el mapa
+          // Guardar en los mapas
           userSockets.set(userId, socket.id);
+          if (rol && rol !== 'unknown') {
+            userRoles.set(userId, rol);
+          }
           
           // Unir al usuario a su "room" personal
           socket.join(`user_${userId}`);
           
-          console.log(`👤 Usuario ${userId} registrado con socket ${socket.id} y room user_${userId}`);
+          // Unir al usuario a su "room" por rol (si está disponible)
+          if (rol && rol !== 'unknown') {
+            socket.join(`rol_${rol}`);
+            console.log(`👤 Usuario ${userId} (${rol}) registrado con socket ${socket.id}, rooms: user_${userId}, rol_${rol}`);
+          } else {
+            console.log(`👤 Usuario ${userId} registrado con socket ${socket.id}, rooms: user_${userId}`);
+          }
           
           // Confirmar registro al cliente
-          socket.emit('registered', { userId, socketId: socket.id });
+          socket.emit('registered', { userId, socketId: socket.id, rol });
         }
       });
 
-      // Manejar desconexión y limpiar el mapa
+      // Manejar desconexión y limpiar los mapas
       socket.on('disconnect', () => {
         for (const [userId, socketId] of userSockets.entries()) {
           if (socketId === socket.id) {
+            const rol = userRoles.get(userId);
             userSockets.delete(userId);
-            console.log(`👤 Usuario ${userId} desconectado`);
+            userRoles.delete(userId);
+            if (rol) {
+              console.log(`👤 Usuario ${userId} (${rol}) desconectado`);
+            } else {
+              console.log(`👤 Usuario ${userId} desconectado`);
+            }
             break;
           }
         }

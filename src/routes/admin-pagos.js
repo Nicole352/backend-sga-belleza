@@ -1,6 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const adminPagosController = require('../controllers/admin-pagos.controller');
+const { authMiddleware, requireRole } = require('../middleware/auth');
+
+// Aplicar autenticación a todas las rutas
+router.use(authMiddleware);
+router.use(requireRole(['admin', 'administrativo']));
 
 // Obtener todos los pagos (con filtros)
 router.get('/', adminPagosController.getAllPagos);

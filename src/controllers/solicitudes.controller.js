@@ -2,6 +2,7 @@ const { pool } = require('../config/database');
 const SolicitudesModel = require('../models/solicitudes.model');
 const { enviarNotificacionNuevaMatricula } = require('../services/emailService');
 const { emitSocketEvent } = require('../services/socket.service');
+const { notificarNuevaSolicitudMatricula, notificarMatriculasPendientes } = require('../utils/notificationHelper');
 const ExcelJS = require('exceljs');
 
 // Util: generar código de solicitud
@@ -348,26 +349,36 @@ exports.createSolicitud = async (req, res) => {
 
         await enviarNotificacionNuevaMatricula(datosEmail);
         console.log('✅ Email de notificación enviado al admin');
+        
+        // Notificar vía WebSocket también
+        try {
+          notificarNuevaSolicitudMatricula(req, {
+            id_solicitud: result.insertId,
+            nombre: nombre_solicitante,
+            apellido: apellido_solicitante,
+            curso_nombre: nombreCurso,
+            email: email_solicitante
+          });
+          
+          // Contar matrículas pendientes totales
+          const [pendientes] = await pool.query(
+            'SELECT COUNT(*) as total FROM solicitudes_matricula WHERE estado = ?',
+            ['pendiente']
+          );
+          
+          if (pendientes[0].total > 0) {
+            notificarMatriculasPendientes(req, pendientes[0].total);
+          }
+        } catch (wsError) {
+          console.error('❌ Error enviando notificación WebSocket (no afecta la solicitud):', wsError);
+        }
       } catch (emailError) {
         console.error('❌ Error enviando email de notificación (no afecta la solicitud):', emailError);
       }
     });
 
-    emitSocketEvent(req, 'nueva_solicitud', {
-      id_solicitud: result.insertId,
-      codigo_solicitud: codigo,
-      nombre_solicitante,
-      apellido_solicitante,
-      email_solicitante,
-      estado: 'pendiente',
-      fecha_solicitud: new Date(),
-      curso: {
-        id_curso: cursoSeleccionado.id_curso,
-        nombre: cursoSeleccionado.nombre,
-        horario: cursoSeleccionado.horario
-      }
-    });
-
+    // Ya no se usa emitSocketEvent, solo notificarNuevaSolicitudMatricula arriba
+    
     return res.status(201).json({
       ok: true,
       id_solicitud: result.insertId,

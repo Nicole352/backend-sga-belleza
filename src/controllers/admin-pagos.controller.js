@@ -2,6 +2,7 @@ const { pool } = require('../config/database');
 const { enviarComprobantePagoMensual } = require('../services/emailService');
 const { generarComprobantePagoMensual } = require('../services/pdfService');
 const { emitSocketEvent, emitToUser } = require('../services/socket.service');
+const { notificarPagoVerificado } = require('../utils/notificationHelper');
 
 // Obtener todos los pagos con información de estudiantes
 exports.getAllPagos = async (req, res) => {
@@ -333,27 +334,46 @@ exports.verificarPago = async (req, res) => {
       }
     });
 
+    console.log(`📤 Emitiendo evento pago_verificado a todos los admins...`);
     emitSocketEvent(req, 'pago_verificado', {
       id_pago: Number(id),
+      numero_cuota: estudianteInfo[0]?.numero_cuota,
+      monto: estudianteInfo[0]?.monto,
+      curso_nombre: estudianteInfo[0]?.curso_nombre,
       estado: 'verificado',
       fecha_verificacion: new Date()
     });
 
     // Enviar notificación al estudiante
     if (id_estudiante && estudianteInfo[0]) {
-      console.log(`📤 Enviando evento pago_verificado_estudiante al estudiante ${id_estudiante}`);
+      console.log(`📤 Intentando enviar notificación al estudiante con id_estudiante: ${id_estudiante}`);
       
-      emitToUser(req, id_estudiante, 'pago_verificado_estudiante', {
+      // id_estudiante ya ES el id_usuario (es el mismo campo en la tabla matriculas)
+      const id_usuario_estudiante = id_estudiante;
+      
+      console.log(`📤 Enviando notificación de pago verificado al usuario ${id_usuario_estudiante}`);
+      
+      // Obtener información del admin que verificó
+      const [adminInfo] = await pool.execute(`
+        SELECT nombre, apellido 
+        FROM usuarios 
+        WHERE id_usuario = ?
+      `, [verificado_por]);
+      
+      const nombreAdmin = adminInfo[0] 
+        ? `${adminInfo[0].nombre} ${adminInfo[0].apellido}` 
+        : 'Administrador';
+      
+      // Notificar al estudiante usando notificationHelper
+      notificarPagoVerificado(req, id_usuario_estudiante, {
         id_pago: Number(id),
         numero_cuota: estudianteInfo[0].numero_cuota,
         monto: parseFloat(estudianteInfo[0].monto),
-        fecha_vencimiento: estudianteInfo[0].fecha_vencimiento,
         curso_nombre: estudianteInfo[0].curso_nombre,
-        estado: 'verificado',
-        fecha_verificacion: new Date()
+        admin_nombre: nombreAdmin
       });
       
-      console.log(`✅ Evento enviado al estudiante ${id_estudiante}: Cuota #${estudianteInfo[0].numero_cuota} - $${estudianteInfo[0].monto}`);
+      console.log(`✅ Notificación enviada al estudiante ${id_usuario_estudiante}: Cuota #${estudianteInfo[0].numero_cuota} - $${estudianteInfo[0].monto} (${estudianteInfo[0].curso_nombre}) verificado por ${nombreAdmin}`);
     } else {
       console.log(`⚠️ No se pudo obtener id_estudiante para el pago ${id}`);
     }
@@ -455,17 +475,27 @@ exports.rechazarPago = async (req, res) => {
 
     console.log(`❌ Pago ${id} rechazado por usuario ${verificado_por}`);
 
-    const [estudianteInfo] = await pool.execute(`
-      SELECT m.id_estudiante
+    // Obtener más información del pago para el evento
+    const [pagoInfo] = await pool.execute(`
+      SELECT 
+        pm.numero_cuota,
+        pm.monto,
+        m.id_estudiante,
+        c.nombre as curso_nombre
       FROM pagos_mensuales pm
       INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
+      INNER JOIN cursos c ON m.id_curso = c.id_curso
       WHERE pm.id_pago = ?
     `, [id]);
 
-    const id_estudiante = estudianteInfo[0]?.id_estudiante;
+    const id_estudiante = pagoInfo[0]?.id_estudiante;
 
+    console.log(`📤 Emitiendo evento pago_rechazado a todos los admins...`);
     emitSocketEvent(req, 'pago_rechazado', {
       id_pago: Number(id),
+      numero_cuota: pagoInfo[0]?.numero_cuota,
+      monto: pagoInfo[0]?.monto,
+      curso_nombre: pagoInfo[0]?.curso_nombre,
       estado: 'pendiente',
       observaciones: observaciones,
       fecha_verificacion: new Date()
@@ -474,6 +504,9 @@ exports.rechazarPago = async (req, res) => {
     if (id_estudiante) {
       emitToUser(req, id_estudiante, 'pago_rechazado', {
         id_pago: Number(id),
+        numero_cuota: pagoInfo[0]?.numero_cuota,
+        monto: pagoInfo[0]?.monto,
+        curso_nombre: pagoInfo[0]?.curso_nombre,
         estado: 'pendiente',
         observaciones: observaciones,
         fecha_verificacion: new Date()

@@ -1,6 +1,7 @@
 const TareasModel = require('../models/tareas.model');
 const DocentesModel = require('../models/docentes.model');
 const { registrarAuditoria } = require('../utils/auditoria');
+const { notificarNuevaTarea } = require('../utils/notificationHelper');
 
 // GET /api/tareas/modulo/:id_modulo - Obtener tareas de un módulo
 async function getTareasByModulo(req, res) {
@@ -136,6 +137,21 @@ async function createTarea(req, res) {
 
     const tarea = await TareasModel.getById(id_tarea);
 
+    // --- DEBUG LOGS: imprimir id creado, estado y COUNT de tareas activas en el módulo
+    try {
+      console.log(`🟢 TAREA CREADA id_tarea=${id_tarea}`);
+      console.log(`🟢 Estado de la tarea creada:`, tarea && tarea.estado ? tarea.estado : 'desconocido');
+      const { pool } = require('../config/database');
+      const [countRows] = await pool.execute(
+        'SELECT COUNT(*) as cnt FROM tareas_modulo WHERE id_modulo = ? AND estado = ?',
+        [id_modulo, 'activo']
+      );
+      const activoCount = countRows && countRows[0] ? countRows[0].cnt : 0;
+      console.log(`🧮 Tareas activas en id_modulo=${id_modulo}:`, activoCount);
+    } catch (dbgErr) {
+      console.error('Error calculando COUNT de tareas activas (debug):', dbgErr);
+    }
+
     // Registrar auditoría
     await registrarAuditoria({
       tabla_afectada: 'tareas_modulo',
@@ -147,14 +163,76 @@ async function createTarea(req, res) {
       user_agent: req.get('user-agent') || 'unknown'
     });
 
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('tarea_creada', {
-        id_tarea,
-        id_modulo,
-        titulo,
-        tarea
-      });
+    // Obtener estudiantes matriculados en el curso del módulo para notificarles
+    try {
+      const ModulosModel = require('../models/modulos.model');
+      const modulo = await ModulosModel.getById(id_modulo);
+      
+      if (modulo && modulo.id_curso) {
+        // Obtener estudiantes directamente desde la tabla matriculas
+        const { pool } = require('../config/database');
+        
+        // Obtener nombre del curso
+        const [cursos] = await pool.execute(
+          'SELECT nombre FROM cursos WHERE id_curso = ?',
+          [modulo.id_curso]
+        );
+        const nombreCurso = cursos[0]?.nombre || 'tu curso';
+        
+        const [estudiantes] = await pool.execute(`
+          SELECT DISTINCT m.id_estudiante as id_usuario
+          FROM matriculas m
+          WHERE m.id_curso = ? AND m.estado = 'activa'
+        `, [modulo.id_curso]);
+        
+        console.log(`📋 Estudiantes encontrados para notificar tarea en curso ${modulo.id_curso}:`, estudiantes);
+        
+        // Obtener información del docente
+        const [docenteInfo] = await pool.execute(`
+          SELECT u.nombre, u.apellido 
+          FROM usuarios u
+          WHERE u.id_usuario = ?
+        `, [req.user.id_usuario]);
+        
+        const nombreDocente = docenteInfo[0] 
+          ? `${docenteInfo[0].nombre} ${docenteInfo[0].apellido}` 
+          : 'Docente';
+        
+        const payloadTarea = {
+          id_tarea,
+          id_modulo,
+          titulo,
+          descripcion,
+          fecha_entrega: fecha_limite,
+          id_curso: modulo.id_curso,
+          curso_nombre: nombreCurso,
+          docente_nombre: nombreDocente
+        };
+        
+        // Notificar al DOCENTE que creó la tarea (para que actualice su vista)
+        // Usar setTimeout para dar tiempo a que la BD confirme la transacción
+        setTimeout(() => {
+          const { emitToUser } = require('../services/socket.service');
+          emitToUser(req, req.user.id_usuario, 'nueva_tarea', payloadTarea);
+          console.log(`👨‍🏫 Docente ${req.user.id_usuario} notificado de su nueva tarea`);
+        }, 100);
+        
+        if (estudiantes && estudiantes.length > 0) {
+          const idsEstudiantes = estudiantes.map(e => e.id_usuario);
+          
+          console.log(`📤 Notificando nueva tarea a usuarios:`, idsEstudiantes);
+          
+          // Notificar a todos los estudiantes del curso
+          notificarNuevaTarea(req, idsEstudiantes, payloadTarea);
+          
+          console.log(`✅ Notificaciones de nueva tarea enviadas a ${idsEstudiantes.length} estudiantes`);
+        } else {
+          console.log(`⚠️ No hay estudiantes matriculados en el curso ${modulo.id_curso}`);
+        }
+      }
+    } catch (notifError) {
+      console.error('❌ Error al enviar notificaciones de tarea:', notifError);
+      // No falla la creación de la tarea si falla la notificación
     }
 
     return res.status(201).json({

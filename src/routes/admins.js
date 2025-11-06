@@ -21,16 +21,16 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({ storage, fileFilter });
 
-// Crear nuevo administrador (solo superadmin)
-router.post('/', authMiddleware, requireRole('superadmin'), upload.single('foto_perfil'), createAdminController);
+// Crear nuevo administrador (solo admin/administrativo)
+router.post('/', authMiddleware, requireRole(['admin', 'administrativo']), upload.single('foto_perfil'), createAdminController);
 
-// Listar administradores (solo superadmin)
-router.get('/', authMiddleware, requireRole('superadmin'), listAdminsController);
+// Listar administradores (solo admin/administrativo)
+router.get('/', authMiddleware, requireRole(['admin', 'administrativo']), listAdminsController);
 
 // Actualizar administrador (datos); acepta foto opcional via multipart
-router.put('/:id', authMiddleware, requireRole('superadmin'), upload.single('foto_perfil'), updateAdminController);
+router.put('/:id', authMiddleware, requireRole(['admin', 'administrativo']), upload.single('foto_perfil'), updateAdminController);
 
 // Actualizar contraseña
-router.patch('/:id/password', authMiddleware, requireRole('superadmin'), updateAdminPasswordController);
+router.patch('/:id/password', authMiddleware, requireRole(['admin', 'administrativo']), updateAdminPasswordController);
 
 module.exports = router;

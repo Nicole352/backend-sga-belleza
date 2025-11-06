@@ -3,7 +3,7 @@ const router = express.Router();
 const { listRolesController } = require('../controllers/roles.controller');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 
-// Solo superadmin puede listar roles
-router.get('/', authMiddleware, requireRole('superadmin'), listRolesController);
+// Solo admin/administrativo puede listar roles
+router.get('/', authMiddleware, requireRole(['admin', 'administrativo']), listRolesController);
 
 module.exports = router;

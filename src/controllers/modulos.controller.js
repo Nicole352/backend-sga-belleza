@@ -79,6 +79,7 @@ async function createModulo(req, res) {
       user_agent: req.get("user-agent") || "unknown",
     });
 
+    // Broadcast a todos (evento general)
     const io = req.app.get('io');
     if (io) {
       io.emit('modulo_creado', {
@@ -87,6 +88,61 @@ async function createModulo(req, res) {
         nombre,
         modulo
       });
+    }
+
+    // Notificar a estudiantes del curso
+    const { notificarNuevoModulo } = require('../utils/notificationHelper');
+    
+    try {
+      // Obtener estudiantes matriculados en el curso
+      // IMPORTANTE: id_estudiante en matriculas ES id_usuario (FK a usuarios.id_usuario)
+      const { pool } = require('../config/database');
+      const [estudiantes] = await pool.execute(`
+        SELECT DISTINCT m.id_estudiante as id_usuario
+        FROM matriculas m
+        WHERE m.id_curso = ? AND m.estado = 'activa'
+      `, [id_curso]);
+      
+      console.log(`📋 Estudiantes encontrados para el curso ${id_curso}:`, estudiantes);
+      
+      if (estudiantes.length > 0) {
+        const idsUsuarios = estudiantes.map(e => e.id_usuario);
+        
+        console.log(`📤 IDs de usuarios a notificar:`, idsUsuarios);
+        
+        // Obtener nombre del curso
+        const [cursos] = await pool.execute('SELECT nombre FROM cursos WHERE id_curso = ?', [id_curso]);
+        const nombreCurso = cursos[0]?.nombre || 'tu curso';
+        
+        // Obtener información del docente
+        const [docenteInfo] = await pool.execute(`
+          SELECT u.nombre, u.apellido 
+          FROM usuarios u
+          WHERE u.id_usuario = ?
+        `, [req.user.id_usuario]);
+        
+        const nombreDocente = docenteInfo[0] 
+          ? `${docenteInfo[0].nombre} ${docenteInfo[0].apellido}` 
+          : 'Docente';
+        
+        // Enviar notificación a cada estudiante
+        notificarNuevoModulo(req, idsUsuarios, {
+          id_modulo,
+          nombre_modulo: nombre,
+          curso_nombre: nombreCurso,
+          id_curso,
+          descripcion: descripcion || '',
+          fecha_inicio: fecha_inicio || null,
+          docente_nombre: nombreDocente
+        });
+        
+        console.log(`✅ Notificaciones de nuevo módulo enviadas a ${idsUsuarios.length} estudiantes del curso ${id_curso}`);
+      } else {
+        console.log(`⚠️ No hay estudiantes matriculados en el curso ${id_curso}`);
+      }
+    } catch (notifError) {
+      console.error('❌ Error enviando notificaciones de módulo:', notifError);
+      // No fallar la creación del módulo si falla la notificación
     }
 
     return res.status(201).json({
