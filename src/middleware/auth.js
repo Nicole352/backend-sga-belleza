@@ -7,9 +7,16 @@ const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'producti
 
 function authMiddleware(req, res, next) {
   const auth = req.headers.authorization || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  let token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  
+  // Si no hay token en el header, buscar en query params (para imágenes)
+  if (!token && req.query.token) {
+    token = req.query.token;
+    console.log('🔑 Token obtenido desde query params para:', req.path);
+  }
 
   if (!token) {
+    console.log('❌ No se encontró token en headers ni query params');
     return res.status(401).json({ error: "No autorizado" });
   }
 
@@ -18,6 +25,7 @@ function authMiddleware(req, res, next) {
     req.user = payload; // { id_usuario, rol, email }
     next();
   } catch (e) {
+    console.log('❌ Token inválido:', e.message);
     return res.status(401).json({ error: "Token inválido o expirado" });
   }
 }

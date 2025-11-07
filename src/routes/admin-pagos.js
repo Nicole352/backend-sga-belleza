@@ -13,6 +13,10 @@ router.get('/', adminPagosController.getAllPagos);
 // Obtener estadísticas de pagos
 router.get('/estadisticas', adminPagosController.getEstadisticas);
 
+// IMPORTANTE: Rutas específicas ANTES de rutas con parámetros dinámicos
+// Descargar comprobante de pago (DEBE IR ANTES de /:id)
+router.get('/:id/comprobante', adminPagosController.descargarComprobante);
+
 // Obtener detalle de un pago específico
 router.get('/:id', adminPagosController.getPagoDetalle);
 
@@ -21,8 +25,5 @@ router.put('/:id/verificar', adminPagosController.verificarPago);
 
 // Rechazar un pago (volver a pendiente con observaciones)
 router.put('/:id/rechazar', adminPagosController.rechazarPago);
-
-// Descargar comprobante de pago
-router.get('/:id/comprobante', adminPagosController.descargarComprobante);
 
 module.exports = router;

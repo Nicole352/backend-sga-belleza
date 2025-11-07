@@ -396,6 +396,8 @@ exports.descargarComprobante = async (req, res) => {
   try {
     const { id } = req.params;
 
+    console.log('📥 Solicitando comprobante para pago ID:', id);
+
     const [pagos] = await pool.execute(`
       SELECT
         comprobante_pago_blob,
@@ -405,17 +407,31 @@ exports.descargarComprobante = async (req, res) => {
       WHERE id_pago = ?
     `, [id]);
 
+    console.log('🔍 Resultado de la consulta:', {
+      encontrado: pagos.length > 0,
+      tieneBlob: pagos.length > 0 && !!pagos[0].comprobante_pago_blob,
+      mime: pagos.length > 0 ? pagos[0].comprobante_mime : null,
+      nombreOriginal: pagos.length > 0 ? pagos[0].comprobante_nombre_original : null
+    });
+
     if (pagos.length === 0 || !pagos[0].comprobante_pago_blob) {
+      console.log('❌ Comprobante no encontrado o no tiene archivo adjunto');
       return res.status(404).json({ error: 'Comprobante no encontrado' });
     }
 
     const pago = pagos[0];
 
-    res.setHeader('Content-Type', pago.comprobante_mime || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${pago.comprobante_nombre_original || `comprobante-${id}`}"`);
+    console.log('✅ Enviando comprobante:', {
+      mime: pago.comprobante_mime,
+      nombre: pago.comprobante_nombre_original,
+      tamañoBytes: pago.comprobante_pago_blob.length
+    });
+
+    res.setHeader('Content-Type', pago.comprobante_mime || 'image/jpeg');
+    res.setHeader('Content-Disposition', `inline; filename="${pago.comprobante_nombre_original || `comprobante-${id}.jpg`}"`);
     res.send(pago.comprobante_pago_blob);
   } catch (error) {
-    console.error('Error descargando comprobante:', error);
+    console.error('❌ Error descargando comprobante:', error);
     res.status(500).json({
       error: 'Error interno del servidor',
       details: error.message
