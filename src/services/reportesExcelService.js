@@ -12,7 +12,7 @@ async function descargarLogoBase64() {
     const response = await axios.get(LOGO_URL, { responseType: 'arraybuffer' });
     return Buffer.from(response.data).toString('base64');
   } catch (error) {
-    console.error('-Error descargando logo:', error.message);
+    console.error('Error descargando logo:', error.message);
     return null;
   }
 }
@@ -194,7 +194,7 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
     const buffer = await workbook.xlsx.writeBuffer();
     return buffer;
   } catch (error) {
-    console.error('-Error generando Excel de estudiantes:', error);
+    console.error('Error generando Excel de estudiantes:', error);
     throw error;
   }
 }
@@ -474,7 +474,7 @@ async function generarExcelFinanciero(datos, filtros, estadisticas) {
     const buffer = await workbook.xlsx.writeBuffer();
     return buffer;
   } catch (error) {
-    console.error('-Error generando Excel financiero:', error);
+    console.error('Error generando Excel financiero:', error);
     throw error;
   }
 }
@@ -605,7 +605,7 @@ async function generarExcelCursos(datos, filtros, estadisticas) {
     const buffer = await workbook.xlsx.writeBuffer();
     return buffer;
   } catch (error) {
-    console.error(' Error generando Excel de cursos:', error);
+    console.error('Error generando Excel de cursos:', error);
     throw error;
   }
 }

@@ -629,12 +629,78 @@ exports.getMisCursos = async (req, res) => {
     }
 
     // Obtener cursos asignados
-    const cursos = await DocentesModel.getMisCursos(id_docente);
+    const todosCursos = await DocentesModel.getMisCursos(id_docente);
 
-    res.json(cursos);
+    // FILTRAR: Solo devolver cursos ACTIVOS (no finalizados)
+    // Un curso está ACTIVO si:
+    // - El estado del curso NO es 'finalizado' ni 'cancelado', Y
+    // - La fecha de fin NO ha pasado (es hoy o futura)
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0); // Normalizar a medianoche para comparación justa
+    
+    const cursosActivos = todosCursos.filter(curso => {
+      const fechaFin = new Date(curso.fecha_fin);
+      fechaFin.setHours(0, 0, 0, 0); // Normalizar a medianoche
+      
+      // Excluir cursos finalizados o cancelados
+      if (curso.estado === 'finalizado' || curso.estado === 'cancelado') {
+        return false;
+      }
+      
+      // Excluir cursos cuya fecha de fin ya pasó
+      if (fechaFin < hoy) {
+        return false;
+      }
+      
+      // Incluir cursos activos o planificados con fecha futura
+      return true;
+    });
+
+    console.log(`Cursos activos - Docente ${id_docente}: ${cursosActivos.length} de ${todosCursos.length} total`);
+
+    res.json(cursosActivos);
     
   } catch (error) {
     console.error('Error obteniendo cursos del docente:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor',
+      details: error.message 
+    });
+  }
+};
+
+// GET /api/docentes/todos-mis-cursos - Obtener TODOS los cursos (activos y finalizados) para la vista MisCursos
+exports.getTodosMisCursos = async (req, res) => {
+  try {
+    const id_usuario = req.user?.id_usuario;
+    
+    if (!id_usuario) {
+      return res.status(401).json({ error: 'Usuario no autenticado' });
+    }
+
+    // Verificar que el usuario sea docente
+    const isDocente = await DocentesModel.isDocente(id_usuario);
+    
+    if (!isDocente) {
+      return res.status(403).json({ error: 'Acceso denegado. Solo docentes pueden acceder a esta información.' });
+    }
+
+    // Obtener ID del docente
+    const id_docente = await DocentesModel.getDocenteIdByUserId(id_usuario);
+    
+    if (!id_docente) {
+      return res.status(404).json({ error: 'Docente no encontrado' });
+    }
+
+    // Obtener TODOS los cursos asignados (sin filtrar)
+    const todosCursos = await DocentesModel.getMisCursos(id_docente);
+
+    console.log(`Todos los cursos - Docente ${id_docente}: ${todosCursos.length} total`);
+
+    res.json(todosCursos);
+    
+  } catch (error) {
+    console.error('Error obteniendo todos los cursos del docente:', error);
     res.status(500).json({ 
       error: 'Error interno del servidor',
       details: error.message 

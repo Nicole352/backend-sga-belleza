@@ -179,7 +179,7 @@ async function obtenerHistorialDetallado(req, res) {
     const rol = usuario[0].nombre_rol.toLowerCase();
     let acciones = [];
     
-    console.log('🔍 Debug - userId:', userId, 'tipo:', tipo, 'limite:', limite, 'rol:', rol);
+    console.log('Debug - userId:', userId, 'tipo:', tipo, 'limite:', limite, 'rol:', rol);
     
     // Si es docente, obtener su id_docente
     let idDocente = null;
@@ -196,7 +196,7 @@ async function obtenerHistorialDetallado(req, res) {
     // PARA ESTUDIANTES
     if (rol === 'estudiante') {
       if (tipo === 'administrativas' || tipo === 'todas' || !tipo) {
-        console.log('📋 Ejecutando queries administrativas separadas para userId:', userId);
+        console.log('Ejecutando queries administrativas separadas para userId:', userId);
         
         // Query 1: Cambios de perfil
         const [cambiosPerfil] = await pool.execute(`
@@ -329,7 +329,7 @@ async function obtenerHistorialDetallado(req, res) {
       }
 
       if (tipo === 'academicas' || tipo === 'todas' || !tipo) {
-        console.log('📚 Ejecutando queries académicas separadas para userId:', userId);
+        console.log('Ejecutando queries académicas separadas para userId:', userId);
         
         // Query 1: Tareas subidas
         const [tareasSubidas] = await pool.execute(`
@@ -451,7 +451,7 @@ async function obtenerHistorialDetallado(req, res) {
     // PARA DOCENTES
     if (rol === 'docente') {
       if (tipo === 'administrativas' || tipo === 'todas' || !tipo) {
-        console.log('📋 Ejecutando query administrativas DOCENTE para userId:', userId);
+        console.log('Ejecutando query administrativas DOCENTE para userId:', userId);
         
         const [cambiosAdmin] = await pool.execute(`
           SELECT 
@@ -483,7 +483,7 @@ async function obtenerHistorialDetallado(req, res) {
           });
         }
         
-        console.log('📚 Ejecutando queries académicas DOCENTE separadas para idDocente:', idDocente);
+        console.log('Ejecutando queries académicas DOCENTE separadas para idDocente:', idDocente);
         
         // Query 1: Módulos creados
         const [modulosCreados] = await pool.execute(`

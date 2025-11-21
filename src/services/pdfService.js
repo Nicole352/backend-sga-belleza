@@ -12,7 +12,7 @@ async function descargarLogo() {
     const response = await axios.get(LOGO_URL, { responseType: 'arraybuffer' });
     return Buffer.from(response.data);
   } catch (error) {
-    console.error('-Error descargando logo:', error.message);
+    console.error('Error descargando logo:', error.message);
     return null;
   }
 }
@@ -70,7 +70,7 @@ async function generarComprobantePagoMensual(estudiante, pago, curso, clasesPaga
           
           doc.image(logoBuffer, logoX, logoY, { width: logoSize, height: logoSize });
         } catch (imgError) {
-          console.error('-Error insertando logo en PDF:', imgError.message);
+          console.error('Error insertando logo en PDF:', imgError.message);
         }
       }
 
@@ -409,7 +409,7 @@ async function generarComprobanteMatricula(estudiante, solicitud, curso) {
           
           doc.image(logoBuffer, logoX, logoY, { width: logoSize, height: logoSize });
         } catch (imgError) {
-          console.error('-Error insertando logo en PDF:', imgError.message);
+          console.error('Error insertando logo en PDF:', imgError.message);
         }
       }
 

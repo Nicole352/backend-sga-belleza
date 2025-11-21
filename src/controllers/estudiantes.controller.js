@@ -98,7 +98,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
     
     if (solicitud.id_estudiante_existente) {
       // CASO 1: Estudiante YA existe en el sistema (inscripción a nuevo curso)
-      console.log('✅ Estudiante existente detectado, ID:', solicitud.id_estudiante_existente);
+      console.log('Estudiante existente detectado, ID:', solicitud.id_estudiante_existente);
       id_estudiante = solicitud.id_estudiante_existente;
       esEstudianteExistente = true;
       
@@ -200,14 +200,14 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
       ]);
       
       id_estudiante = userResult.insertId;
-      console.log('✅ Nuevo estudiante creado, ID:', id_estudiante);
+      console.log('Nuevo estudiante creado, ID:', id_estudiante);
     }
     
     // 8. Crear matrícula automáticamente
     const codigoMatricula = `MAT-${Date.now()}-${id_estudiante}`;
     
     // Obtener el curso asociado al tipo de curso de la solicitud CON EL HORARIO CORRECTO
-    console.log('🔍 Buscando curso con horario:', solicitud.horario_preferido);
+    console.log(' Buscando curso con horario:', solicitud.horario_preferido);
     const [cursosDisponibles] = await connection.execute(`
       SELECT 
         c.id_curso, 
@@ -243,7 +243,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
     let id_curso = null;
     if (cursosDisponibles.length > 0) {
       id_curso = cursosDisponibles[0].id_curso;
-      console.log('✅ Curso encontrado:', id_curso, 'Horario:', cursosDisponibles[0].horario, 'Cupos libres:', cursosDisponibles[0].cupos_reales_disponibles);
+      console.log('Curso encontrado:', id_curso, 'Horario:', cursosDisponibles[0].horario, 'Cupos libres:', cursosDisponibles[0].cupos_reales_disponibles);
     } else {
       await connection.rollback();
       return res.status(400).json({ 
@@ -282,22 +282,16 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
       ]);
       
       const id_matricula = matriculaResult.insertId;
-      console.log('✅ Matrícula creada:', codigoMatricula, 'ID:', id_matricula);
+      console.log('Matrícula creada:', codigoMatricula, 'ID:', id_matricula);
 
       // *** INSERTAR EN ESTUDIANTE_CURSO PARA REPORTES (si no existe) ***
       await connection.execute(`
         INSERT IGNORE INTO estudiante_curso (id_estudiante, id_curso, fecha_inscripcion, estado)
         VALUES (?, ?, NOW(), 'activo')
       `, [id_estudiante, id_curso]);
-      console.log('✅ Estudiante agregado a estudiante_curso para reportes');
-
-      // *** NO ES NECESARIO ACTUALIZAR CUPOS DISPONIBLES DEL CURSO ***
-      // Los cupos ya fueron actualizados cuando se creó la solicitud
-      // El id_curso en la matrícula es el mismo que se asignó en la solicitud
-      console.log('ℹ️  Los cupos del curso ya fueron actualizados al crear la solicitud');
-
-      // *** GENERAR CUOTAS AUTOMÁTICAMENTE (MENSUAL O POR CLASES) ***
-      console.log('🔍 Generando cuotas para matrícula:', id_matricula);
+      console.log('Estudiante agregado a estudiante_curso para reportes');
+      console.log('Los cupos del curso ya fueron actualizados al crear la solicitud');
+      console.log('Generando cuotas para matrícula:', id_matricula);
       
       // Obtener información completa del tipo de curso
       const [tipoCurso] = await connection.execute(`
@@ -312,13 +306,13 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         WHERE id_tipo_curso = ?
       `, [solicitud.id_tipo_curso]);
 
-      console.log('🔍 Tipo de curso encontrado:', tipoCurso);
+      console.log('Tipo de curso encontrado:', tipoCurso);
 
       if (tipoCurso.length > 0) {
         const tipoCursoData = tipoCurso[0];
         const modalidadPago = tipoCursoData.modalidad_pago || 'mensual';
         
-        console.log('🔍 Debug - Modalidad de pago:', modalidadPago);
+        console.log('Debug - Modalidad de pago:', modalidadPago);
         
         if (modalidadPago === 'clases') {
           // ========================================
@@ -327,7 +321,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
           const numeroClases = tipoCursoData.numero_clases;
           const precioPorClase = parseFloat(tipoCursoData.precio_por_clase);
           
-          console.log('🔍 Debug - Generando cuotas por CLASES:', {
+          console.log('Debug - Generando cuotas por CLASES:', {
             numeroClases,
             precioPorClase,
             id_matricula
@@ -336,15 +330,23 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
           // Generar cuotas por clases
           const fechaInicio = new Date();
           
+          // Calcular intervalo entre clases basado en la duración del curso
+          // Si el curso dura 8 semanas (56 días) y tiene 16 clases, cada clase es cada 3.5 días
+          const duracionSemanas = 8; // Duración estándar en semanas
+          const diasTotales = duracionSemanas * 7;
+          const diasPorClase = Math.floor(diasTotales / numeroClases);
+          
+          console.log(`Intervalo calculado: ${diasPorClase} días por clase (${numeroClases} clases en ${duracionSemanas} semanas)`);
+          
           for (let i = 1; i <= numeroClases; i++) {
-            // Fecha de vencimiento: cada 7 días (clases semanales)
+            // Fecha de vencimiento: distribuir clases uniformemente en la duración del curso
             const fechaVencimiento = new Date(fechaInicio);
-            fechaVencimiento.setDate(fechaInicio.getDate() + (i - 1) * 7);
+            fechaVencimiento.setDate(fechaInicio.getDate() + (i - 1) * diasPorClase);
             
             // Monto: primera clase = $50 (matrícula), resto = precio por clase
             const montoCuota = i === 1 ? 50.00 : precioPorClase;
             
-            console.log(`🔍 Creando cuota clase ${i}:`, {
+            console.log(`Creando cuota clase ${i}:`, {
               id_matricula,
               numero_cuota: i,
               monto: montoCuota,
@@ -368,7 +370,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
                 solicitud.comprobante_mime, solicitud.comprobante_size_kb, solicitud.comprobante_nombre_original,
                 aprobado_por, `Matrícula pagada - Clase ${i} de ${numeroClases}`
               ]);
-              console.log(`✅ Cuota clase #${i} creada con estado VERIFICADO`);
+              console.log(`Cuota clase #${i} creada con estado VERIFICADO`);
             } else {
               // Demás clases en pendiente
               await connection.execute(`
@@ -379,11 +381,11 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
                 id_matricula, i, montoCuota, fechaVencimiento.toISOString().split('T')[0],
                 `Clase ${i} de ${numeroClases} - Pago individual por clase`
               ]);
-              console.log(`✅ Cuota clase #${i} creada con estado PENDIENTE`);
+              console.log(`Cuota clase #${i} creada con estado PENDIENTE`);
             }
           }
           
-          console.log(`✅ ${numeroClases} clases generadas exitosamente para matrícula: ${id_matricula}`);
+          console.log(`${numeroClases} clases generadas exitosamente para matrícula: ${id_matricula}`);
           
         } else {
           // ========================================
@@ -392,7 +394,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
           const duracionMeses = tipoCursoData.duracion_meses;
           const precioMensual = tipoCursoData.precio_base / duracionMeses;
           
-          console.log('🔍 Debug - Generando cuotas MENSUALES:', {
+          console.log('Debug - Generando cuotas MENSUALES:', {
             duracionMeses,
             precioMensual,
             id_matricula
@@ -400,6 +402,13 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
           
           const fechaAprobacion = new Date();
           const diaAprobacion = fechaAprobacion.getDate();
+          
+          // Calcular cuántas cuotas cubre el monto pagado
+          const MONTO_BASE = 90;
+          const montoPagado = parseFloat(solicitud.monto_matricula) || MONTO_BASE;
+          const numeroCuotasACubrir = Math.floor(montoPagado / MONTO_BASE);
+          
+          console.log(`Monto pagado: $${montoPagado} → Cubre ${numeroCuotasACubrir} cuota(s)`);
           
           for (let i = 1; i <= duracionMeses; i++) {
             const fechaVencimiento = new Date(fechaAprobacion);
@@ -411,43 +420,67 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
               fechaVencimiento.setDate(diaAprobacion);
             }
             
-            if (i === 1) {
+            // Marcar como verificado las primeras N cuotas según el monto pagado
+            const esCuotaCubierta = i <= numeroCuotasACubrir;
+            const esPrimeraCuota = i === 1;
+            
+            if (esCuotaCubierta) {
+              // Cuotas cubiertas por el pago inicial
+              let observacionesCuota = '';
+              if (esPrimeraCuota) {
+                observacionesCuota = `Pago inicial de matrícula: $${montoPagado.toFixed(2)} (cubre ${numeroCuotasACubrir} cuota(s))`;
+              } else {
+                observacionesCuota = `Cubierto por pago inicial de matrícula (cuota #1)`;
+              }
+              
               await connection.execute(`
                 INSERT INTO pagos_mensuales (
                   id_matricula, numero_cuota, monto, fecha_vencimiento, 
                   fecha_pago, metodo_pago, numero_comprobante, banco_comprobante,
                   fecha_transferencia, recibido_por, comprobante_pago_blob,
                   comprobante_mime, comprobante_size_kb, comprobante_nombre_original,
-                  verificado_por, fecha_verificacion, estado
-                ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'verificado')
+                  verificado_por, fecha_verificacion, estado, observaciones
+                ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'verificado', ?)
               `, [
-                id_matricula, i, solicitud.monto_matricula || precioMensual,
+                id_matricula, i, MONTO_BASE,
                 fechaVencimiento.toISOString().split('T')[0],
-                solicitud.metodo_pago, solicitud.numero_comprobante, solicitud.banco_comprobante,
-                solicitud.fecha_transferencia, solicitud.recibido_por, solicitud.comprobante_pago,
-                solicitud.comprobante_mime, solicitud.comprobante_size_kb, solicitud.comprobante_nombre_original,
-                aprobado_por
+                solicitud.metodo_pago, 
+                esPrimeraCuota ? solicitud.numero_comprobante : null, 
+                esPrimeraCuota ? solicitud.banco_comprobante : null,
+                esPrimeraCuota ? solicitud.fecha_transferencia : null, 
+                esPrimeraCuota ? solicitud.recibido_por : null, 
+                esPrimeraCuota ? solicitud.comprobante_pago : null,
+                esPrimeraCuota ? solicitud.comprobante_mime : null, 
+                esPrimeraCuota ? solicitud.comprobante_size_kb : null, 
+                esPrimeraCuota ? solicitud.comprobante_nombre_original : null,
+                aprobado_por,
+                observacionesCuota
               ]);
+              
+              console.log(`Cuota #${i} marcada como VERIFICADA (cubierta por pago inicial)`);
             } else {
+              // Cuotas pendientes
               await connection.execute(`
                 INSERT INTO pagos_mensuales (
                   id_matricula, numero_cuota, monto, fecha_vencimiento, estado, metodo_pago
                 ) VALUES (?, ?, ?, ?, 'pendiente', 'transferencia')
-              `, [id_matricula, i, precioMensual, fechaVencimiento.toISOString().split('T')[0]]);
+              `, [id_matricula, i, MONTO_BASE, fechaVencimiento.toISOString().split('T')[0]]);
+              
+              console.log(`Cuota #${i} creada como PENDIENTE`);
             }
           }
           
-          console.log('✅ Cuotas mensuales generadas exitosamente para matrícula:', id_matricula);
+          console.log('Cuotas mensuales generadas exitosamente para matrícula:', id_matricula);
         }
       } else {
-        console.log('⚠️ No se encontró tipo de curso para generar cuotas');
+        console.log('No se encontró tipo de curso para generar cuotas');
       }
 
       // ========================================
       // CREAR MATRÍCULA DEL CURSO PROMOCIONAL SI LA SOLICITUD TIENE PROMOCIÓN
       // ========================================
       if (solicitud.id_promocion_seleccionada) {
-        console.log(`🎁 Solicitud tiene promoción ID: ${solicitud.id_promocion_seleccionada}`);
+        console.log(`Solicitud tiene promoción ID: ${solicitud.id_promocion_seleccionada}`);
         
         // Obtener datos de la promoción
         const [promoRows] = await connection.execute(`
@@ -460,7 +493,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
 
         if (promoRows.length > 0) {
           const promo = promoRows[0];
-          console.log(`🎓 Creando matrícula del curso promocional: ${promo.curso_nombre} (ID: ${promo.id_curso_promocional})`);
+          console.log(`Creando matrícula del curso promocional: ${promo.curso_nombre} (ID: ${promo.id_curso_promocional})`);
 
           // Verificar si ya existe matrícula del curso promocional
           const [matriculaPromoExistente] = await connection.execute(`
@@ -494,17 +527,17 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
             ]);
 
             const id_matricula_promo = resultMatriculaPromo.insertId;
-            console.log(`✅ Matrícula promocional creada: ${codigoMatriculaPromo} (ID: ${id_matricula_promo})`);
+            console.log(` Matrícula promocional creada: ${codigoMatriculaPromo} (ID: ${id_matricula_promo})`);
 
             // Agregar a estudiante_curso para reportes (si no existe)
             await connection.execute(`
               INSERT IGNORE INTO estudiante_curso (id_estudiante, id_curso, fecha_inscripcion, estado)
               VALUES (?, ?, NOW(), 'activo')
             `, [id_estudiante, promo.id_curso_promocional]);
-            console.log(`✅ Estudiante agregado a estudiante_curso para curso promocional`);
+            console.log(` Estudiante agregado a estudiante_curso para curso promocional`);
 
             // Obtener información del tipo de curso promocional para generar cuotas
-            console.log(`🔍 Buscando tipo de curso con ID: ${tipoCursoPromo[0].id_tipo_curso}`);
+            console.log(` Buscando tipo de curso con ID: ${tipoCursoPromo[0].id_tipo_curso}`);
             const [tipoCursoPromoInfo] = await connection.execute(`
               SELECT 
                 duracion_meses, 
@@ -516,7 +549,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
               WHERE id_tipo_curso = ?
             `, [tipoCursoPromo[0].id_tipo_curso]);
 
-            console.log(`🔍 Tipo de curso encontrado:`, tipoCursoPromoInfo);
+            console.log(` Tipo de curso encontrado:`, tipoCursoPromoInfo);
             
             if (tipoCursoPromoInfo.length > 0) {
               const tipoCursoPromoData = tipoCursoPromoInfo[0];
@@ -524,7 +557,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
               const duracionTotal = tipoCursoPromoData.duracion_meses;
               const precioMensual = parseFloat(tipoCursoPromoData.precio_base) / duracionTotal;
 
-              console.log(`🎁 Generando cuotas para curso promocional: ${mesesGratis} meses gratis de ${duracionTotal} total`);
+              console.log(` Generando cuotas para curso promocional: ${mesesGratis} meses gratis de ${duracionTotal} total`);
 
               const fechaAprobacion = new Date();
               const diaAprobacion = fechaAprobacion.getDate();
@@ -548,15 +581,15 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
                   montoCuota, 
                   fechaVencimiento.toISOString().split('T')[0],
                   estadoCuota,
-                  i <= mesesGratis ? `🎁 Mes ${i} de ${mesesGratis} - PROMOCIONAL GRATIS` : `Cuota mensual ${i}`
+                  i <= mesesGratis ? ` Mes ${i} de ${mesesGratis} - PROMOCIONAL GRATIS` : `Cuota mensual ${i}`
                 ]);
 
                 console.log(`${i <= mesesGratis ? '🎁' : '💰'} Cuota #${i}: ${montoCuota === 0 ? 'GRATIS (Promocional)' : `$${montoCuota.toFixed(2)}`}`);
               }
 
-              console.log(`✅ ${duracionTotal} cuotas generadas para curso promocional (${mesesGratis} gratis + ${duracionTotal - mesesGratis} normales)`);
+              console.log(` ${duracionTotal} cuotas generadas para curso promocional (${mesesGratis} gratis + ${duracionTotal - mesesGratis} normales)`);
             } else {
-              console.log(`❌ ERROR: No se encontró información del tipo de curso con ID: ${tipoCursoPromo[0].id_tipo_curso}`);
+              console.log(` ERROR: No se encontró información del tipo de curso con ID: ${tipoCursoPromo[0].id_tipo_curso}`);
             }
 
             // Crear registro en estudiante_promocion
@@ -572,7 +605,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
               solicitud.horario_preferido || promo.curso_horario,
               promo.meses_gratis || 1
             ]);
-            console.log(`🎉 Registro de promoción creado para estudiante ${id_estudiante}`);
+            console.log(`Registro de promoción creado para estudiante ${id_estudiante}`);
 
             // Incrementar cupos_utilizados de la promoción
             await connection.execute(`
@@ -580,13 +613,13 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
               SET cupos_utilizados = cupos_utilizados + 1 
               WHERE id_promocion = ?
             `, [solicitud.id_promocion_seleccionada]);
-            console.log(`📊 Cupo de promoción utilizado (ID: ${solicitud.id_promocion_seleccionada})`);
+            console.log(`Cupo de promoción utilizado (ID: ${solicitud.id_promocion_seleccionada})`);
 
           } else {
-            console.log(`⚠️ Ya existe matrícula del curso promocional para este estudiante`);
+            console.log(`Ya existe matrícula del curso promocional para este estudiante`);
           }
         } else {
-          console.log(`⚠️ No se encontró la promoción ID ${solicitud.id_promocion_seleccionada}`);
+          console.log(`No se encontró la promoción ID ${solicitud.id_promocion_seleccionada}`);
         }
       }
     }
@@ -601,6 +634,29 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
     `, [aprobado_por, id_solicitud]);
     
     await connection.commit();
+    
+    // ========================================
+    // EMITIR EVENTO DE WEBSOCKET - NUEVA MATRÍCULA APROBADA
+    // ========================================
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        // Emitir a todos los administradores
+        io.to('rol_administrativo').emit('matricula_aprobada', {
+          id_solicitud,
+          id_estudiante,
+          id_curso,
+          nombre_estudiante: `${solicitud.nombre_solicitante} ${solicitud.apellido_solicitante}`,
+          tipo_estudiante: esEstudianteExistente ? 'existente' : 'nuevo',
+          timestamp: new Date().toISOString()
+        });
+        
+        console.log(' Evento WebSocket emitido: matricula_aprobada');
+      }
+    } catch (socketError) {
+      console.error('Error emitiendo evento WebSocket:', socketError);
+      // No afecta el flujo principal
+    }
     
     // Registrar auditoría - Creación de estudiante (solo si es nuevo)
     if (!esEstudianteExistente) {
@@ -683,29 +739,29 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
 
               // Generar PDF del comprobante
               pdfComprobante = await generarComprobantePagoMensual(datosEstudiante, datosPago, datosCurso);
-              console.log('✅ PDF del comprobante del primer pago generado');
-              console.log('📄 Datos del PDF:', {
+              console.log('PDF del comprobante del primer pago generado');
+              console.log(' Datos del PDF:', {
                 estudiante: `${datosEstudiante.nombres} ${datosEstudiante.apellidos}`,
                 monto: datosPago.monto,
                 cuota: datosPago.numero_cuota,
                 comprobante: datosPago.numero_comprobante
               });
             } else {
-              console.log('⚠️ No se encontró el primer pago para generar PDF');
+              console.log(' No se encontró el primer pago para generar PDF');
             }
           } catch (pdfError) {
-            console.error('-Error generando PDF del comprobante (continuando sin PDF):', pdfError);
+            console.error('Error generando PDF del comprobante (continuando sin PDF):', pdfError);
           }
 
           // Enviar email de bienvenida con credenciales y PDF del primer pago
           await enviarEmailBienvenidaEstudiante(datosEstudiante, credenciales, pdfComprobante);
-          console.log('✅ Email de bienvenida enviado a:', solicitud.email_solicitante);
+          console.log(' Email de bienvenida enviado a:', solicitud.email_solicitante);
           if (pdfComprobante) {
-            console.log('✅ PDF del primer pago incluido en el email');
+            console.log(' PDF del primer pago incluido en el email');
           }
           
         } catch (emailError) {
-          console.error('-Error enviando email de bienvenida (no afecta la creación):', emailError);
+          console.error('Error enviando email de bienvenida (no afecta la creación):', emailError);
         }
       });
     }
@@ -813,12 +869,104 @@ exports.getMisCursos = async (req, res) => {
     }
 
     // Obtener cursos matriculados usando el modelo (incluye docente, aula y horario)
-    const cursos = await EstudiantesModel.getMisCursos(id_usuario);
+    const todosCursos = await EstudiantesModel.getMisCursos(id_usuario);
 
-    res.json(cursos);
+    // FILTRAR: Solo devolver cursos ACTIVOS (no finalizados)
+    // Un curso está ACTIVO si:
+    // - El estado del curso NO es 'finalizado' ni 'cancelado', Y
+    // - La fecha de fin NO ha pasado (es hoy o futura)
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0); // Normalizar a medianoche para comparación justa
+    
+    const cursosActivos = todosCursos.filter(curso => {
+      const fechaFin = new Date(curso.fecha_fin);
+      fechaFin.setHours(0, 0, 0, 0); // Normalizar a medianoche
+      
+      // Excluir cursos finalizados o cancelados
+      if (curso.estado === 'finalizado' || curso.estado === 'cancelado') {
+        return false;
+      }
+      
+      // Excluir cursos cuya fecha de fin ya pasó
+      if (fechaFin < hoy) {
+        return false;
+      }
+      
+      // Incluir cursos activos o planificados con fecha futura
+      return true;
+    });
+
+    console.log(`Cursos activos - Usuario ${id_usuario}: ${cursosActivos.length} de ${todosCursos.length} total`);
+
+    res.json(cursosActivos);
     
   } catch (error) {
     console.error('Error obteniendo cursos del estudiante:', error);
+    res.status(500).json({ 
+      error: 'Error interno del servidor',
+      details: error.message 
+    });
+  }
+};
+
+// GET /api/estudiantes/historial-academico - Obtener historial académico (cursos activos y finalizados)
+exports.getHistorialAcademico = async (req, res) => {
+  try {
+    const id_usuario = req.user?.id_usuario;
+    
+    if (!id_usuario) {
+      return res.status(401).json({ error: 'Usuario no autenticado' });
+    }
+
+    // Verificar que el usuario sea estudiante
+    const isEstudiante = await EstudiantesModel.isEstudiante(id_usuario);
+    
+    if (!isEstudiante) {
+      return res.status(403).json({ error: 'Acceso denegado. Solo estudiantes pueden acceder a esta información.' });
+    }
+
+    // Obtener todos los cursos (activos y finalizados)
+    const todosCursos = await EstudiantesModel.getMisCursos(id_usuario);
+    
+    // Separar cursos activos y finalizados basándose en la fecha_fin Y el estado del curso
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0); // Normalizar a medianoche para comparación justa
+    
+    const cursosActivos = [];
+    const cursosFinalizados = [];
+    
+    todosCursos.forEach(curso => {
+      const fechaFin = new Date(curso.fecha_fin);
+      fechaFin.setHours(0, 0, 0, 0); // Normalizar a medianoche
+      
+      // Un curso está FINALIZADO si:
+      // 1. El estado del curso es 'finalizado' o 'cancelado', O
+      // 2. La fecha de fin ya pasó (es menor que hoy)
+      const estaFinalizado = curso.estado === 'finalizado' || 
+                            curso.estado === 'cancelado' ||
+                            fechaFin < hoy;
+      
+      // Un curso está ACTIVO si:
+      // - El estado es 'activo' o 'planificado', Y
+      // - La fecha de fin NO ha pasado (es hoy o futura)
+      
+      if (estaFinalizado) {
+        cursosFinalizados.push(curso);
+      } else {
+        cursosActivos.push(curso);
+      }
+    });
+
+    console.log(`Historial académico - Usuario ${id_usuario}: ${cursosActivos.length} activos, ${cursosFinalizados.length} finalizados`);
+
+    res.json({
+      activos: cursosActivos,
+      finalizados: cursosFinalizados,
+      total: todosCursos.length
+    });
+    
+  } catch (error) {
+    console.error('Error obteniendo historial académico:', error);
     res.status(500).json({ 
       error: 'Error interno del servidor',
       details: error.message 

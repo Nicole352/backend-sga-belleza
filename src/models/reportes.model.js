@@ -5,7 +5,7 @@ const ReportesModel = {
    * REPORTE DE ESTUDIANTES
    * Obtiene estudiantes matriculados en un período con filtros
    */
-  async getReporteEstudiantes({ fechaInicio, fechaFin, estado, idCurso }) {
+  async getReporteEstudiantes({ fechaInicio, fechaFin, estado, idCurso, horario }) {
     try {
       let query = `
         SELECT 
@@ -55,6 +55,12 @@ const ReportesModel = {
       if (idCurso) {
         query += ` AND c.id_curso = ?`;
         params.push(idCurso);
+      }
+
+      // Filtro por horario del curso
+      if (horario && horario !== 'todos') {
+        query += ` AND c.horario = ?`;
+        params.push(horario);
       }
 
       query += ` ORDER BY ec.fecha_inscripcion DESC`;

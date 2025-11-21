@@ -5,38 +5,53 @@ exports.getMatriculasPorMes = async (req, res) => {
   try {
     const [result] = await pool.execute(`
       SELECT 
-        DATE_FORMAT(fecha_matricula, '%b') as mes,
+        MONTH(fecha_matricula) as mes_numero,
+        YEAR(fecha_matricula) as anio,
         DATE_FORMAT(fecha_matricula, '%Y-%m') as mes_completo,
         COUNT(*) as total
       FROM matriculas
       WHERE fecha_matricula >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-        AND estado = 'activo'
-      GROUP BY mes_completo, mes
+        AND estado = 'activa'
+      GROUP BY mes_completo, mes_numero, anio
       ORDER BY mes_completo ASC
     `);
 
-    const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-    const mesActual = new Date().getMonth();
+    const mesesEspanol = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const fechaActual = new Date();
+    const mesActual = fechaActual.getMonth(); // 0-11
+    const anioActual = fechaActual.getFullYear();
+    
     const ultimos6Meses = [];
     
+    // Generar los últimos 6 meses con año
     for (let i = 5; i >= 0; i--) {
-      const mesIndex = (mesActual - i + 12) % 12;
-      ultimos6Meses.push(meses[mesIndex]);
+      const fecha = new Date(anioActual, mesActual - i, 1);
+      const mesIndex = fecha.getMonth(); // 0-11
+      const anio = fecha.getFullYear();
+      ultimos6Meses.push({
+        mes: mesesEspanol[mesIndex],
+        mesNumero: mesIndex + 1, // 1-12
+        anio: anio
+      });
     }
 
-    const matriculasPorMes = ultimos6Meses.map(mes => {
-      const data = result.find(r => r.mes === mes);
+    // Mapear los datos reales con los últimos 6 meses
+    const matriculasPorMes = ultimos6Meses.map(mesInfo => {
+      const data = result.find(r => r.mes_numero === mesInfo.mesNumero && r.anio === mesInfo.anio);
       return {
-        mes,
+        mes: mesInfo.mes,
         valor: data ? parseInt(data.total) : 0
       };
     });
 
+    // Calcular altura relativa para el gráfico
     const maxValor = Math.max(...matriculasPorMes.map(m => m.valor), 1);
     const matriculasConAltura = matriculasPorMes.map(m => ({
       ...m,
       altura: `${Math.round((m.valor / maxValor) * 100)}%`
     }));
+
+    console.log(' Matrículas por mes:', matriculasConAltura);
 
     res.json(matriculasConAltura);
   } catch (error) {
@@ -78,11 +93,13 @@ exports.getActividadReciente = async (req, res) => {
     const [pagos] = await pool.execute(`
       SELECT 
         CONCAT(u.nombre, ' ', u.apellido) as nombre_completo,
+        c.nombre as curso_nombre,
         pm.monto,
         pm.fecha_verificacion
       FROM pagos_mensuales pm
       INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
       INNER JOIN usuarios u ON m.id_estudiante = u.id_usuario
+      INNER JOIN cursos c ON m.id_curso = c.id_curso
       WHERE pm.estado = 'verificado'
       ORDER BY pm.fecha_verificacion DESC
       LIMIT 2
@@ -91,7 +108,7 @@ exports.getActividadReciente = async (req, res) => {
     pagos.forEach(p => {
       actividades.push({
         tipo: 'pago',
-        texto: `Pago verificado: ${p.nombre_completo} - $${parseFloat(p.monto).toFixed(2)}`,
+        texto: `Pago verificado: ${p.nombre_completo} - ${parseFloat(p.monto).toFixed(2)} (${p.curso_nombre})`,
         fecha: p.fecha_verificacion,
         icono: 'DollarSign',
         color: '#f59e0b'
@@ -199,3 +216,4 @@ exports.getEstadisticasSolicitudes = async (req, res) => {
 };
 
 module.exports = exports;
+

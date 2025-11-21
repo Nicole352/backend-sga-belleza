@@ -5,7 +5,7 @@ class EstudiantesModel {
   static async getAll(filters = {}) {
     const { page = 1, limit = 10, search = '' } = filters;
     const offset = (page - 1) * limit;
-    
+
     let sql = `
       SELECT DISTINCT
         u.id_usuario,
@@ -47,9 +47,9 @@ class EstudiantesModel {
       INNER JOIN roles r ON u.id_rol = r.id_rol
       WHERE r.nombre_rol = 'estudiante'
     `;
-    
+
     const params = [];
-    
+
     if (search) {
       sql += ` AND (
         u.nombre LIKE ? OR 
@@ -60,12 +60,12 @@ class EstudiantesModel {
       const searchParam = `%${search}%`;
       params.push(searchParam, searchParam, searchParam, searchParam);
     }
-    
+
     sql += ` ORDER BY u.fecha_registro DESC LIMIT ${limit} OFFSET ${offset}`;
-    
+
     // Consulta de datos
     const [estudiantes] = await pool.execute(sql, params);
-    
+
     // Consulta de total
     let sqlCount = `
       SELECT COUNT(*) as total 
@@ -73,7 +73,7 @@ class EstudiantesModel {
       INNER JOIN roles r ON u.id_rol = r.id_rol
       WHERE r.nombre_rol = 'estudiante'
     `;
-    
+
     const paramsCount = [];
     if (search) {
       sqlCount += ` AND (
@@ -85,9 +85,9 @@ class EstudiantesModel {
       const searchParam = `%${search}%`;
       paramsCount.push(searchParam, searchParam, searchParam, searchParam);
     }
-    
+
     const [[{ total }]] = await pool.execute(sqlCount, paramsCount);
-    
+
     return {
       estudiantes,
       total,
@@ -137,7 +137,7 @@ class EstudiantesModel {
       LEFT JOIN solicitudes_matricula s ON s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado'
       WHERE u.id_usuario = ? AND r.nombre_rol = 'estudiante'
     `, [id]);
-    
+
     return estudiantes.length > 0 ? estudiantes[0] : null;
   }
 
@@ -166,17 +166,17 @@ class EstudiantesModel {
       INNER JOIN roles r ON u.id_rol = r.id_rol
       WHERE u.cedula = ? AND r.nombre_rol = 'estudiante'
     `, [cedula]);
-    
+
     return estudiantes.length > 0 ? estudiantes[0] : null;
   }
 
   // Crear estudiante desde solicitud
   static async createFromSolicitud(solicitudData, userData) {
     const connection = await pool.getConnection();
-    
+
     try {
       await connection.beginTransaction();
-      
+
       // Crear usuario estudiante
       const [userResult] = await connection.execute(`
         INSERT INTO usuarios (
@@ -198,14 +198,14 @@ class EstudiantesModel {
         userData.id_rol,
         'activo'
       ]);
-      
+
       const id_estudiante = userResult.insertId;
-      
+
       // Crear matrícula si hay curso disponible
       let id_matricula = null;
       if (userData.id_curso) {
         const codigoMatricula = `MAT-${Date.now()}-${id_estudiante}`;
-        
+
         const [matriculaResult] = await connection.execute(`
           INSERT INTO matriculas (
             codigo_matricula, id_solicitud, id_tipo_curso, id_estudiante, 
@@ -221,21 +221,21 @@ class EstudiantesModel {
           userData.email || `${userData.username}@estudiante.belleza.com`,
           userData.aprobado_por
         ]);
-        
+
         id_matricula = matriculaResult.insertId;
 
-      // No es necesario actualizar cupos_disponibles aquí
-      // porque ya se hizo cuando se creó la solicitud
-      // Solo insertamos en estudiante_curso para reportes
-      
-      // Insertar en estudiante_curso para reportes
-      await connection.execute(`
+        // No es necesario actualizar cupos_disponibles aquí
+        // porque ya se hizo cuando se creó la solicitud
+        // Solo insertamos en estudiante_curso para reportes
+
+        // Insertar en estudiante_curso para reportes
+        await connection.execute(`
         INSERT INTO estudiante_curso (id_estudiante, id_curso, fecha_inscripcion, estado)
         VALUES (?, ?, NOW(), 'activo')
       `, [id_estudiante, userData.id_curso]);
-      
-      console.log('✅ Estudiante agregado a estudiante_curso para reportes');
-      
+
+        console.log('Estudiante agregado a estudiante_curso para reportes');
+
         // Obtener información completa del tipo de curso
         const [tipoCurso] = await connection.execute(`
           SELECT 
@@ -249,14 +249,14 @@ class EstudiantesModel {
           WHERE id_tipo_curso = ?
         `, [solicitudData.id_tipo_curso]);
 
-        console.log('🔍 Debug - Tipo de curso encontrado:', tipoCurso);
-        console.log('🔍 Debug - ID tipo curso buscado:', solicitudData.id_tipo_curso);
-        console.log('🔍 Debug - Consulta SQL ejecutada para tipo curso');
-        
+        console.log('Debug - Tipo de curso encontrado:', tipoCurso);
+        console.log('Debug - ID tipo curso buscado:', solicitudData.id_tipo_curso);
+        console.log('Debug - Consulta SQL ejecutada para tipo curso');
+
         // Log detallado de cada campo
         if (tipoCurso.length > 0) {
           const datos = tipoCurso[0];
-          console.log('🔍 Debug - Campos individuales:', {
+          console.log('Debug - Campos individuales:', {
             duracion_meses: datos.duracion_meses,
             precio_base: datos.precio_base,
             modalidad_pago: datos.modalidad_pago,
@@ -269,9 +269,9 @@ class EstudiantesModel {
         if (tipoCurso.length > 0) {
           const tipoCursoData = tipoCurso[0];
           const modalidadPago = tipoCursoData.modalidad_pago || 'mensual';
-          
-          console.log('🔍 Debug - Modalidad de pago:', modalidadPago);
-          
+
+          console.log('Debug - Modalidad de pago:', modalidadPago);
+
           if (modalidadPago === 'clases') {
             // ========================================
             // MODALIDAD POR CLASES
@@ -279,78 +279,78 @@ class EstudiantesModel {
             const numeroClases = tipoCursoData.numero_clases;
             const precioPorClase = parseFloat(tipoCursoData.precio_por_clase);
             const matriculaIncluyePrimera = tipoCursoData.matricula_incluye_primera_clase;
-            
-            console.log('🔍 Debug - Generando cuotas por CLASES:', {
+
+            console.log('Debug - Generando cuotas por CLASES:', {
               numeroClases,
               precioPorClase,
               matriculaIncluyePrimera,
               id_matricula,
               tipoCursoData: JSON.stringify(tipoCursoData)
             });
-            
+
             // Validar que tenemos los datos necesarios
             if (!numeroClases || numeroClases <= 0) {
-              console.error('-ERROR: numero_clases es inválido:', numeroClases);
+              console.error('ERROR: numero_clases es inválido:', numeroClases);
               throw new Error(`Número de clases inválido: ${numeroClases}. Verifique la configuración del tipo de curso.`);
             }
-            
+
             if (!precioPorClase || precioPorClase <= 0) {
-              console.error('-ERROR: precio_por_clase es inválido:', precioPorClase);
+              console.error('ERROR: precio_por_clase es inválido:', precioPorClase);
               throw new Error(`Precio por clase inválido: ${precioPorClase}. Verifique la configuración del tipo de curso.`);
             }
-            
+
             // Generar cuotas por clases
             const fechaInicio = new Date();
-            
+
             for (let i = 1; i <= numeroClases; i++) {
               // Fecha de vencimiento: cada 7 días (clases semanales)
               const fechaVencimiento = new Date(fechaInicio);
               fechaVencimiento.setDate(fechaInicio.getDate() + (i - 1) * 7);
-              
+
               // La primera cuota (matrícula) ya está PAGADA
               const estadoCuota = i === 1 ? 'pagado' : 'pendiente';
-              
+
               // Monto: primera clase = $50 (matrícula), resto = precio por clase
               const montoCuota = i === 1 ? 50.00 : precioPorClase;
-              
-              console.log(`🔍 Creando cuota clase ${i}:`, {
+
+              console.log(`Creando cuota clase ${i}:`, {
                 id_matricula,
                 numero_cuota: i,
                 monto: montoCuota,
                 fecha_vencimiento: fechaVencimiento.toISOString().split('T')[0],
                 estado: estadoCuota
               });
-              
+
               // Para la primera cuota, incluir datos del comprobante de matrícula
               if (i === 1) {
-              console.log('🔍 Obteniendo comprobante de solicitud:', solicitudData.id_solicitud);
-              
-              // Obtener el comprobante BLOB de la solicitud
-              const [solicitudComprobante] = await connection.execute(`
+                console.log('Obteniendo comprobante de solicitud:', solicitudData.id_solicitud);
+
+                // Obtener el comprobante BLOB de la solicitud
+                const [solicitudComprobante] = await connection.execute(`
                 SELECT comprobante_pago, comprobante_mime, comprobante_size_kb, comprobante_nombre_original,
                        numero_comprobante, banco_comprobante, fecha_transferencia, recibido_por, metodo_pago
                 FROM solicitudes_matricula
                 WHERE id_solicitud = ?
               `, [solicitudData.id_solicitud]);
-              
-              const comprobante = solicitudComprobante[0];
-              
-              console.log('✅ Comprobante obtenido:', {
-                tiene_blob: !!comprobante?.comprobante_pago,
-                numero: comprobante?.numero_comprobante,
-                banco: comprobante?.banco_comprobante,
-                metodo_pago: comprobante?.metodo_pago,
-                recibido_por: comprobante?.recibido_por,
-                mime: comprobante?.comprobante_mime
-              });
 
-              console.log('🔍 VALORES QUE SE VAN A INSERTAR:');
-              console.log('  - metodo_pago:', comprobante?.metodo_pago || 'transferencia');
-              console.log('  - numero_comprobante:', comprobante?.numero_comprobante || null);
-              console.log('  - banco_comprobante:', comprobante?.banco_comprobante || null);
-              console.log('  - fecha_transferencia:', comprobante?.fecha_transferencia || null);
-              console.log('  - recibido_por:', comprobante?.recibido_por || null);
-              
+                const comprobante = solicitudComprobante[0];
+
+                console.log('Comprobante obtenido:', {
+                  tiene_blob: !!comprobante?.comprobante_pago,
+                  numero: comprobante?.numero_comprobante,
+                  banco: comprobante?.banco_comprobante,
+                  metodo_pago: comprobante?.metodo_pago,
+                  recibido_por: comprobante?.recibido_por,
+                  mime: comprobante?.comprobante_mime
+                });
+
+                console.log('VALORES QUE SE VAN A INSERTAR:');
+                console.log('metodo_pago:', comprobante?.metodo_pago || 'transferencia');
+                console.log('numero_comprobante:', comprobante?.numero_comprobante || null);
+                console.log('banco_comprobante:', comprobante?.banco_comprobante || null);
+                console.log('fecha_transferencia:', comprobante?.fecha_transferencia || null);
+                console.log('recibido_por:', comprobante?.recibido_por || null);
+
                 await connection.execute(`
                   INSERT INTO pagos_mensuales (
                     id_matricula, numero_cuota, monto, fecha_vencimiento, 
@@ -376,8 +376,8 @@ class EstudiantesModel {
                   comprobante?.comprobante_nombre_original || null,
                   `Matrícula pagada - Clase ${i} de ${numeroClases}`
                 ]);
-                
-                console.log(`✅ Cuota clase #${i} creada con estado PAGADO y comprobante`);
+
+                console.log(`Cuota clase #${i} creada con estado PAGADO y comprobante`);
               } else {
                 // Demás clases en pendiente
                 await connection.execute(`
@@ -391,49 +391,49 @@ class EstudiantesModel {
                   fechaVencimiento.toISOString().split('T')[0],
                   `Clase ${i} de ${numeroClases} - $${precioPorClase}`
                 ]);
-                
-                console.log(`✅ Cuota clase #${i} creada como PENDIENTE`);
+
+                console.log(`Cuota clase #${i} creada como PENDIENTE`);
               }
             }
-            
-            console.log('✅ Debug - Cuotas por CLASES generadas exitosamente');
-            
+
+            console.log('Debug - Cuotas por CLASES generadas exitosamente');
+
           } else {
             // ========================================
             // MODALIDAD MENSUAL (LÓGICA ORIGINAL)
             // ========================================
             const duracionMeses = tipoCursoData.duracion_meses;
             const precioMensual = tipoCursoData.precio_base / duracionMeses;
-            
-            console.log('🔍 Debug - Generando cuotas MENSUALES:', {
+
+            console.log('Debug - Generando cuotas MENSUALES:', {
               duracionMeses,
               precioMensual,
               id_matricula
             });
-            
+
             // Generar cuotas mensuales
             const fechaInicio = new Date();
             fechaInicio.setMonth(fechaInicio.getMonth() + 1); // Empezar el próximo mes
-            
+
             for (let i = 1; i <= duracionMeses; i++) {
               const fechaVencimiento = new Date(fechaInicio);
               fechaVencimiento.setMonth(fechaInicio.getMonth() + (i - 1));
               fechaVencimiento.setDate(15); // Vencimiento el día 15 de cada mes
-              
+
               // La primera cuota ya está PAGADA (matrícula verificada por admin)
               const estadoCuota = i === 1 ? 'pagado' : 'pendiente';
-              
-              console.log(`🔍 Creando cuota mensual ${i}:`, {
+
+              console.log(`Creando cuota mensual ${i}:`, {
                 id_matricula,
                 numero_cuota: i,
                 monto: precioMensual,
                 fecha_vencimiento: fechaVencimiento.toISOString().split('T')[0]
               });
-              
+
               // Para la primera cuota, incluir datos del comprobante de matrícula
               if (i === 1) {
-                console.log('🔍 Obteniendo comprobante de solicitud:', solicitudData.id_solicitud);
-                
+                console.log('Obteniendo comprobante de solicitud:', solicitudData.id_solicitud);
+
                 // Obtener el comprobante BLOB de la solicitud
                 const [solicitudComprobante] = await connection.execute(`
                   SELECT comprobante_pago, comprobante_mime, comprobante_size_kb, comprobante_nombre_original,
@@ -441,10 +441,10 @@ class EstudiantesModel {
                   FROM solicitudes_matricula
                   WHERE id_solicitud = ?
                 `, [solicitudData.id_solicitud]);
-                
+
                 const comprobante = solicitudComprobante[0];
-                
-                console.log('✅ Comprobante obtenido:', {
+
+                console.log('Comprobante obtenido:', {
                   tiene_blob: !!comprobante?.comprobante_pago,
                   numero: comprobante?.numero_comprobante,
                   banco: comprobante?.banco_comprobante,
@@ -478,8 +478,8 @@ class EstudiantesModel {
                   comprobante?.comprobante_nombre_original || null,
                   'Pago de matrícula verificado por admin'
                 ]);
-                
-                console.log('✅ Cuota mensual #1 creada con estado PAGADO y comprobante');
+
+                console.log('Cuota mensual #1 creada con estado PAGADO y comprobante');
               } else {
                 // Demás cuotas en pendiente
                 await connection.execute(`
@@ -494,16 +494,16 @@ class EstudiantesModel {
                 ]);
               }
             }
-            
-            console.log('✅ Debug - Cuotas MENSUALES generadas exitosamente');
+
+            console.log('Debug - Cuotas MENSUALES generadas exitosamente');
           }
-          
-          console.log('✅ Debug - Cuotas generadas exitosamente');
+
+          console.log('Debug - Cuotas generadas exitosamente');
         } else {
-          console.log('-Debug - No se encontró tipo de curso');
+          console.log('Debug - No se encontró tipo de curso');
         }
       }
-      
+
       // Actualizar estado de la solicitud
       await connection.execute(`
         UPDATE solicitudes_matricula 
@@ -512,9 +512,9 @@ class EstudiantesModel {
             fecha_verificacion = NOW()
         WHERE id_solicitud = ?
       `, [userData.aprobado_por, solicitudData.id_solicitud]);
-      
+
       await connection.commit();
-      
+
       return {
         id_usuario: id_estudiante,
         identificacion: userData.cedula,
@@ -524,7 +524,7 @@ class EstudiantesModel {
         username: userData.username,
         password_temporal: userData.passwordTemporal
       };
-      
+
     } catch (error) {
       await connection.rollback();
       throw error;
@@ -615,7 +615,7 @@ class EstudiantesModel {
           INNER JOIN entregas_tareas e ON t.id_tarea = e.id_tarea AND e.id_estudiante = m.id_estudiante
           INNER JOIN calificaciones_tareas cal ON e.id_entrega = cal.id_entrega
           WHERE mc.id_curso = c.id_curso AND cal.nota IS NOT NULL), 
-          ROUND(5 + RAND() * 3, 1)) as calificacion_final,
+          NULL) as calificacion_final,
         -- Calcular tareas pendientes reales
         COALESCE(
           (SELECT COUNT(*)
@@ -676,7 +676,7 @@ class EstudiantesModel {
         nombres: curso.docente_nombres,
         apellidos: curso.docente_apellidos,
         titulo: curso.docente_titulo,
-        nombre_completo: curso.docente_nombres && curso.docente_apellidos 
+        nombre_completo: curso.docente_nombres && curso.docente_apellidos
           ? `${curso.docente_nombres} ${curso.docente_apellidos}`
           : null
       }
@@ -701,7 +701,7 @@ class EstudiantesModel {
       ORDER BY u.fecha_registro DESC
       LIMIT ?
     `, [limit]);
-    
+
     return estudiantes.map(est => ({
       id_usuario: est.id_usuario,
       username: est.username,
@@ -733,7 +733,7 @@ class EstudiantesModel {
       JOIN roles r ON u.id_rol = r.id_rol 
       WHERE u.id_usuario = ?
     `, [id_usuario]);
-    
+
     return userCheck.length > 0 && userCheck[0].nombre_rol === 'estudiante';
   }
 
@@ -746,7 +746,7 @@ class EstudiantesModel {
       INNER JOIN roles r ON u.id_rol = r.id_rol
       WHERE u.id_usuario = ? AND r.nombre_rol = 'estudiante'
     `, [id_usuario]);
-    
+
     return rows.length > 0 ? rows[0].id_estudiante : null;
   }
 }

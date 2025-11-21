@@ -4,6 +4,72 @@ const { enviarNotificacionNuevaMatricula } = require('../services/emailService')
 const { emitSocketEvent } = require('../services/socket.service');
 const { notificarNuevaSolicitudMatricula, notificarMatriculasPendientes } = require('../utils/notificationHelper');
 const ExcelJS = require('exceljs');
+const cacheService = require('../services/cache.service');
+const cloudinaryService = require('../services/cloudinary.service');
+
+async function recalcularCuposCurso(connectionOrPool, cursoId) {
+  const idCurso = Number(cursoId);
+  if (!idCurso) return null;
+  const conn = connectionOrPool || pool;
+
+  const [cursoRows] = await conn.execute(
+    'SELECT capacidad_maxima FROM cursos WHERE id_curso = ? LIMIT 1',
+    [idCurso]
+  );
+
+  if (!cursoRows.length) {
+    return null;
+  }
+
+  const capacidad = Number(cursoRows[0].capacidad_maxima) || 0;
+
+  const [solicitudesCursoRows] = await conn.execute(
+    `SELECT COUNT(*) AS total
+     FROM solicitudes_matricula
+     WHERE id_curso = ?
+       AND estado IN ('pendiente','observaciones')`,
+    [idCurso]
+  );
+  const pendientesCurso = Number(solicitudesCursoRows[0].total) || 0;
+
+  const [solicitudesPromoRows] = await conn.execute(
+    `SELECT COUNT(*) AS total
+     FROM solicitudes_matricula s
+     INNER JOIN promociones p ON s.id_promocion_seleccionada = p.id_promocion
+     WHERE s.estado IN ('pendiente','observaciones')
+       AND p.id_curso_promocional = ?
+       AND s.id_curso <> ?`,
+    [idCurso, idCurso]
+  );
+  const pendientesPromo = Number(solicitudesPromoRows[0].total) || 0;
+
+  const [matriculasRows] = await conn.execute(
+    `SELECT COUNT(*) AS total
+     FROM matriculas
+     WHERE id_curso = ?
+       AND estado = 'activa'`,
+    [idCurso]
+  );
+  const matriculasActivas = Number(matriculasRows[0].total) || 0;
+
+  const cuposOcupados = pendientesCurso + pendientesPromo + matriculasActivas;
+  const cuposDisponibles = Math.max(capacidad - cuposOcupados, 0);
+
+  console.log(`[CURSO ${idCurso}] Recalculando cupos:`);
+  console.log(`Capacidad máxima: ${capacidad}`);
+  console.log(`Solicitudes pendientes (curso principal): ${pendientesCurso}`);
+  console.log(`Solicitudes pendientes (como promoción): ${pendientesPromo}`);
+  console.log(`Matrículas activas: ${matriculasActivas}`);
+  console.log(`Total ocupado: ${cuposOcupados} (${pendientesCurso}+${pendientesPromo}+${matriculasActivas})`);
+  console.log(`Cupos disponibles: ${cuposDisponibles}`);
+
+  await conn.execute(
+    'UPDATE cursos SET cupos_disponibles = ? WHERE id_curso = ?',
+    [cuposDisponibles, idCurso]
+  );
+
+  return cuposDisponibles;
+}
 
 // Util: generar código de solicitud
 function generarCodigoSolicitud() {
@@ -113,18 +179,72 @@ exports.createSolicitud = async (req, res) => {
   }
 
   // Validar tipo de curso existente y estado disponible
+  let tipoCurso;
   try {
     const idTipoCursoNum = Number(id_tipo_curso);
     if (!idTipoCursoNum) return res.status(400).json({ error: 'id_tipo_curso inválido' });
-    const [tipoCursoRows] = await pool.execute('SELECT id_tipo_curso, estado FROM tipos_cursos WHERE id_tipo_curso = ?', [idTipoCursoNum]);
+    const [tipoCursoRows] = await pool.execute('SELECT id_tipo_curso, estado, modalidad_pago FROM tipos_cursos WHERE id_tipo_curso = ?', [idTipoCursoNum]);
     if (!tipoCursoRows.length) return res.status(400).json({ error: 'El tipo de curso no existe' });
-    const tipoCurso = tipoCursoRows[0];
+    tipoCurso = tipoCursoRows[0];
     if (tipoCurso.estado !== 'activo') {
       return res.status(400).json({ error: 'El tipo de curso no está disponible para matrícula' });
     }
   } catch (e) {
     console.error('Error validando tipo de curso:', e);
     return res.status(500).json({ error: 'Error validando tipo de curso' });
+  }
+
+  // VALIDACIÓN DE MÚLTIPLOS DE 90 PARA CURSOS MENSUALES
+  if (tipoCurso.modalidad_pago === 'mensual') {
+    const MONTO_BASE = 90;
+    const montoNumerico = parseFloat(monto_matricula);
+
+    // Verificar que sea múltiplo de 90
+    if (montoNumerico % MONTO_BASE !== 0) {
+      const mesesPagados = Math.floor(montoNumerico / MONTO_BASE);
+      const montoSugerido = mesesPagados * MONTO_BASE;
+      const montoSiguiente = (mesesPagados + 1) * MONTO_BASE;
+
+      return res.status(400).json({
+        error: `Para cursos mensuales solo se permiten múltiplos de $${MONTO_BASE}. ` +
+          `Puedes pagar: $${montoSugerido} (${mesesPagados} ${mesesPagados === 1 ? 'mes' : 'meses'}) ` +
+          `o $${montoSiguiente} (${mesesPagados + 1} meses)`
+      });
+    }
+
+    // Verificar que no sea menor a 90
+    if (montoNumerico < MONTO_BASE) {
+      return res.status(400).json({
+        error: `El monto mínimo para cursos mensuales es $${MONTO_BASE} (1 mes)`
+      });
+    }
+  }
+
+  // VALIDACIÓN PARA CURSOS POR CLASES (solo $50 o curso completo)
+  if (tipoCurso.modalidad_pago === 'clases') {
+    const montoNumerico = parseFloat(monto_matricula);
+    const MATRICULA = 50; // Matrícula inicial
+
+    // Obtener datos completos del tipo de curso para calcular el total
+    const [tipoCursoCompleto] = await pool.execute(
+      'SELECT numero_clases, precio_por_clase FROM tipos_cursos WHERE id_tipo_curso = ?',
+      [id_tipo_curso]
+    );
+
+    if (tipoCursoCompleto.length > 0) {
+      const { numero_clases, precio_por_clase } = tipoCursoCompleto[0];
+      const clasesRestantes = numero_clases - 1; // Primera clase incluida en matrícula
+      const CURSO_COMPLETO = MATRICULA + (clasesRestantes * parseFloat(precio_por_clase));
+
+      // Solo permitir $50 (matrícula) o el curso completo
+      if (montoNumerico !== MATRICULA && Math.abs(montoNumerico - CURSO_COMPLETO) > 0.01) {
+        return res.status(400).json({
+          error: `Para cursos por clases solo puedes pagar:\n` +
+            `• $${MATRICULA.toFixed(2)} (matrícula + primera clase)\n` +
+            `• $${CURSO_COMPLETO.toFixed(2)} (curso completo: ${numero_clases} clases)`
+        });
+      }
+    }
   }
 
   // ========================================
@@ -189,10 +309,71 @@ exports.createSolicitud = async (req, res) => {
     }
 
     cursoSeleccionado = cursosDisponibles[0];
-    console.log(`✅ Curso seleccionado: ${cursoSeleccionado.nombre} (${cursoSeleccionado.horario}) - Cupos: ${cursoSeleccionado.cupos_disponibles}/${cursoSeleccionado.capacidad_maxima}`);
+    console.log(`Curso seleccionado: ${cursoSeleccionado.nombre} (${cursoSeleccionado.horario}) - Cupos: ${cursoSeleccionado.cupos_disponibles}/${cursoSeleccionado.capacidad_maxima}`);
   } catch (e) {
     console.error('Error validando cupos disponibles:', e);
     return res.status(500).json({ error: 'Error verificando disponibilidad de cupos' });
+  }
+
+  let cursoPromocionalSeleccionado = null;
+  let promocionIdNum = null;
+
+  if (id_promocion_seleccionada) {
+    promocionIdNum = Number(id_promocion_seleccionada);
+
+    if (!Number.isInteger(promocionIdNum) || promocionIdNum <= 0) {
+      return res.status(400).json({ error: 'La promoción seleccionada es inválida' });
+    }
+
+    try {
+      const [promocionRows] = await pool.execute(
+        `SELECT 
+           p.id_promocion,
+           p.nombre_promocion,
+           p.activa,
+           p.cupos_disponibles AS cupos_promocion_config,
+           p.cupos_utilizados,
+           c.id_curso   AS id_curso_promocional,
+           c.nombre     AS nombre_curso_promocional,
+           c.estado     AS estado_curso_promocional,
+           c.cupos_disponibles AS cupos_disponibles_promocional,
+           c.capacidad_maxima  AS capacidad_promocional
+         FROM promociones p
+         INNER JOIN cursos c ON c.id_curso = p.id_curso_promocional
+         WHERE p.id_promocion = ?`,
+        [promocionIdNum]
+      );
+
+      if (!promocionRows.length) {
+        return res.status(404).json({ error: 'La promoción seleccionada no existe' });
+      }
+
+      const promocion = promocionRows[0];
+
+      if (!promocion.activa) {
+        return res.status(400).json({ error: 'La promoción seleccionada no está activa' });
+      }
+
+      if (promocion.estado_curso_promocional !== 'activo') {
+        return res.status(400).json({ error: 'El curso promocional no está disponible' });
+      }
+
+      if (promocion.cupos_disponibles_promocional <= 0) {
+        return res.status(400).json({ error: 'El curso promocional ya no tiene cupos disponibles' });
+      }
+
+      if (
+        promocion.cupos_promocion_config !== null &&
+        promocion.cupos_utilizados >= promocion.cupos_promocion_config
+      ) {
+        return res.status(400).json({ error: 'La promoción seleccionada ya alcanzó su límite de cupos' });
+      }
+
+      cursoPromocionalSeleccionado = promocion;
+    } catch (error) {
+      console.error('Error validando promoción seleccionada:', error);
+      return res.status(500).json({ error: 'Error validando la promoción seleccionada' });
+    }
   }
 
   // Validar número de comprobante único (GLOBAL - nunca se puede repetir)
@@ -213,7 +394,55 @@ exports.createSolicitud = async (req, res) => {
     }
   }
 
-  // Procesar archivos
+  // Declarar variable de archivo de estatus legal ANTES de usarla
+  const documentoEstatusLegalFile = req.files?.documento_estatus_legal?.[0];
+
+  // ========================================
+  // SUBIR ARCHIVOS A CLOUDINARY (DUAL STORAGE)
+  // ========================================
+  let comprobanteCloudinary = null;
+  let documentoIdentificacionCloudinary = null;
+  let documentoEstatusLegalCloudinary = null;
+
+  try {
+    // Subir comprobante a Cloudinary
+    if (comprobanteFile) {
+      console.log('Subiendo comprobante a Cloudinary...');
+      comprobanteCloudinary = await cloudinaryService.uploadFile(
+        comprobanteFile.buffer,
+        'comprobantes',
+        `comprobante-${Date.now()}-${Math.random().toString(36).substring(7)}`
+      );
+      console.log(' Comprobante subido:', comprobanteCloudinary.secure_url);
+    }
+
+    // Subir documento de identificación a Cloudinary
+    if (documentoIdentificacionFile) {
+      console.log('Subiendo documento de identificación a Cloudinary...');
+      documentoIdentificacionCloudinary = await cloudinaryService.uploadFile(
+        documentoIdentificacionFile.buffer,
+        'documentos',
+        `documento-${identificacion_solicitante}-${Date.now()}`
+      );
+      console.log(' Documento de identificación subido:', documentoIdentificacionCloudinary.secure_url);
+    }
+
+    // Subir documento de estatus legal a Cloudinary (si existe)
+    if (documentoEstatusLegalFile) {
+      console.log(' Subiendo documento de estatus legal a Cloudinary...');
+      documentoEstatusLegalCloudinary = await cloudinaryService.uploadFile(
+        documentoEstatusLegalFile.buffer,
+        'documentos',
+        `estatus-legal-${identificacion_solicitante}-${Date.now()}`
+      );
+      console.log(' Documento de estatus legal subido:', documentoEstatusLegalCloudinary.secure_url);
+    }
+  } catch (cloudinaryError) {
+    console.error(' Error subiendo archivos a Cloudinary:', cloudinaryError);
+    // Continuar sin Cloudinary (fallback a LONGBLOB)
+  }
+
+  // Procesar archivos para LONGBLOB (respaldo)
   const comprobanteBuffer = comprobanteFile ? comprobanteFile.buffer : null;
   const comprobanteMime = comprobanteFile ? comprobanteFile.mimetype : null;
   const comprobanteSizeKb = comprobanteFile ? Math.ceil(comprobanteFile.size / 1024) : null;
@@ -224,7 +453,7 @@ exports.createSolicitud = async (req, res) => {
   const documentoIdentificacionSizeKb = documentoIdentificacionFile ? Math.ceil(documentoIdentificacionFile.size / 1024) : null;
   const documentoIdentificacionNombreOriginal = documentoIdentificacionFile ? documentoIdentificacionFile.originalname : null;
 
-  const documentoEstatusLegalFile = req.files?.documento_estatus_legal?.[0];
+  // documentoEstatusLegalFile ya declarado arriba antes del bloque de Cloudinary
   const documentoEstatusLegalBuffer = documentoEstatusLegalFile ? documentoEstatusLegalFile.buffer : null;
   const documentoEstatusLegalMime = documentoEstatusLegalFile ? documentoEstatusLegalFile.mimetype : null;
   const documentoEstatusLegalSizeKb = documentoEstatusLegalFile ? Math.ceil(documentoEstatusLegalFile.size / 1024) : null;
@@ -234,11 +463,15 @@ exports.createSolicitud = async (req, res) => {
 
   // USAR TRANSACCIÓN PARA GARANTIZAR CONSISTENCIA (insertar solicitud + restar cupo)
   const connection = await pool.getConnection();
+  const cuposEventos = [];
+  let cupoPrincipalRecalculado = false;
+  let cupoPromoRecalculado = false;
+  let promoCursoIdParaRecalcular = null;
 
   try {
     await connection.beginTransaction();
 
-    // 1. INSERTAR SOLICITUD CON id_curso (33 columnas)
+    // 1. INSERTAR SOLICITUD CON id_curso + URLs de Cloudinary (39 columnas)
     const sql = `INSERT INTO solicitudes_matricula (
       codigo_solicitud,
       identificacion_solicitante,
@@ -262,18 +495,24 @@ exports.createSolicitud = async (req, res) => {
       comprobante_mime,
       comprobante_size_kb,
       comprobante_nombre_original,
+      comprobante_pago_url,
+      comprobante_pago_public_id,
       documento_identificacion,
       documento_identificacion_mime,
       documento_identificacion_size_kb,
       documento_identificacion_nombre_original,
+      documento_identificacion_url,
+      documento_identificacion_public_id,
       documento_estatus_legal,
       documento_estatus_legal_mime,
       documento_estatus_legal_size_kb,
       documento_estatus_legal_nombre_original,
+      documento_estatus_legal_url,
+      documento_estatus_legal_public_id,
       id_estudiante_existente,
       contacto_emergencia,
       id_promocion_seleccionada
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const values = [
       codigo,
@@ -298,17 +537,23 @@ exports.createSolicitud = async (req, res) => {
       comprobanteMime,
       comprobanteSizeKb,
       comprobanteNombreOriginal,
+      comprobanteCloudinary?.secure_url || null,
+      comprobanteCloudinary?.public_id || null,
       documentoIdentificacionBuffer,
       documentoIdentificacionMime,
       documentoIdentificacionSizeKb,
       documentoIdentificacionNombreOriginal,
+      documentoIdentificacionCloudinary?.secure_url || null,
+      documentoIdentificacionCloudinary?.public_id || null,
       documentoEstatusLegalBuffer,
       documentoEstatusLegalMime,
       documentoEstatusLegalSizeKb,
       documentoEstatusLegalNombreOriginal,
+      documentoEstatusLegalCloudinary?.secure_url || null,
+      documentoEstatusLegalCloudinary?.public_id || null,
       id_estudiante_existente ? Number(id_estudiante_existente) : null,
       contacto_emergencia || null,
-      id_promocion_seleccionada ? Number(id_promocion_seleccionada) : null
+      promocionIdNum
     ];
 
     const [result] = await connection.execute(sql, values);
@@ -319,13 +564,66 @@ exports.createSolicitud = async (req, res) => {
       [cursoSeleccionado.id_curso]
     );
 
-    console.log(`📉 Cupo restado del curso ${cursoSeleccionado.codigo_curso}. Cupos restantes: ${cursoSeleccionado.cupos_disponibles - 1}`);
+    console.log(`Cupo restado del curso ${cursoSeleccionado.codigo_curso}. Cupos restantes: ${cursoSeleccionado.cupos_disponibles - 1}`);
+
+    await recalcularCuposCurso(connection, cursoSeleccionado.id_curso);
+
+    cuposEventos.push({
+      id_curso: cursoSeleccionado.id_curso,
+      tipo: 'curso_principal',
+      accion: 'reserva',
+      motivo: 'solicitud_creada',
+      timestamp: new Date().toISOString()
+    });
+
+    // 2.1 RESERVAR CUPO DEL CURSO PROMOCIONAL SI APLICA
+    if (cursoPromocionalSeleccionado) {
+      const [cupoPromoResult] = await connection.execute(
+        'UPDATE cursos SET cupos_disponibles = cupos_disponibles - 1 WHERE id_curso = ? AND cupos_disponibles > 0',
+        [cursoPromocionalSeleccionado.id_curso_promocional]
+      );
+
+      if (cupoPromoResult.affectedRows === 0) {
+        await connection.rollback();
+        connection.release();
+        return res.status(409).json({ error: 'El curso promocional se quedó sin cupos. Intenta con otra promoción.' });
+      }
+
+      console.log(
+        `Cupo restado del curso promocional ${cursoPromocionalSeleccionado.nombre_curso_promocional}. ` +
+        `Cupos restantes: ${cursoPromocionalSeleccionado.cupos_disponibles_promocional - 1}`
+      );
+
+      await recalcularCuposCurso(connection, cursoPromocionalSeleccionado.id_curso_promocional);
+
+      cuposEventos.push({
+        id_curso: cursoPromocionalSeleccionado.id_curso_promocional,
+        tipo: 'curso_promocional',
+        accion: 'reserva',
+        motivo: 'solicitud_creada',
+        timestamp: new Date().toISOString()
+      });
+    }
 
     // 3. COMMIT DE LA TRANSACCIÓN
+    if (!cupoPrincipalRecalculado && cursoSeleccionado.id_curso) {
+      await recalcularCuposCurso(connection, cursoSeleccionado.id_curso);
+    }
+
+    if (!cupoPromoRecalculado && promoCursoIdParaRecalcular) {
+      await recalcularCuposCurso(connection, promoCursoIdParaRecalcular);
+    }
+
     await connection.commit();
     connection.release();
 
-    // 4. ENVIAR EMAIL DE NOTIFICACIÓN AL ADMIN (asíncrono, no bloquea la respuesta)
+    // 4. INVALIDAR CACHÉ DE CURSOS DISPONIBLES (los cupos cambiaron)
+    cacheService.invalidateCursosDisponibles();
+    console.log('Caché invalidado: nueva solicitud creada');
+
+    cuposEventos.forEach(evento => emitSocketEvent(req, 'cupos_actualizados', evento));
+
+    // 5. ENVIAR EMAIL DE NOTIFICACIÓN AL ADMIN (asíncrono, no bloquea la respuesta)
     setImmediate(async () => {
       try {
         // Obtener nombre del tipo de curso para el email
@@ -348,8 +646,8 @@ exports.createSolicitud = async (req, res) => {
         };
 
         await enviarNotificacionNuevaMatricula(datosEmail);
-        console.log('✅ Email de notificación enviado al admin');
-        
+        console.log(' Email de notificación enviado al admin');
+
         // Notificar vía WebSocket también
         try {
           notificarNuevaSolicitudMatricula(req, {
@@ -359,26 +657,26 @@ exports.createSolicitud = async (req, res) => {
             curso_nombre: nombreCurso,
             email: email_solicitante
           });
-          
+
           // Contar matrículas pendientes totales
           const [pendientes] = await pool.query(
             'SELECT COUNT(*) as total FROM solicitudes_matricula WHERE estado = ?',
             ['pendiente']
           );
-          
+
           if (pendientes[0].total > 0) {
             notificarMatriculasPendientes(req, pendientes[0].total);
           }
         } catch (wsError) {
-          console.error('❌ Error enviando notificación WebSocket (no afecta la solicitud):', wsError);
+          console.error(' Error enviando notificación WebSocket (no afecta la solicitud):', wsError);
         }
       } catch (emailError) {
-        console.error('❌ Error enviando email de notificación (no afecta la solicitud):', emailError);
+        console.error(' Error enviando email de notificación (no afecta la solicitud):', emailError);
       }
     });
 
     // Ya no se usa emitSocketEvent, solo notificarNuevaSolicitudMatricula arriba
-    
+
     return res.status(201).json({
       ok: true,
       id_solicitud: result.insertId,
@@ -547,7 +845,8 @@ exports.getDocumentoEstatusLegal = async (req, res) => {
 
 exports.updateDecision = async (req, res) => {
   const connection = await pool.getConnection();
-  
+  const cuposEventos = [];
+
   try {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ error: 'ID inválido' });
@@ -557,6 +856,8 @@ exports.updateDecision = async (req, res) => {
     if (!estadosPermitidos.includes(estado)) {
       return res.status(400).json({ error: 'Estado inválido' });
     }
+
+    const estadosConReservaActiva = ['pendiente', 'observaciones'];
 
     await connection.beginTransaction();
 
@@ -577,6 +878,7 @@ exports.updateDecision = async (req, res) => {
     }
 
     const solicitud = solicitudRows[0];
+    const promoAnteriorId = solicitud.id_promocion_seleccionada;
     const estadoAnterior = solicitud.estado;
 
     // 2. Actualizar estado de la solicitud
@@ -594,8 +896,8 @@ exports.updateDecision = async (req, res) => {
 
     // 3. SI SE APRUEBA Y TIENE PROMOCIÓN → CREAR MATRÍCULA DEL CURSO PROMOCIONAL
     if (estado === 'aprobado' && solicitud.id_promocion_seleccionada) {
-      console.log(`🎁 Solicitud aprobada con promoción ID ${solicitud.id_promocion_seleccionada}`);
-      
+      console.log(` Solicitud aprobada con promoción ID ${solicitud.id_promocion_seleccionada}`);
+
       // Obtener datos de la promoción
       const [promoRows] = await connection.execute(
         `SELECT p.id_curso_promocional, p.meses_gratis, p.nombre_promocion,
@@ -608,7 +910,8 @@ exports.updateDecision = async (req, res) => {
 
       if (promoRows.length > 0) {
         const promo = promoRows[0];
-        console.log(`🎓 Curso promocional: ${promo.curso_nombre} (ID: ${promo.id_curso_promocional})`);
+        promoCursoIdParaRecalcular = promo.id_curso_promocional;
+        console.log(` Curso promocional: ${promo.curso_nombre} (ID: ${promo.id_curso_promocional})`);
 
         // Verificar si ya existe matrícula del curso promocional
         const [matriculaExistenteRows] = await connection.execute(
@@ -620,7 +923,7 @@ exports.updateDecision = async (req, res) => {
         if (matriculaExistenteRows.length === 0) {
           // Generar código de matrícula para el curso promocional
           const codigoMatricula = `MAT-PROMO-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
-          
+
           // Crear matrícula del curso promocional con monto 0 (gratis)
           const [resultMatricula] = await connection.execute(
             `INSERT INTO matriculas 
@@ -629,7 +932,7 @@ exports.updateDecision = async (req, res) => {
             [solicitud.id_estudiante_existente, promo.id_curso_promocional, codigoMatricula]
           );
 
-          console.log(`✅ Matrícula promocional creada: ${codigoMatricula} para curso ${promo.curso_nombre}`);
+          console.log(` Matrícula promocional creada: ${codigoMatricula} para curso ${promo.curso_nombre}`);
 
           // Crear registro en estudiante_promocion
           await connection.execute(
@@ -646,7 +949,7 @@ exports.updateDecision = async (req, res) => {
             ]
           );
 
-          console.log(`🎉 Registro de promoción creado para estudiante ${solicitud.id_estudiante_existente}`);
+          console.log(` Registro de promoción creado para estudiante ${solicitud.id_estudiante_existente}`);
 
           // Incrementar cupos_utilizados de la promoción
           await connection.execute(
@@ -654,26 +957,85 @@ exports.updateDecision = async (req, res) => {
             [solicitud.id_promocion_seleccionada]
           );
 
-          console.log(`📊 Cupo de promoción utilizado (ID: ${solicitud.id_promocion_seleccionada})`);
+          console.log(` Cupo de promoción utilizado (ID: ${solicitud.id_promocion_seleccionada})`);
+
+          // RECALCULAR CUPOS DEL CURSO PROMOCIONAL (ahora tiene una matrícula nueva)
+          await recalcularCuposCurso(connection, promo.id_curso_promocional);
+          cupoPromoRecalculado = true;
+
+          cuposEventos.push({
+            id_curso: promo.id_curso_promocional,
+            tipo: 'curso_promocional',
+            accion: 'matricula_creada',
+            motivo: 'solicitud_aprobada_con_promocion',
+            timestamp: new Date().toISOString()
+          });
+
+          console.log(` Cupos recalculados para curso promocional ID ${promo.id_curso_promocional}`);
         } else {
-          console.log(`⚠️ Ya existe matrícula del curso promocional para este estudiante`);
+          console.log(` Ya existe matrícula del curso promocional para este estudiante`);
         }
       } else {
-        console.log(`⚠️ No se encontró la promoción ID ${solicitud.id_promocion_seleccionada}`);
+        console.log(` No se encontró la promoción ID ${solicitud.id_promocion_seleccionada}`);
       }
     }
 
-    // 4. SI SE RECHAZA Y TIENE id_curso → SUMAR 1 CUPO DE VUELTA
-    if (estado === 'rechazado' && solicitud.id_curso && estadoAnterior === 'pendiente') {
-      await connection.execute(
-        'UPDATE cursos SET cupos_disponibles = cupos_disponibles + 1 WHERE id_curso = ?',
-        [solicitud.id_curso]
-      );
-      console.log(`📈 Cupo devuelto al curso ID ${solicitud.id_curso} por rechazo de solicitud ${id}`);
+    // 4. SI SE RECHAZA → DEVOLVER CUPOS RESERVADOS
+    if (estado === 'rechazado' && estadosConReservaActiva.includes(estadoAnterior)) {
+      if (solicitud.id_curso) {
+        await connection.execute(
+          'UPDATE cursos SET cupos_disponibles = cupos_disponibles + 1 WHERE id_curso = ?',
+          [solicitud.id_curso]
+        );
+        console.log(` Cupo devuelto al curso ID ${solicitud.id_curso} por rechazo de solicitud ${id}`);
+        await recalcularCuposCurso(connection, solicitud.id_curso);
+        cupoPrincipalRecalculado = true;
+        cuposEventos.push({
+          id_curso: solicitud.id_curso,
+          tipo: 'curso_principal',
+          accion: 'liberacion',
+          motivo: 'solicitud_rechazada',
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      if (solicitud.id_promocion_seleccionada) {
+        const [promoCursoRows] = await connection.execute(
+          'SELECT id_curso_promocional FROM promociones WHERE id_promocion = ?',
+          [solicitud.id_promocion_seleccionada]
+        );
+
+        if (promoCursoRows.length) {
+          await connection.execute(
+            'UPDATE cursos SET cupos_disponibles = cupos_disponibles + 1 WHERE id_curso = ?',
+            [promoCursoRows[0].id_curso_promocional]
+          );
+          console.log(
+            ` Cupo devuelto al curso promocional ${promoCursoRows[0].id_curso_promocional} ` +
+            `por rechazo de solicitud ${id}`
+          );
+          await recalcularCuposCurso(connection, promoCursoRows[0].id_curso_promocional);
+          promoCursoIdParaRecalcular = promoCursoRows[0].id_curso_promocional;
+          cupoPromoRecalculado = true;
+          cuposEventos.push({
+            id_curso: promoCursoRows[0].id_curso_promocional,
+            tipo: 'curso_promocional',
+            accion: 'liberacion',
+            motivo: 'solicitud_rechazada',
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
     }
 
     await connection.commit();
     connection.release();
+
+    // Invalidar caché de cursos disponibles (los cupos cambiaron)
+    cacheService.invalidateCursosDisponibles();
+    console.log(' Caché invalidado: solicitud aprobada/rechazada');
+
+    cuposEventos.forEach(evento => emitSocketEvent(req, 'cupos_actualizados', evento));
 
     emitSocketEvent(req, 'solicitud_actualizada', {
       id_solicitud: id,
@@ -693,8 +1055,9 @@ exports.updateDecision = async (req, res) => {
   }
 };
 
-// 🎁 ACTUALIZAR PROMOCIÓN SELECCIONADA EN UNA SOLICITUD
+// ACTUALIZAR PROMOCIÓN SELECCIONADA EN UNA SOLICITUD
 exports.updatePromocionSeleccionada = async (req, res) => {
+  let connection;
   try {
     const id_solicitud = Number(req.params.id);
     const { id_promocion_seleccionada } = req.body;
@@ -707,53 +1070,185 @@ exports.updatePromocionSeleccionada = async (req, res) => {
       return res.status(400).json({ error: 'ID de promoción requerido' });
     }
 
-    console.log(`🎁 Actualizando solicitud ${id_solicitud} con promoción ${id_promocion_seleccionada}`);
+    const nuevaPromocionId = Number(id_promocion_seleccionada);
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const cuposEventos = [];
 
-    // Verificar que la promoción existe y está activa
-    const [promoRows] = await pool.execute(
-      `SELECT id_promocion, nombre_promocion, activa, cupos_disponibles, cupos_utilizados
-       FROM promociones
-       WHERE id_promocion = ?`,
-      [id_promocion_seleccionada]
+    const [solicitudRows] = await connection.execute(
+      `SELECT id_promocion_seleccionada, estado, id_estudiante_existente
+       FROM solicitudes_matricula
+       WHERE id_solicitud = ?`,
+      [id_solicitud]
     );
 
-    if (promoRows.length === 0) {
+    if (!solicitudRows.length) {
+      await connection.rollback();
+      connection.release();
+      return res.status(404).json({ error: 'Solicitud no encontrada' });
+    }
+
+    const solicitud = solicitudRows[0];
+    const promoAnteriorId = solicitud.id_promocion_seleccionada;
+    const estadosPermitidos = ['pendiente', 'observaciones'];
+
+    if (!estadosPermitidos.includes(solicitud.estado)) {
+      await connection.rollback();
+      connection.release();
+      return res.status(400).json({ error: 'Solo puedes actualizar la promoción de solicitudes pendientes u observaciones' });
+    }
+
+    if (solicitud.id_promocion_seleccionada === nuevaPromocionId) {
+      await connection.rollback();
+      connection.release();
+      return res.json({ ok: true, message: 'La solicitud ya tiene asignada esta promoción' });
+    }
+
+    const [promoRows] = await connection.execute(
+      `SELECT 
+         p.id_promocion,
+         p.nombre_promocion,
+         p.activa,
+         p.cupos_disponibles AS cupos_promocion_config,
+         p.cupos_utilizados,
+         c.id_curso AS id_curso_promocional,
+         c.nombre   AS nombre_curso_promocional,
+         c.estado   AS estado_curso_promocional,
+         c.cupos_disponibles AS cupos_disponibles_promocional
+       FROM promociones p
+       INNER JOIN cursos c ON c.id_curso = p.id_curso_promocional
+       WHERE p.id_promocion = ?`,
+      [nuevaPromocionId]
+    );
+
+    if (!promoRows.length) {
+      await connection.rollback();
+      connection.release();
       return res.status(404).json({ error: 'Promoción no encontrada' });
     }
 
     const promo = promoRows[0];
 
     if (!promo.activa) {
+      await connection.rollback();
+      connection.release();
       return res.status(400).json({ error: 'La promoción no está activa' });
     }
 
-    // Validar cupos solo si cupos_disponibles no es NULL (NULL = ilimitados)
-    if (promo.cupos_disponibles !== null && promo.cupos_utilizados >= promo.cupos_disponibles) {
+    if (promo.estado_curso_promocional !== 'activo') {
+      await connection.rollback();
+      connection.release();
+      return res.status(400).json({ error: 'El curso promocional no está disponible' });
+    }
+
+    if (promo.cupos_disponibles_promocional <= 0) {
+      await connection.rollback();
+      connection.release();
+      return res.status(400).json({ error: 'El curso promocional no tiene cupos disponibles' });
+    }
+
+    if (
+      promo.cupos_promocion_config !== null &&
+      promo.cupos_utilizados >= promo.cupos_promocion_config
+    ) {
+      await connection.rollback();
+      connection.release();
       return res.status(400).json({ error: 'La promoción no tiene cupos disponibles' });
     }
 
-    // Actualizar la solicitud con la promoción seleccionada
-    await pool.execute(
+    if (solicitud.id_estudiante_existente) {
+      const estudianteId = Number(solicitud.id_estudiante_existente);
+      const [matriculaPromoRows] = await connection.execute(
+        `SELECT 1 FROM matriculas
+         WHERE id_estudiante = ?
+           AND id_curso = ?
+           AND estado IN ('activa','suspendida','finalizada')
+         LIMIT 1`,
+        [estudianteId, promo.id_curso_promocional]
+      );
+
+      if (matriculaPromoRows.length) {
+        await connection.rollback();
+        connection.release();
+        return res.status(400).json({
+          error: 'Ya tienes este curso promocional asociado a tu matrícula.'
+        });
+      }
+    }
+
+    const [reservaPromo] = await connection.execute(
+      'UPDATE cursos SET cupos_disponibles = cupos_disponibles - 1 WHERE id_curso = ? AND cupos_disponibles > 0',
+      [promo.id_curso_promocional]
+    );
+
+    if (!reservaPromo.affectedRows) {
+      await connection.rollback();
+      connection.release();
+      return res.status(409).json({ error: 'El curso promocional se quedó sin cupos. Intenta con otra promoción.' });
+    }
+
+    await connection.execute(
       `UPDATE solicitudes_matricula 
        SET id_promocion_seleccionada = ?
        WHERE id_solicitud = ?`,
-      [id_promocion_seleccionada, id_solicitud]
+      [nuevaPromocionId, id_solicitud]
     );
 
-    console.log(`✅ Solicitud ${id_solicitud} actualizada con promoción "${promo.nombre_promocion}"`);
+    await recalcularCuposCurso(connection, promo.id_curso_promocional);
 
-    return res.json({ 
-      ok: true, 
+    cuposEventos.push({
+      id_curso: promo.id_curso_promocional,
+      tipo: 'curso_promocional',
+      accion: 'reserva',
+      motivo: 'promocion_actualizada',
+      timestamp: new Date().toISOString()
+    });
+
+    if (promoAnteriorId) {
+      const [promoAnteriorRows] = await connection.execute(
+        'SELECT id_curso_promocional FROM promociones WHERE id_promocion = ?',
+        [promoAnteriorId]
+      );
+
+      if (promoAnteriorRows.length) {
+        await connection.execute(
+          'UPDATE cursos SET cupos_disponibles = cupos_disponibles + 1 WHERE id_curso = ?',
+          [promoAnteriorRows[0].id_curso_promocional]
+        );
+        await recalcularCuposCurso(connection, promoAnteriorRows[0].id_curso_promocional);
+        cuposEventos.push({
+          id_curso: promoAnteriorRows[0].id_curso_promocional,
+          tipo: 'curso_promocional',
+          accion: 'liberacion',
+          motivo: 'promocion_actualizada',
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+
+    await connection.commit();
+    connection.release();
+
+    cuposEventos.forEach(evento => emitSocketEvent(req, 'cupos_actualizados', evento));
+
+    console.log(` Solicitud ${id_solicitud} actualizada con promoción "${promo.nombre_promocion}"`);
+
+    return res.json({
+      ok: true,
       message: 'Promoción guardada exitosamente',
       data: {
         id_solicitud,
-        id_promocion_seleccionada,
+        id_promocion_seleccionada: nuevaPromocionId,
         nombre_promocion: promo.nombre_promocion
       }
     });
 
   } catch (error) {
-    console.error('❌ Error actualizando promoción en solicitud:', error);
+    if (connection) {
+      await connection.rollback();
+      connection.release();
+    }
+    console.error(' Error actualizando promoción en solicitud:', error);
     return res.status(500).json({ error: 'Error al actualizar la promoción' });
   }
 };
@@ -911,7 +1406,7 @@ exports.generarReporteExcel = async (req, res) => {
           right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
         };
       });
-      
+
       if (rowNumber > 1 && rowNumber % 2 === 0) {
         row.fill = {
           type: 'pattern',
@@ -980,7 +1475,7 @@ exports.generarReporteExcel = async (req, res) => {
           right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
         };
       });
-      
+
       if (rowNumber > 1 && rowNumber % 2 === 0) {
         row.fill = {
           type: 'pattern',
@@ -1009,9 +1504,9 @@ exports.generarReporteExcel = async (req, res) => {
 
     // Subtítulo con fecha
     sheet3.mergeCells('A2:F2');
-    sheet3.getCell('A2').value = `Generado el: ${new Date().toLocaleDateString('es-EC', { 
-      year: 'numeric', 
-      month: 'long', 
+    sheet3.getCell('A2').value = `Generado el: ${new Date().toLocaleDateString('es-EC', {
+      year: 'numeric',
+      month: 'long',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
@@ -1044,7 +1539,7 @@ exports.generarReporteExcel = async (req, res) => {
 
     const stats = resumenGeneral[0];
     const total = stats.total_solicitudes;
-    
+
     // Datos con porcentajes
     const datosEstadisticos = [
       { estado: '✓ Aprobadas', cantidad: stats.total_aprobadas, color: 'FF10B981' },
@@ -1059,11 +1554,11 @@ exports.generarReporteExcel = async (req, res) => {
       sheet3.getCell(`A${row}`).value = dato.estado;
       sheet3.getCell(`B${row}`).value = dato.cantidad;
       sheet3.getCell(`C${row}`).value = `${porcentaje}%`;
-      
+
       sheet3.getCell(`B${row}`).alignment = { horizontal: 'center' };
       sheet3.getCell(`C${row}`).alignment = { horizontal: 'center' };
       sheet3.getCell(`C${row}`).font = { bold: true, color: { argb: dato.color } };
-      
+
       row++;
     });
 
@@ -1117,10 +1612,10 @@ exports.generarReporteExcel = async (req, res) => {
       sheet3.getCell(`C${cursoRow}`).value = curso.tipo_curso;
       sheet3.getCell(`D${cursoRow}`).value = curso.horario;
       sheet3.getCell(`E${cursoRow}`).value = curso.total_estudiantes;
-      
+
       sheet3.getCell(`E${cursoRow}`).alignment = { horizontal: 'center' };
       sheet3.getCell(`E${cursoRow}`).font = { bold: true, color: { argb: 'FF10B981' } };
-      
+
       // Filas alternadas
       if (index % 2 === 0) {
         ['A', 'B', 'C', 'D', 'E'].forEach(col => {
@@ -1131,7 +1626,7 @@ exports.generarReporteExcel = async (req, res) => {
           };
         });
       }
-      
+
       cursoRow++;
     });
 
@@ -1170,7 +1665,7 @@ exports.generarReporteExcel = async (req, res) => {
     // Generar archivo
     const buffer = await workbook.xlsx.writeBuffer();
     const fecha = new Date().toISOString().split('T')[0];
-    
+
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=Reporte_Matriculas_${fecha}.xlsx`);
     res.send(buffer);

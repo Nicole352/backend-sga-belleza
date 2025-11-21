@@ -1,34 +1,48 @@
 const express = require('express');
 const estudiantesController = require('../controllers/estudiantes.controller');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, requireRole } = require('../middleware/auth');
+const { pollingLimiter } = require('../middleware/rateLimit');
 
 const router = express.Router();
 
 // POST /api/estudiantes/crear-desde-solicitud
-router.post('/crear-desde-solicitud', estudiantesController.createEstudianteFromSolicitud);
+// Solo administrativos pueden procesar solicitudes
+router.post('/crear-desde-solicitud', authMiddleware, requireRole(['admin', 'administrativo', 'superadmin']), estudiantesController.createEstudianteFromSolicitud);
 
 // GET /api/estudiantes/verificar - Verificar si estudiante existe por identificación
-router.get('/verificar', estudiantesController.verificarEstudiante);
+// PÚBLICO (con Rate Limit): Necesario para el formulario de inscripción
+router.get('/verificar', pollingLimiter, estudiantesController.verificarEstudiante);
 
 // GET /api/estudiantes/reporte/excel - Generar reporte Excel
-router.get('/reporte/excel', estudiantesController.generarReporteExcel);
+// Solo administrativos
+router.get('/reporte/excel', authMiddleware, requireRole(['admin', 'administrativo', 'superadmin']), estudiantesController.generarReporteExcel);
 
 // GET /api/estudiantes - Obtener todos los estudiantes
-router.get('/', estudiantesController.getEstudiantes);
+// Solo administrativos
+router.get('/', authMiddleware, requireRole(['admin', 'administrativo', 'superadmin']), estudiantesController.getEstudiantes);
 
 // GET /api/estudiantes/mis-cursos - Obtener cursos matriculados del estudiante autenticado
+// Estudiante autenticado (cualquier rol con token válido)
 router.get('/mis-cursos', authMiddleware, estudiantesController.getMisCursos);
 
+// GET /api/estudiantes/historial-academico - Obtener historial académico (cursos activos y finalizados)
+// Estudiante autenticado
+router.get('/historial-academico', authMiddleware, estudiantesController.getHistorialAcademico);
+
 // GET /api/estudiantes/mis-pagos-mensuales - Obtener pagos mensuales del estudiante autenticado
+// Estudiante autenticado
 router.get('/mis-pagos-mensuales', authMiddleware, estudiantesController.getMisPagosMenuales);
 
 // GET /api/estudiantes/:id - Obtener estudiante por ID
-router.get('/:id', estudiantesController.getEstudianteById);
+// Solo administrativos (para ver detalles de cualquier estudiante)
+router.get('/:id', authMiddleware, requireRole(['admin', 'administrativo', 'superadmin']), estudiantesController.getEstudianteById);
 
 // PUT /api/estudiantes/:id - Actualizar estudiante
-router.put('/:id', estudiantesController.updateEstudiante);
+// Solo administrativos
+router.put('/:id', authMiddleware, requireRole(['admin', 'administrativo', 'superadmin']), estudiantesController.updateEstudiante);
 
 // GET /api/estudiantes/debug-recientes - Ver estudiantes recientes (TEMPORAL)
-router.get('/debug-recientes', estudiantesController.getEstudiantesRecientes);
+// Solo administrativos
+router.get('/debug-recientes', authMiddleware, requireRole(['admin', 'administrativo', 'superadmin']), estudiantesController.getEstudiantesRecientes);
 
 module.exports = router;

@@ -10,8 +10,11 @@ router.get('/', docentesController.getDocentes);
 router.get('/stats/general', docentesController.getDocentesStats);
 
 // ===== RUTAS PARA EL PANEL DEL DOCENTE (requieren autenticación) =====
-// GET /api/docentes/mis-cursos - Obtener cursos asignados al docente autenticado
+// GET /api/docentes/mis-cursos - Obtener cursos ACTIVOS del docente autenticado
 router.get('/mis-cursos', authMiddleware, docentesController.getMisCursos);
+
+// GET /api/docentes/todos-mis-cursos - Obtener TODOS los cursos (activos y finalizados) del docente
+router.get('/todos-mis-cursos', authMiddleware, docentesController.getTodosMisCursos);
 
 // GET /api/docentes/mis-estudiantes - Obtener estudiantes del docente autenticado
 router.get('/mis-estudiantes', authMiddleware, docentesController.getMisEstudiantes);

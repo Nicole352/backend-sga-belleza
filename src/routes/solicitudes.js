@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const solicitudesController = require('../controllers/solicitudes.controller');
+const { strictLimiter } = require('../middleware/rateLimit');
 
 const router = express.Router();
 
@@ -23,11 +24,16 @@ const upload = multer({
 });
 
 // POST /api/solicitudes
-router.post('/', upload.fields([
-  { name: 'comprobante', maxCount: 1 },
-  { name: 'documento_identificacion', maxCount: 1 },
-  { name: 'documento_estatus_legal', maxCount: 1 }
-]), solicitudesController.createSolicitud);
+// 🔒 PROTEGIDO: Rate limiting para prevenir spam (30 req/min por IP)
+router.post('/',
+  strictLimiter,
+  upload.fields([
+    { name: 'comprobante', maxCount: 1 },
+    { name: 'documento_identificacion', maxCount: 1 },
+    { name: 'documento_estatus_legal', maxCount: 1 }
+  ]),
+  solicitudesController.createSolicitud
+);
 
 // GET /api/solicitudes (admin)
 router.get('/', solicitudesController.getSolicitudes);

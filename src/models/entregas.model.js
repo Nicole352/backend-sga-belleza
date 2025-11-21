@@ -28,7 +28,7 @@ class EntregasModel {
       WHERE e.id_tarea = ?
       ORDER BY u.apellido ASC, u.nombre ASC
     `, [id_tarea]);
-    
+
     return entregas;
   }
 
@@ -65,7 +65,7 @@ class EntregasModel {
       LEFT JOIN docentes d ON cal.calificado_por = d.id_docente
       WHERE e.id_entrega = ?
     `, [id_entrega]);
-    
+
     return entregas.length > 0 ? entregas[0] : null;
   }
 
@@ -81,8 +81,9 @@ class EntregasModel {
       INSERT INTO entregas_tareas (
         id_tarea, id_estudiante, 
         archivo_entregado, archivo_mime, archivo_size_kb, archivo_nombre_original,
+        archivo_url, archivo_public_id,
         comentario_estudiante, estado
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'entregado')
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'entregado')
     `, [
       id_tarea,
       id_estudiante,
@@ -90,6 +91,8 @@ class EntregasModel {
       archivoData ? archivoData.mime : null,
       archivoData ? archivoData.sizeKb : null,
       archivoData ? archivoData.nombreOriginal : null,
+      archivoData ? archivoData.url : null,
+      archivoData ? archivoData.publicId : null,
       comentario_estudiante ? comentario_estudiante.trim() : null
     ]);
 
@@ -104,12 +107,14 @@ class EntregasModel {
     let params = [comentario_estudiante ? comentario_estudiante.trim() : null];
 
     if (archivoData) {
-      query += ', archivo_entregado = ?, archivo_mime = ?, archivo_size_kb = ?, archivo_nombre_original = ?';
+      query += ', archivo_entregado = ?, archivo_mime = ?, archivo_size_kb = ?, archivo_nombre_original = ?, archivo_url = ?, archivo_public_id = ?';
       params.push(
         archivoData.buffer,
         archivoData.mime,
         archivoData.sizeKb,
-        archivoData.nombreOriginal
+        archivoData.nombreOriginal,
+        archivoData.url || null,
+        archivoData.publicId || null
       );
     }
 
@@ -139,11 +144,11 @@ class EntregasModel {
       FROM entregas_tareas
       WHERE id_entrega = ?
     `, [id_entrega]);
-    
+
     if (entregas.length === 0 || !entregas[0].archivo_entregado) {
       return null;
     }
-    
+
     return {
       buffer: entregas[0].archivo_entregado,
       mime: entregas[0].archivo_mime || 'application/octet-stream',
@@ -177,7 +182,7 @@ class EntregasModel {
       LEFT JOIN calificaciones_tareas c ON e.id_entrega = c.id_entrega
       WHERE e.id_tarea = ? AND e.id_estudiante = ?
     `, [id_tarea, id_estudiante]);
-    
+
     return entregas.length > 0 ? entregas[0] : null;
   }
 

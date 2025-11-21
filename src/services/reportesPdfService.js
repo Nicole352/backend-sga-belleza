@@ -12,7 +12,7 @@ async function descargarLogo() {
     const response = await axios.get(LOGO_URL, { responseType: 'arraybuffer' });
     return Buffer.from(response.data);
   } catch (error) {
-    console.error('-Error descargando logo:', error.message);
+    console.error('Error descargando logo:', error.message);
     return null;
   }
 }
@@ -366,7 +366,7 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
 
       doc.end();
     } catch (error) {
-      console.error('-Error generando PDF de estudiantes:', error);
+      console.error('Error generando PDF de estudiantes:', error);
       reject(error);
     }
   });
@@ -710,7 +710,7 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
 
       doc.end();
     } catch (error) {
-      console.error('-Error generando PDF financiero:', error);
+      console.error('Error generando PDF financiero:', error);
       reject(error);
     }
   });
@@ -921,7 +921,7 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
 
       doc.end();
     } catch (error) {
-      console.error('-Error generando PDF de cursos:', error);
+      console.error('Error generando PDF de cursos:', error);
       reject(error);
     }
   });

@@ -1,6 +1,7 @@
 const { pool } = require('../config/database');
 const { registrarAuditoria } = require('../utils/auditoria');
 const AsistenciasModel = require('../models/asistencias.model');
+const cloudinaryService = require('../services/cloudinary.service');
 
 // GET /api/asistencias/cursos-docente/:id_docente
 // Obtener todos los cursos que imparte un docente
@@ -173,6 +174,8 @@ async function guardarAsistenciaController(req, res) {
       let documento_mime = null;
       let documento_size_kb = null;
       let documento_nombre_original = null;
+      let documento_justificacion_url = null;
+      let documento_justificacion_public_id = null;
 
       if (req.files && req.files.length > 0) {
         // Buscar archivo para este estudiante específico
@@ -181,6 +184,23 @@ async function guardarAsistenciaController(req, res) {
         );
 
         if (archivoEstudiante) {
+          // Subir a Cloudinary
+          try {
+            console.log('Subiendo justificación a Cloudinary');
+            const cloudinaryResult = await cloudinaryService.uploadFile(
+              archivoEstudiante.buffer,
+              'asistencias',
+              `justificacion-${id_estudiante}-${fecha}-${Date.now()}`
+            );
+            console.log('Justificación subida:', cloudinaryResult.secure_url);
+
+            // Guardar URL en variables (se agregarán a la query después)
+            documento_justificacion_url = cloudinaryResult.secure_url;
+            documento_justificacion_public_id = cloudinaryResult.public_id;
+          } catch (cloudinaryError) {
+            console.error('Error subiendo a Cloudinary:', cloudinaryError);
+          }
+
           documento_justificacion = archivoEstudiante.buffer;
           documento_mime = archivoEstudiante.mimetype;
           documento_size_kb = Math.round(archivoEstudiante.size / 1024);
@@ -206,16 +226,17 @@ async function guardarAsistenciaController(req, res) {
 
       // Agregar campos de documento si están presentes
       if (documento_justificacion) {
-        query += `, documento_justificacion, documento_mime, documento_size_kb, documento_nombre_original`;
+        query += `, documento_justificacion, documento_mime, documento_size_kb, documento_nombre_original, documento_justificacion_url, documento_justificacion_public_id`;
         params.push(documento_justificacion, documento_mime || null,
-          documento_size_kb || null, documento_nombre_original || null);
+          documento_size_kb || null, documento_nombre_original || null,
+          documento_justificacion_url || null, documento_justificacion_public_id || null);
       }
 
       query += `)
         VALUES (?, ?, ?, ?, ?, ?, ?`;
 
       if (documento_justificacion) {
-        query += `, ?, ?, ?, ?`;
+        query += `, ?, ?, ?, ?, ?, ?`;
       }
 
       query += `)
@@ -231,7 +252,9 @@ async function guardarAsistenciaController(req, res) {
           documento_justificacion = VALUES(documento_justificacion),
           documento_mime = VALUES(documento_mime),
           documento_size_kb = VALUES(documento_size_kb),
-          documento_nombre_original = VALUES(documento_nombre_original)`;
+          documento_nombre_original = VALUES(documento_nombre_original),
+          documento_justificacion_url = VALUES(documento_justificacion_url),
+          documento_justificacion_public_id = VALUES(documento_justificacion_public_id)`;
       }
 
       const [result] = await connection.execute(query, params);

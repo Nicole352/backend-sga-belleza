@@ -3,6 +3,7 @@ const CalificacionesModel = require('../models/calificaciones.model');
 const DocentesModel = require('../models/docentes.model');
 const { notificarTareaEntregadaDocente, notificarTareaCalificada } = require('../utils/notificationHelper');
 const multer = require('multer');
+const cloudinaryService = require('../services/cloudinary.service');
 
 // Configuración de Multer para archivos en memoria
 const storage = multer.memoryStorage();
@@ -82,14 +83,30 @@ async function createEntrega(req, res) {
         return res.status(400).json({ error: 'Ya has entregado esta tarea. Usa actualizar para modificarla.' });
       }
 
-      // Procesar archivo si existe
+      // Subir archivo a Cloudinary si existe
       let archivoData = null;
+      let archivoCloudinary = null;
+
       if (req.file) {
+        try {
+          console.log('Subiendo tarea a Cloudinary...');
+          archivoCloudinary = await cloudinaryService.uploadFile(
+            req.file.buffer,
+            'tareas',
+            `tarea-${id_tarea}-${id_estudiante}-${Date.now()}`
+          );
+          console.log('Tarea subida a Cloudinary:', archivoCloudinary.secure_url);
+        } catch (cloudinaryError) {
+          console.error('Error subiendo a Cloudinary:', cloudinaryError);
+        }
+
         archivoData = {
           buffer: req.file.buffer,
           mime: req.file.mimetype,
           sizeKb: Math.round(req.file.size / 1024),
-          nombreOriginal: req.file.originalname
+          nombreOriginal: req.file.originalname,
+          url: archivoCloudinary?.secure_url || null,
+          publicId: archivoCloudinary?.public_id || null
         };
       }
 
@@ -104,7 +121,7 @@ async function createEntrega(req, res) {
       // 🔥 Notificar al docente cuando el estudiante entrega una tarea
       try {
         const { pool } = require('../config/database');
-        
+
         // Obtener información de la tarea, docente y curso
         const [tareaInfo] = await pool.execute(
           `SELECT t.titulo, t.id_modulo, m.id_docente, m.id_curso, c.nombre as curso_nombre
@@ -114,42 +131,42 @@ async function createEntrega(req, res) {
            WHERE t.id_tarea = ?`,
           [id_tarea]
         );
-        
+
         if (tareaInfo.length > 0) {
           const id_docente_fk = tareaInfo[0].id_docente;
           const id_modulo = tareaInfo[0].id_modulo;
           const titulo_tarea = tareaInfo[0].titulo;
           const curso_nombre = tareaInfo[0].curso_nombre;
-          
-          console.log(`📋 ID Docente de la tarea: ${id_docente_fk}`);
-          console.log(`📚 Curso: ${curso_nombre}`);
-          
+
+          console.log(`ID Docente de la tarea: ${id_docente_fk}`);
+          console.log(`Curso: ${curso_nombre}`);
+
           // Obtener id_usuario del docente (identificacion del docente)
           const [docenteInfo] = await pool.execute(
             'SELECT identificacion FROM docentes WHERE id_docente = ?',
             [id_docente_fk]
           );
-          
+
           if (docenteInfo.length > 0) {
             const identificacion_docente = docenteInfo[0].identificacion;
-            
+
             // Obtener id_usuario usando la identificación (cédula)
             const [usuarioDocente] = await pool.execute(
               'SELECT id_usuario FROM usuarios WHERE cedula = ?',
               [identificacion_docente]
             );
-            
+
             if (usuarioDocente.length > 0) {
               const id_usuario_docente = usuarioDocente[0].id_usuario;
-              
-              console.log(`📤 ID Usuario del docente: ${id_usuario_docente}`);
-              
+
+              console.log(`ID Usuario del docente: ${id_usuario_docente}`);
+
               // Obtener datos del estudiante
               const [estudianteInfo] = await pool.execute(
                 'SELECT nombre, apellido FROM usuarios WHERE id_usuario = ?',
                 [id_estudiante]
               );
-              
+
               if (estudianteInfo.length > 0) {
                 // Notificar al docente usando su id_usuario
                 notificarTareaEntregadaDocente(req, id_usuario_docente, {
@@ -161,16 +178,16 @@ async function createEntrega(req, res) {
                   nombre_estudiante: estudianteInfo[0].nombre,
                   apellido_estudiante: estudianteInfo[0].apellido
                 });
-                
-                console.log(`✅ Docente ${id_usuario_docente} notificado: nueva entrega de ${estudianteInfo[0].nombre} ${estudianteInfo[0].apellido} en tarea "${titulo_tarea}" del curso "${curso_nombre}"`);
+
+                console.log(`Docente ${id_usuario_docente} notificado: nueva entrega de ${estudianteInfo[0].nombre} ${estudianteInfo[0].apellido} en tarea "${titulo_tarea}" del curso "${curso_nombre}"`);
               }
             } else {
-              console.log(`⚠️ No se encontró usuario para el docente con cédula ${identificacion_docente}`);
+              console.log(`No se encontró usuario para el docente con cédula ${identificacion_docente}`);
             }
           }
         }
       } catch (notifError) {
-        console.error('❌ Error notificando al docente (no afecta la entrega):', notifError);
+        console.error('Error notificando al docente (no afecta la entrega):', notifError);
       }
 
       // Emitir evento WebSocket para actualización en tiempo real
@@ -214,14 +231,30 @@ async function updateEntrega(req, res) {
         return res.status(403).json({ error: 'No tienes permiso para modificar esta entrega' });
       }
 
-      // Procesar archivo si existe
+      // Subir archivo a Cloudinary si existe
       let archivoData = null;
+      let archivoCloudinary = null;
+
       if (req.file) {
+        try {
+          console.log('Subiendo tarea actualizada a Cloudinary');
+          archivoCloudinary = await cloudinaryService.uploadFile(
+            req.file.buffer,
+            'tareas',
+            `tarea-${id}-${id_estudiante}-${Date.now()}`
+          );
+          console.log('Tarea actualizada subida a Cloudinary:', archivoCloudinary.secure_url);
+        } catch (cloudinaryError) {
+          console.error('Error subiendo a Cloudinary:', cloudinaryError);
+        }
+
         archivoData = {
           buffer: req.file.buffer,
           mime: req.file.mimetype,
           sizeKb: Math.round(req.file.size / 1024),
-          nombreOriginal: req.file.originalname
+          nombreOriginal: req.file.originalname,
+          url: archivoCloudinary?.secure_url || null,
+          publicId: archivoCloudinary?.public_id || null
         };
       }
 
@@ -245,7 +278,7 @@ async function updateEntrega(req, res) {
           [entrega.id_tarea]
         );
         const id_modulo = tareaInfo.length > 0 ? tareaInfo[0].id_modulo : null;
-        
+
         io.emit('entrega_actualizada', {
           id_entrega: id,
           id_tarea: entrega.id_tarea,
@@ -253,7 +286,7 @@ async function updateEntrega(req, res) {
           id_estudiante: entrega.id_estudiante,
           entrega
         });
-        console.log(`📢 [WebSocket] Entrega actualizada emitida: ID ${id} módulo ${id_modulo}`);
+        console.log(`[WebSocket] Entrega actualizada emitida: ID ${id} módulo ${id_modulo}`);
       }
 
       return res.json({
@@ -374,7 +407,7 @@ async function calificarEntrega(req, res) {
 
     // Obtener datos de la entrega para notificar al estudiante
     const entrega = await EntregasModel.getById(id);
-    
+
     // Obtener información del docente y curso
     const { pool } = require('../config/database');
     const [infoCompleta] = await pool.execute(`
@@ -389,12 +422,12 @@ async function calificarEntrega(req, res) {
       INNER JOIN usuarios u ON d.identificacion = u.cedula
       WHERE t.id_tarea = ?
     `, [entrega.id_tarea]);
-    
-    const nombreDocente = infoCompleta[0] 
-      ? `${infoCompleta[0].docente_nombre} ${infoCompleta[0].docente_apellido}` 
+
+    const nombreDocente = infoCompleta[0]
+      ? `${infoCompleta[0].docente_nombre} ${infoCompleta[0].docente_apellido}`
       : 'Docente';
     const nombreCurso = infoCompleta[0]?.curso_nombre || 'tu curso';
-    
+
     // Notificar al estudiante que su tarea fue calificada
     notificarTareaCalificada(req, entrega.id_estudiante, {
       id_tarea: entrega.id_tarea,

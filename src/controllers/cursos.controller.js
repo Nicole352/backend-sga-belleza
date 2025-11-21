@@ -2,11 +2,8 @@ const { listCursos, getCursoById, createCurso, updateCurso, deleteCurso } = requ
 const { pool } = require('../config/database');
 const { registrarAuditoria } = require('../utils/auditoria');
 const ExcelJS = require('exceljs');
+const cacheService = require('../services/cache.service');
 
-// Caché simple para cursos disponibles (30 segundos) 
-let cursosDisponiblesCache = null;
-let cacheTimestamp = 0;
-const CACHE_DURATION = 30000; // 30 segundos
 
 // GET /api/cursos
 async function listCursosController(req, res) {
@@ -25,17 +22,19 @@ async function listCursosController(req, res) {
 }
 
 // GET /api/cursos/disponibles - Obtener cursos con cupos disponibles agrupados por tipo y horario
+// ⚡ OPTIMIZADO: Caché en memoria (TTL: 10s) para reducir carga en BD
 async function getCursosDisponiblesController(req, res) {
   try {
-    const now = Date.now();
-    
-    // Si el caché es válido, devolver datos cacheados
-    if (cursosDisponiblesCache && (now - cacheTimestamp) < CACHE_DURATION) {
-      console.log('✅ Devolviendo cursos desde caché');
-      return res.json(cursosDisponiblesCache);
+    // 1. Intentar obtener desde caché
+    const cached = cacheService.getCursosDisponibles();
+    if (cached) {
+      console.log('Cache HIT: Devolviendo cursos desde caché (sin query a BD)');
+      return res.json(cached);
     }
 
-    // Si no hay caché o expiró, consultar BD
+    console.log('Cache MISS: Consultando BD...');
+
+    // 2. Si no hay caché, consultar BD
     const [cursos] = await pool.execute(`
       SELECT 
         tc.id_tipo_curso,
@@ -44,28 +43,71 @@ async function getCursosDisponiblesController(req, res) {
         c.horario,
         COUNT(DISTINCT c.id_curso) AS cursos_activos,
         COALESCE(SUM(c.cupos_disponibles), 0) AS cupos_totales,
-        COALESCE(SUM(c.capacidad_maxima), 0) AS capacidad_total
+        COALESCE(SUM(c.capacidad_maxima), 0) AS capacidad_total,
+        COALESCE(SUM(promo_principal.cupos_limitados_restantes), 0) AS cupos_promocion_restantes_principal,
+        COALESCE(SUM(promo_principal.cupos_limitados_totales), 0) AS cupos_promocion_totales_principal,
+        COALESCE(SUM(promo_principal.promociones_con_limite), 0) AS promociones_con_limite_principal,
+        COALESCE(SUM(promo_principal.promociones_ilimitadas), 0) AS promociones_ilimitadas_principal,
+        COALESCE(SUM(promo_principal.total_promociones), 0) AS promociones_activas_principal,
+        COALESCE(SUM(promo_regalo.total_cupos_reservados), 0) AS cupos_regalados_utilizados,
+        COALESCE(SUM(promo_regalo.total_cupos_pendientes), 0) AS cupos_promocion_pendientes,
+        COALESCE(SUM(promo_regalo.total_promociones_regalo), 0) AS promociones_como_regalo
       FROM tipos_cursos tc
       INNER JOIN cursos c ON c.id_tipo_curso = tc.id_tipo_curso 
         AND c.estado = 'activo'
         AND c.horario IS NOT NULL
+      LEFT JOIN (
+        SELECT 
+          id_curso_principal,
+          SUM(CASE WHEN cupos_disponibles IS NULL THEN 0 ELSE cupos_disponibles END) AS cupos_limitados_totales,
+          SUM(CASE WHEN cupos_disponibles IS NULL THEN 0 ELSE GREATEST(cupos_disponibles - COALESCE(cupos_utilizados, 0), 0) END) AS cupos_limitados_restantes,
+          SUM(CASE WHEN cupos_disponibles IS NOT NULL THEN 1 ELSE 0 END) AS promociones_con_limite,
+          SUM(CASE WHEN cupos_disponibles IS NULL THEN 1 ELSE 0 END) AS promociones_ilimitadas,
+          COUNT(*) AS total_promociones
+        FROM promociones
+        WHERE activa = TRUE
+          AND (fecha_inicio IS NULL OR fecha_inicio <= CURDATE())
+          AND (fecha_fin IS NULL OR fecha_fin >= CURDATE())
+        GROUP BY id_curso_principal
+      ) promo_principal ON promo_principal.id_curso_principal = c.id_curso
+      LEFT JOIN (
+        SELECT 
+          p.id_curso_promocional,
+          COUNT(*) AS total_promociones_regalo,
+          SUM(COALESCE(p.cupos_utilizados, 0)) AS total_cupos_reservados,
+          SUM(COALESCE(pendientes.cupos_pendientes, 0)) AS total_cupos_pendientes
+        FROM promociones p
+        LEFT JOIN (
+          SELECT 
+            id_promocion_seleccionada AS id_promocion,
+            COUNT(*) AS cupos_pendientes
+          FROM solicitudes_matricula
+          WHERE estado IN ('pendiente', 'observaciones')
+            AND id_promocion_seleccionada IS NOT NULL
+          GROUP BY id_promocion_seleccionada
+        ) pendientes ON pendientes.id_promocion = p.id_promocion
+        WHERE p.activa = TRUE
+          AND (p.fecha_inicio IS NULL OR p.fecha_inicio <= CURDATE())
+          AND (p.fecha_fin IS NULL OR p.fecha_fin >= CURDATE())
+        GROUP BY p.id_curso_promocional
+      ) promo_regalo ON promo_regalo.id_curso_promocional = c.id_curso
       WHERE tc.estado = 'activo'
       GROUP BY tc.id_tipo_curso, tc.nombre, tc.card_key, c.horario
       HAVING cursos_activos > 0
       ORDER BY tc.nombre, c.horario
     `);
 
-    // Actualizar caché
-    cursosDisponiblesCache = cursos;
-    cacheTimestamp = now;
+    // 3. Guardar en caché
+    cacheService.setCursosDisponibles(cursos);
 
-    console.log('📊 Endpoint /disponibles devuelve (desde BD):', JSON.stringify(cursos, null, 2));
+    console.log('Cursos obtenidos de BD y guardados en caché (TTL: 10s)');
     return res.json(cursos);
   } catch (err) {
     console.error('Error obteniendo cursos disponibles:', err);
     return res.status(500).json({ error: 'Error al obtener cursos disponibles' });
   }
 }
+
 
 // GET /api/cursos/:id
 async function getCursoController(req, res) {
@@ -86,7 +128,7 @@ async function getCursoController(req, res) {
 async function createCursoController(req, res) {
   try {
     const result = await createCurso(req.body || {});
-    
+
     // Registrar auditoría
     await registrarAuditoria({
       tabla_afectada: 'cursos',
@@ -97,7 +139,7 @@ async function createCursoController(req, res) {
       ip_address: req.ip || '0.0.0.0',
       user_agent: req.get('user-agent') || 'unknown'
     });
-    
+
     return res.status(201).json(result);
   } catch (err) {
     console.error('Error creando curso:', err);
@@ -110,13 +152,13 @@ async function updateCursoController(req, res) {
   try {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ error: 'ID inválido' });
-    
+
     // Obtener datos anteriores
     const cursoAnterior = await getCursoById(id);
-    
+
     const affected = await updateCurso(id, req.body || {});
     if (affected === 0) return res.status(404).json({ error: 'Curso no encontrado o sin cambios' });
-    
+
     // Registrar auditoría
     await registrarAuditoria({
       tabla_afectada: 'cursos',
@@ -128,7 +170,7 @@ async function updateCursoController(req, res) {
       ip_address: req.ip || '0.0.0.0',
       user_agent: req.get('user-agent') || 'unknown'
     });
-    
+
     // Devolver el curso actualizado en lugar de solo { ok: true }
     const updatedCurso = await getCursoById(id);
     return res.json(updatedCurso);
@@ -349,7 +391,7 @@ module.exports = {
               right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
             };
           });
-          
+
           if (rowNumber % 2 === 0) {
             row.fill = {
               type: 'pattern',
@@ -395,7 +437,7 @@ module.exports = {
         const row = startRow + index;
         sheet2.getCell(`A${row}`).value = data[0];
         sheet2.getCell(`B${row}`).value = data[1];
-        
+
         sheet2.getCell(`A${row}`).font = { bold: true, size: 11 };
         sheet2.getCell(`B${row}`).font = { size: 11, color: { argb: 'FFDC2626' }, bold: true };
         sheet2.getCell(`B${row}`).alignment = { horizontal: 'center' };
@@ -436,12 +478,12 @@ module.exports = {
         sheet2.getCell(`C${dataRow}`).value = tipo.capacidad_total;
         sheet2.getCell(`D${dataRow}`).value = tipo.estudiantes_matriculados;
         sheet2.getCell(`E${dataRow}`).value = tipo.promedio_estudiantes;
-        
+
         sheet2.getCell(`B${dataRow}`).alignment = { horizontal: 'center' };
         sheet2.getCell(`C${dataRow}`).alignment = { horizontal: 'center' };
         sheet2.getCell(`D${dataRow}`).alignment = { horizontal: 'center' };
         sheet2.getCell(`E${dataRow}`).alignment = { horizontal: 'center' };
-        
+
         if (index % 2 === 0) {
           ['A', 'B', 'C', 'D', 'E'].forEach(col => {
             sheet2.getCell(`${col}${dataRow}`).fill = {
@@ -451,7 +493,7 @@ module.exports = {
             };
           });
         }
-        
+
         dataRow++;
       });
 
@@ -462,12 +504,12 @@ module.exports = {
       await workbook.xlsx.write(res);
       res.end();
 
-      console.log('✅ Reporte de cursos generado exitosamente');
+      console.log('Reporte de cursos generado exitosamente');
     } catch (error) {
-      console.error('-Error generando reporte de cursos:', error);
-      res.status(500).json({ 
+      console.error('Error generando reporte de cursos:', error);
+      res.status(500).json({
         error: 'Error interno del servidor',
-        details: error.message 
+        details: error.message
       });
     }
   }

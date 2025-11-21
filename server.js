@@ -16,6 +16,10 @@ const startServer = async () => {
 
     await initDatabase();
 
+    // Inicializar cron job para verificación de pagos
+    require('./src/jobs/cron-payment-checker');
+    console.log('✓ Cron job de verificación de pagos inicializado');
+
     if (process.env.ENABLE_UPLOADS_DIR === 'true') {
       const fs = require('fs');
       const path = require('path');
@@ -31,7 +35,11 @@ const startServer = async () => {
       cors: {
         origin: process.env.NODE_ENV === 'production'
           ? ['https://tudominio.com']
-          : ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:4173'],
+          : [
+            'http://localhost:3000',
+            'http://localhost:5173',
+            'http://localhost:4173'
+        ],
         credentials: true
       }
     });
@@ -41,13 +49,13 @@ const startServer = async () => {
     const userRoles = new Map(); // Mapa para relacionar userId -> rol
 
     io.on('connection', (socket) => {
-      console.log('🔌 Cliente conectado:', socket.id);
+      console.log('Cliente conectado:', socket.id);
 
       // Evento para registrar un usuario con su socket y rol
       socket.on('register', (userData) => {
         // userData puede ser un número (userId) o un objeto {userId, rol}
         let userId, rol;
-        
+
         if (typeof userData === 'number') {
           userId = userData;
           // Si es solo número, intentar obtener rol del token (si está disponible)
@@ -65,18 +73,18 @@ const startServer = async () => {
           if (rol && rol !== 'unknown') {
             userRoles.set(userId, rol);
           }
-          
+
           // Unir al usuario a su "room" personal
           socket.join(`user_${userId}`);
-          
+
           // Unir al usuario a su "room" por rol (si está disponible)
           if (rol && rol !== 'unknown') {
             socket.join(`rol_${rol}`);
-            console.log(`👤 Usuario ${userId} (${rol}) registrado con socket ${socket.id}, rooms: user_${userId}, rol_${rol}`);
+            console.log(`Usuario ${userId} (${rol}) registrado con socket ${socket.id}, rooms: user_${userId}, rol_${rol}`);
           } else {
-            console.log(`👤 Usuario ${userId} registrado con socket ${socket.id}, rooms: user_${userId}`);
+            console.log(`Usuario ${userId} registrado con socket ${socket.id}, rooms: user_${userId}`);
           }
-          
+
           // Confirmar registro al cliente
           socket.emit('registered', { userId, socketId: socket.id, rol });
         }
@@ -90,14 +98,14 @@ const startServer = async () => {
             userSockets.delete(userId);
             userRoles.delete(userId);
             if (rol) {
-              console.log(`👤 Usuario ${userId} (${rol}) desconectado`);
+              console.log(`Usuario ${userId} (${rol}) desconectado`);
             } else {
-              console.log(`👤 Usuario ${userId} desconectado`);
+              console.log(`Usuario ${userId} desconectado`);
             }
             break;
           }
         }
-        console.log('🔌 Cliente desconectado:', socket.id);
+        console.log('Cliente desconectado:', socket.id);
       });
     });
 
@@ -105,14 +113,16 @@ const startServer = async () => {
     app.set('io', io);
     app.set('userSockets', userSockets);
 
-    server.listen(PORT, () => {
-      console.log(`🚀 Servidor SGA Belleza corriendo en puerto ${PORT}`);
-      console.log(`📝 Ambiente: ${process.env.NODE_ENV}`);
-      console.log(`🔗 API disponible en: http://localhost:${PORT}/api`);
-      console.log(`🔌 WebSocket disponible en: http://localhost:${PORT}`);
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`Servidor SGA Belleza corriendo en puerto ${PORT}`);
+      console.log(`Ambiente: ${process.env.NODE_ENV}`);
+      console.log(`API disponible en: http://localhost:${PORT}/api`);
+      console.log(`API disponible en red local: http://192.168.XX.XX:${PORT}/api`);
+      console.log(`WebSocket disponible en: http://localhost:${PORT}`);
+      console.log(`WebSocket disponible en red local: http://192.168.XX.XX:${PORT}`);
     });
   } catch (error) {
-    console.error('❌ Error iniciando servidor:', error);
+    console.error('Error iniciando servidor:', error);
     process.exit(1);
   }
 };

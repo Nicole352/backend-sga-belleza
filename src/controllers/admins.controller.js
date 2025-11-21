@@ -10,6 +10,7 @@ const {
   updateUserPassword,
   getUserById,
 } = require('../models/usuarios.model');
+const cloudinaryService = require('../services/cloudinary.service');
 
 async function createAdminController(req, res) {
   try {
@@ -36,15 +37,34 @@ async function createAdminController(req, res) {
       if (!role) return res.status(500).json({ error: 'No fue posible configurar el rol solicitado' });
     }
 
-    const hash = await bcrypt.hash(password, 10);
-
-    // Foto en buffer si viene por multipart
+    // Subir foto a Cloudinary si existe
     let fotoPerfilBuffer = null;
     let fotoMimeType = null;
+    let fotoPerfilUrl = null;
+    let fotoPerfilPublicId = null;
+
     if (req.file && req.file.buffer && req.file.mimetype) {
+      try {
+        console.log('Subiendo foto de perfil a Cloudinary...');
+        const cloudinaryResult = await cloudinaryService.uploadFile(
+          req.file.buffer,
+          'perfiles',
+          `perfil-${cedula}-${Date.now()}`
+        );
+        console.log('Foto de perfil subida:', cloudinaryResult.secure_url);
+
+        fotoPerfilUrl = cloudinaryResult.secure_url;
+        fotoPerfilPublicId = cloudinaryResult.public_id;
+      } catch (cloudinaryError) {
+        console.error('Error subiendo foto a Cloudinary:', cloudinaryError);
+      }
+
       fotoPerfilBuffer = req.file.buffer;
       fotoMimeType = req.file.mimetype;
     }
+
+    // Hashear password
+    const hash = await bcrypt.hash(password, 10);
 
     const user = await createAdminUser({
       cedula,
@@ -57,6 +77,8 @@ async function createAdminController(req, res) {
       genero: genero || null,
       foto_perfil: fotoPerfilBuffer,
       foto_mime_type: fotoMimeType,
+      foto_perfil_url: fotoPerfilUrl,
+      foto_perfil_public_id: fotoPerfilPublicId,
       passwordHash: hash,
       id_rol: role.id_rol
     });
@@ -144,9 +166,27 @@ async function updateAdminController(req, res) {
       id_rol = ensuredAdminRole.id_rol;
     }
 
-    // Foto si viene por multipart
+    // Subir foto a Cloudinary si existe
     let foto_perfil = undefined;
+    let foto_perfil_url = undefined;
+    let foto_perfil_public_id = undefined;
+
     if (req.file && req.file.buffer) {
+      try {
+        console.log('Subiendo foto de perfil actualizada a Cloudinary...');
+        const cloudinaryResult = await cloudinaryService.uploadFile(
+          req.file.buffer,
+          'perfiles',
+          `perfil-${current.cedula}-${Date.now()}`
+        );
+        console.log('Foto de perfil actualizada subida:', cloudinaryResult.secure_url);
+
+        foto_perfil_url = cloudinaryResult.secure_url;
+        foto_perfil_public_id = cloudinaryResult.public_id;
+      } catch (cloudinaryError) {
+        console.error('Error subiendo foto a Cloudinary:', cloudinaryError);
+      }
+
       foto_perfil = req.file.buffer;
     }
 
@@ -160,6 +200,8 @@ async function updateAdminController(req, res) {
       genero: genero ?? undefined,
       id_rol: id_rol ?? undefined,
       foto_perfil: foto_perfil ?? undefined,
+      foto_perfil_url: foto_perfil_url ?? undefined,
+      foto_perfil_public_id: foto_perfil_public_id ?? undefined,
     };
 
     const updated = await updateAdminUser(id_usuario, fields);

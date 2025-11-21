@@ -44,7 +44,7 @@ async function registrarAuditoria(params) {
       parametros
     );
 
-    console.log(`📝 Auditoría: ${operacion} en ${tabla_afectada} (ID: ${id_registro}) por usuario ${usuario_id || 'sistema'}`);
+    console.log(`Auditoría: ${operacion} en ${tabla_afectada} (ID: ${id_registro}) por usuario ${usuario_id || 'sistema'}`);
   } catch (error) {
     console.error('Error al registrar auditoría:', error);
     // No lanzamos error para no interrumpir la operación principal

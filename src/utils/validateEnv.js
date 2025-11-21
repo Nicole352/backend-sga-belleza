@@ -19,21 +19,21 @@ function validateEnv() {
   if (missing.length > 0) {
     console.error('-ERROR: Faltan las siguientes variables de entorno:');
     missing.forEach(key => console.error(`   - ${key}`));
-    console.error('\n💡 Verifica tu archivo .env');
+    console.error('\n Verifica tu archivo .env');
     
     // Solo salir en producción
     if (process.env.NODE_ENV === 'production') {
       process.exit(1);
     } else {
-      console.warn('⚠️  Continuando en modo desarrollo con valores faltantes...\n');
+      console.warn('Continuando en modo desarrollo con valores faltantes...\n');
     }
   } else {
-    console.log('✅ Variables de entorno validadas correctamente');
+    console.log('Variables de entorno validadas correctamente');
   }
   
   // Validar JWT_SECRET en producción
   if (process.env.NODE_ENV === 'production' && process.env.JWT_SECRET === 'dev_secret') {
-    console.error('-ERROR: No puedes usar "dev_secret" como JWT_SECRET en producción');
+    console.error('ERROR: No puedes usar "dev_secret" como JWT_SECRET en producción');
     process.exit(1);
   }
 }

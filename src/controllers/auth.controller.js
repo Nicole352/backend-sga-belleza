@@ -6,7 +6,7 @@ const { pool } = require('../config/database');
 const { registrarAuditoria } = require('../utils/auditoria');
 
 // JWT_SECRET seguro
-const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' 
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production'
   ? (() => { throw new Error('JWT_SECRET no configurado en producción'); })()
   : 'dev_secret');
 
@@ -24,10 +24,10 @@ async function registrarSesion(id_usuario, token, req) {
       [id_sesion, id_usuario, ip_address, user_agent, fecha_expiracion]
     );
 
-    console.log(`✅ Sesión registrada para usuario ${id_usuario}`);
+    console.log(`Sesión registrada para usuario ${id_usuario}`);
   } catch (error) {
     console.error('Error al registrar sesión:', error);
-    // No lanzamos error para no interrumpir el login
+
   }
 }
 
@@ -57,6 +57,17 @@ async function loginController(req, res) {
     if (!user) return res.status(401).send('Datos incorrectos. Por favor, ingresa un usuario y una contraseña válidos.');
     if (user.estado !== 'activo') return res.status(403).json({ error: 'Usuario no activo' });
 
+    // Verificar si la cuenta está bloqueada
+    if (user.cuenta_bloqueada) {
+      return res.status(403).json({
+        success: false,
+        bloqueada: true,
+        motivo: user.motivo_bloqueo || 'Cuenta bloqueada por falta de pago',
+        fecha_bloqueo: user.fecha_bloqueo,
+        message: 'Su cuenta ha sido bloqueada. Por favor, contacte con el área administrativa.'
+      });
+    }
+
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(401).send('Datos incorrectos. Por favor, ingresa un usuario y una contraseña válidos.');
 
@@ -67,7 +78,7 @@ async function loginController(req, res) {
     );
 
     await updateLastLogin(user.id_usuario);
-    
+
     // Registrar sesión
     await registrarSesion(user.id_usuario, token, req);
 
@@ -95,7 +106,7 @@ async function meController(req, res) {
     const { pool } = require('../config/database');
     const user = await getUserById(req.user.id_usuario);
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
-    
+
     // Si es docente, obtener datos adicionales de la tabla docentes
     if (user.nombre_rol === 'docente') {
       const [docentes] = await pool.execute(`
@@ -103,7 +114,7 @@ async function meController(req, res) {
         FROM docentes d
         WHERE d.identificacion = ?
       `, [user.cedula]);
-      
+
       if (docentes.length > 0) {
         return res.json({
           id_usuario: user.id_usuario,
@@ -129,7 +140,7 @@ async function meController(req, res) {
         });
       }
     }
-    
+
     // Para estudiantes, obtener información adicional de la solicitud aprobada
     if (user.nombre_rol === 'estudiante') {
       const [solicitudes] = await pool.execute(`
@@ -139,9 +150,9 @@ async function meController(req, res) {
         ORDER BY s.fecha_solicitud DESC
         LIMIT 1
       `, [user.cedula]);
-      
+
       const contacto_emergencia = solicitudes.length > 0 ? solicitudes[0].contacto_emergencia : null;
-      
+
       return res.json({
         id_usuario: user.id_usuario,
         cedula: user.cedula || '',
@@ -164,7 +175,7 @@ async function meController(req, res) {
         contacto_emergencia: contacto_emergencia || null // Add this line
       });
     }
-    
+
     return res.json({
       id_usuario: user.id_usuario,
       cedula: user.cedula || '',
@@ -239,7 +250,7 @@ async function resetPasswordController(req, res) {
 async function logoutController(req, res) {
   try {
     const userId = req.user.id_usuario;
-    
+
     // Actualizar todas las sesiones activas del usuario
     await pool.execute(
       `UPDATE sesiones_usuario 
@@ -248,11 +259,11 @@ async function logoutController(req, res) {
       [userId]
     );
 
-    console.log(`✅ Sesión cerrada para usuario ${userId}`);
-    
-    return res.json({ 
-      success: true, 
-      message: 'Sesión cerrada exitosamente' 
+    console.log(`Sesión cerrada para usuario ${userId}`);
+
+    return res.json({
+      success: true,
+      message: 'Sesión cerrada exitosamente'
     });
   } catch (err) {
     console.error('Error en logout:', err);

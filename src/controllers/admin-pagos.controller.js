@@ -71,9 +71,9 @@ exports.getAllPagos = async (req, res) => {
 
     const [pagos] = await pool.execute(sql, params);
 
-    console.log('📊 Pagos obtenidos:', pagos.length);
+    console.log('Pagos obtenidos:', pagos.length);
     if (pagos.length > 0) {
-      console.log('🔍 Primer pago:', {
+      console.log('Primer pago:', {
         estudiante: pagos[0].estudiante_nombre,
         recibido_por: pagos[0].recibido_por,
         metodo_pago: pagos[0].metodo_pago
@@ -172,24 +172,24 @@ exports.verificarPago = async (req, res) => {
       WHERE u.id_usuario = ?
     `, [verificado_por]);
 
-    console.log('🔍 Verificando usuario:', verificado_por);
-    console.log('👤 Usuario encontrado:', usuario);
+    console.log('Verificando usuario:', verificado_por);
+    console.log('Usuario encontrado:', usuario);
 
     if (usuario.length === 0) {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
 
     const rolPermitido = usuario[0].nombre_rol.toLowerCase();
-    console.log('🎭 Rol del usuario:', rolPermitido);
+    console.log('Rol del usuario:', rolPermitido);
 
     if (rolPermitido !== 'admin' && rolPermitido !== 'administrativo') {
-      console.log('-Rol no permitido:', rolPermitido);
+      console.log('Rol no permitido:', rolPermitido);
       return res.status(403).json({
         error: `Solo los administradores pueden verificar pagos. Rol actual: ${rolPermitido}`
       });
     }
 
-    console.log('✅ Rol permitido, continuando con verificación...');
+    console.log('Rol permitido, continuando con verificación...');
 
     // Verificar que el pago existe y está en estado 'pagado'
     const [pago] = await pool.execute(
@@ -217,7 +217,7 @@ exports.verificarPago = async (req, res) => {
       WHERE id_pago = ?
     `, [verificado_por, id]);
 
-    console.log(`✅ Pago ${id} verificado por usuario ${verificado_por}`);
+    console.log(`Pago ${id} verificado por usuario ${verificado_por}`);
 
     // Obtener información del pago y estudiante para notificaciones
     const [estudianteInfo] = await pool.execute(`
@@ -234,10 +234,10 @@ exports.verificarPago = async (req, res) => {
     `, [id]);
 
     const id_estudiante = estudianteInfo[0]?.id_estudiante;
-    console.log(`🔍 ID Estudiante obtenido: ${id_estudiante}`);
+    console.log(`ID Estudiante obtenido: ${id_estudiante}`);
 
     // ENVIAR EMAIL CON PDF DEL COMPROBANTE AL ESTUDIANTE (asíncrono)
-    // ⚠️ IMPORTANTE: NO enviar email para cuota #1 (ya se envió con email de bienvenida)
+    // IMPORTANTE: NO enviar email para cuota #1 (ya se envió con email de bienvenida)
     setImmediate(async () => {
       try {
         // Obtener datos completos del pago para el PDF y email
@@ -264,18 +264,18 @@ exports.verificarPago = async (req, res) => {
           WHERE pm.id_pago = ?
         `, [id]);
 
-        console.log('🔍 Datos del pago obtenidos:', pagoCompleto);
+        console.log('Datos del pago obtenidos:', pagoCompleto);
 
         if (pagoCompleto.length > 0) {
           const pago = pagoCompleto[0];
 
-          // ⚠️ NO ENVIAR EMAIL PARA CUOTA #1 (ya se envió con el email de bienvenida)
+          // NO ENVIAR EMAIL PARA CUOTA #1 (ya se envió con el email de bienvenida)
           if (pago.numero_cuota === 1) {
-            console.log('⏭️ Cuota #1 detectada - Email ya enviado con bienvenida, omitiendo envío duplicado');
+            console.log('Cuota #1 detectada - Email ya enviado con bienvenida, omitiendo envío duplicado');
             return;
           }
 
-          console.log('📧 Enviando email a:', pago.estudiante_email);
+          console.log('Enviando email a:', pago.estudiante_email);
 
           const datosEstudiante = {
             nombres: pago.estudiante_nombres,
@@ -314,27 +314,27 @@ exports.verificarPago = async (req, res) => {
               fecha: clase.fecha_pago
             }));
 
-            console.log('🔍 Clases pagadas encontradas:', clasesPagadas);
+            console.log('Clases pagadas encontradas:', clasesPagadas);
           }
 
-          console.log('📄 Generando PDF del comprobante...');
+          console.log('Generando PDF del comprobante...');
           // Generar PDF del comprobante
           const pdfBuffer = await generarComprobantePagoMensual(datosEstudiante, datosPago, datosCurso, clasesPagadas);
 
-          console.log('📧 Enviando email con PDF adjunto...');
+          console.log('Enviando email con PDF adjunto...');
           // Enviar email con PDF adjunto
           await enviarComprobantePagoMensual(datosEstudiante, datosPago, pdfBuffer);
 
-          console.log('✅ Email con comprobante PDF enviado a:', pago.estudiante_email);
+          console.log('Email con comprobante PDF enviado a:', pago.estudiante_email);
         } else {
-          console.log('-No se encontró el pago con ID:', id);
+          console.log('No se encontró el pago con ID:', id);
         }
       } catch (emailError) {
-        console.error('-Error enviando email con comprobante (no afecta la verificación):', emailError);
+        console.error('Error enviando email con comprobante (no afecta la verificación):', emailError);
       }
     });
 
-    console.log(`📤 Emitiendo evento pago_verificado a todos los admins...`);
+    console.log(`Emitiendo evento pago_verificado a todos los admins...`);
     emitSocketEvent(req, 'pago_verificado', {
       id_pago: Number(id),
       numero_cuota: estudianteInfo[0]?.numero_cuota,
@@ -346,24 +346,24 @@ exports.verificarPago = async (req, res) => {
 
     // Enviar notificación al estudiante
     if (id_estudiante && estudianteInfo[0]) {
-      console.log(`📤 Intentando enviar notificación al estudiante con id_estudiante: ${id_estudiante}`);
-      
+      console.log(`Intentando enviar notificación al estudiante con id_estudiante: ${id_estudiante}`);
+
       // id_estudiante ya ES el id_usuario (es el mismo campo en la tabla matriculas)
       const id_usuario_estudiante = id_estudiante;
-      
-      console.log(`📤 Enviando notificación de pago verificado al usuario ${id_usuario_estudiante}`);
-      
+
+      console.log(`Enviando notificación de pago verificado al usuario ${id_usuario_estudiante}`);
+
       // Obtener información del admin que verificó
       const [adminInfo] = await pool.execute(`
         SELECT nombre, apellido 
         FROM usuarios 
         WHERE id_usuario = ?
       `, [verificado_por]);
-      
-      const nombreAdmin = adminInfo[0] 
-        ? `${adminInfo[0].nombre} ${adminInfo[0].apellido}` 
+
+      const nombreAdmin = adminInfo[0]
+        ? `${adminInfo[0].nombre} ${adminInfo[0].apellido}`
         : 'Administrador';
-      
+
       // Notificar al estudiante usando notificationHelper
       notificarPagoVerificado(req, id_usuario_estudiante, {
         id_pago: Number(id),
@@ -372,10 +372,10 @@ exports.verificarPago = async (req, res) => {
         curso_nombre: estudianteInfo[0].curso_nombre,
         admin_nombre: nombreAdmin
       });
-      
-      console.log(`✅ Notificación enviada al estudiante ${id_usuario_estudiante}: Cuota #${estudianteInfo[0].numero_cuota} - $${estudianteInfo[0].monto} (${estudianteInfo[0].curso_nombre}) verificado por ${nombreAdmin}`);
+
+      console.log(`Notificación enviada al estudiante ${id_usuario_estudiante}: Cuota #${estudianteInfo[0].numero_cuota} - $${estudianteInfo[0].monto} (${estudianteInfo[0].curso_nombre}) verificado por ${nombreAdmin}`);
     } else {
-      console.log(`⚠️ No se pudo obtener id_estudiante para el pago ${id}`);
+      console.log(`No se pudo obtener id_estudiante para el pago ${id}`);
     }
 
     res.json({
@@ -396,10 +396,11 @@ exports.descargarComprobante = async (req, res) => {
   try {
     const { id } = req.params;
 
-    console.log('📥 Solicitando comprobante para pago ID:', id);
+    console.log('Solicitando comprobante para pago ID:', id);
 
     const [pagos] = await pool.execute(`
       SELECT
+        id_matricula,
         comprobante_pago_blob,
         comprobante_mime,
         comprobante_nombre_original
@@ -407,21 +408,43 @@ exports.descargarComprobante = async (req, res) => {
       WHERE id_pago = ?
     `, [id]);
 
-    console.log('🔍 Resultado de la consulta:', {
+    console.log('Resultado de la consulta por ID:', {
       encontrado: pagos.length > 0,
       tieneBlob: pagos.length > 0 && !!pagos[0].comprobante_pago_blob,
       mime: pagos.length > 0 ? pagos[0].comprobante_mime : null,
       nombreOriginal: pagos.length > 0 ? pagos[0].comprobante_nombre_original : null
     });
 
-    if (pagos.length === 0 || !pagos[0].comprobante_pago_blob) {
-      console.log('❌ Comprobante no encontrado o no tiene archivo adjunto');
+    if (pagos.length === 0) {
+      console.log('Pago no encontrado');
       return res.status(404).json({ error: 'Comprobante no encontrado' });
     }
 
-    const pago = pagos[0];
+    let pago = pagos[0];
 
-    console.log('✅ Enviando comprobante:', {
+    if (!pago.comprobante_pago_blob && pago.id_matricula) {
+      console.log('No hay comprobante en esta cuota, buscando en la misma matrícula...');
+      const [pagosMismaMatricula] = await pool.execute(`
+        SELECT
+          comprobante_pago_blob,
+          comprobante_mime,
+          comprobante_nombre_original
+        FROM pagos_mensuales
+        WHERE id_matricula = ? AND comprobante_pago_blob IS NOT NULL
+        ORDER BY numero_cuota ASC, id_pago ASC
+        LIMIT 1
+      `, [pago.id_matricula]);
+
+      if (pagosMismaMatricula.length === 0) {
+        console.log('No se encontró ningún comprobante en la matrícula');
+        return res.status(404).json({ error: 'Comprobante no encontrado' });
+      }
+
+      pago = pagosMismaMatricula[0];
+      console.log('Comprobante encontrado en otra cuota de la misma matrícula');
+    }
+
+    console.log('Enviando comprobante:', {
       mime: pago.comprobante_mime,
       nombre: pago.comprobante_nombre_original,
       tamañoBytes: pago.comprobante_pago_blob.length
@@ -431,7 +454,7 @@ exports.descargarComprobante = async (req, res) => {
     res.setHeader('Content-Disposition', `inline; filename="${pago.comprobante_nombre_original || `comprobante-${id}.jpg`}"`);
     res.send(pago.comprobante_pago_blob);
   } catch (error) {
-    console.error('❌ Error descargando comprobante:', error);
+    console.error('Error descargando comprobante:', error);
     res.status(500).json({
       error: 'Error interno del servidor',
       details: error.message
@@ -489,7 +512,7 @@ exports.rechazarPago = async (req, res) => {
       WHERE id_pago = ?
     `, [observaciones, verificado_por, id]);
 
-    console.log(`❌ Pago ${id} rechazado por usuario ${verificado_por}`);
+    console.log(`Pago ${id} rechazado por usuario ${verificado_por}`);
 
     // Obtener más información del pago para el evento
     const [pagoInfo] = await pool.execute(`
@@ -506,7 +529,7 @@ exports.rechazarPago = async (req, res) => {
 
     const id_estudiante = pagoInfo[0]?.id_estudiante;
 
-    console.log(`📤 Emitiendo evento pago_rechazado a todos los admins...`);
+    console.log(`Emitiendo evento pago_rechazado a todos los admins...`);
     emitSocketEvent(req, 'pago_rechazado', {
       id_pago: Number(id),
       numero_cuota: pagoInfo[0]?.numero_cuota,

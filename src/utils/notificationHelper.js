@@ -14,7 +14,7 @@ const emitirNotificacionUsuario = (app, userId, evento, data) => {
   const userSockets = app.get('userSockets');
   
   if (!io) {
-    console.warn('⚠️ Socket.IO no está inicializado');
+    console.warn('Socket.IO no está inicializado');
     return;
   }
 
@@ -22,8 +22,8 @@ const emitirNotificacionUsuario = (app, userId, evento, data) => {
   io.to(`user_${userId}`).emit(evento, data);
   
   // Log para debugging
-  console.log(`📤 Notificación enviada: ${evento} -> Usuario ${userId}`);
-  console.log('📦 Datos:', JSON.stringify(data, null, 2));
+  console.log(`Notificación enviada: ${evento} -> Usuario ${userId}`);
+  console.log('Datos:', JSON.stringify(data, null, 2));
 };
 
 /**
@@ -37,7 +37,7 @@ const emitirNotificacionMultiple = (app, userIds, evento, data) => {
   const io = app.get('io');
   
   if (!io) {
-    console.warn('⚠️ Socket.IO no está inicializado');
+    console.warn('Socket.IO no está inicializado');
     return;
   }
 
@@ -45,7 +45,7 @@ const emitirNotificacionMultiple = (app, userIds, evento, data) => {
     io.to(`user_${userId}`).emit(evento, data);
   });
   
-  console.log(`📤 Notificación enviada: ${evento} -> ${userIds.length} usuarios`);
+  console.log(`Notificación enviada: ${evento} -> ${userIds.length} usuarios`);
 };
 
 /**
@@ -59,24 +59,24 @@ const emitirNotificacionRol = (app, roles, evento, data) => {
   const io = app.get('io');
   
   if (!io) {
-    console.warn('⚠️ Socket.IO no está inicializado');
+    console.warn('Socket.IO no está inicializado');
     return;
   }
 
   // Convertir a array si es string
   const rolesArray = Array.isArray(roles) ? roles : [roles];
   
-  console.log(`📤 Preparando broadcast del evento '${evento}' a las siguientes salas:`);
+  console.log(`Preparando broadcast del evento '${evento}' a las siguientes salas:`);
   
   // Emitir a cada role
   rolesArray.forEach(rol => {
     const roomName = `rol_${rol}`;
     io.to(roomName).emit(evento, data);
-    console.log(`   ✓ Sala: ${roomName}`);
+    console.log(`Sala: ${roomName}`);
   });
   
-  console.log(`📊 Total de salas notificadas: ${rolesArray.length}`);
-  console.log(`📦 Datos enviados:`, JSON.stringify(data, null, 2));
+  console.log(`Total de salas notificadas: ${rolesArray.length}`);
+  console.log(`Datos enviados:`, JSON.stringify(data, null, 2));
 };
 
 /**
@@ -93,8 +93,8 @@ const notificarNuevoPagoPendiente = (req, pagoData, estudianteData) => {
     fecha: new Date()
   };
   
-  console.log(`📢 Notificando nuevo pago pendiente a administradores`);
-  console.log(`📦 Payload:`, JSON.stringify(payload, null, 2));
+  console.log(`Notificando nuevo pago pendiente a administradores`);
+  console.log(`Payload:`, JSON.stringify(payload, null, 2));
   
   // Emitir a los roles administrativos (por si hay variaciones en el nombre del rol)
   emitirNotificacionRol(req.app, ['administrativo', 'admin'], 'nuevo_pago_pendiente', payload);
@@ -110,7 +110,7 @@ const notificarNuevoPagoPendiente = (req, pagoData, estudianteData) => {
  * @param {Object} pagoData - Datos { id_pago, numero_cuota, monto }
  */
 const notificarPagoVerificado = (req, idEstudiante, pagoData) => {
-  console.log(`📢 Notificando pago verificado al estudiante ${idEstudiante}`);
+  console.log(`Notificando pago verificado al estudiante ${idEstudiante}`);
   emitirNotificacionUsuario(req.app, idEstudiante, 'pago_verificado_estudiante', {
     id_pago: pagoData.id_pago,
     numero_cuota: pagoData.numero_cuota,
@@ -143,7 +143,7 @@ const notificarNuevaTarea = (req, idsEstudiantes, tareaData) => {
     fecha: new Date()
   };
 
-  console.log(`📢 Notificando nueva tarea "${tareaData.titulo}" a ${idsEstudiantes.length} estudiantes`);
+  console.log(`Notificando nueva tarea "${tareaData.titulo}" a ${idsEstudiantes.length} estudiantes`);
   emitirNotificacionMultiple(req.app, idsEstudiantes, 'nueva_tarea', data);
 };
 
@@ -154,7 +154,7 @@ const notificarNuevaTarea = (req, idsEstudiantes, tareaData) => {
  * @param {Object} tareaData - Datos { id_tarea, titulo, nota, id_curso, docente_nombre, curso_nombre }
  */
 const notificarTareaCalificada = (req, idEstudiante, tareaData) => {
-  console.log(`📢 Notificando tarea calificada al estudiante ${idEstudiante}`);
+  console.log(`Notificando tarea calificada al estudiante ${idEstudiante}`);
   emitirNotificacionUsuario(req.app, idEstudiante, 'tarea_calificada', {
     id_tarea: tareaData.id_tarea,
     tarea_titulo: tareaData.titulo,
@@ -174,7 +174,7 @@ const notificarTareaCalificada = (req, idEstudiante, tareaData) => {
  * @param {Object} estudianteData - Datos { id_usuario, nombre, apellido }
  */
 const notificarTareaEntregada = (req, idDocente, tareaData, estudianteData) => {
-  console.log(`📢 Notificando entrega de tarea al docente ${idDocente}`);
+  console.log(`Notificando entrega de tarea al docente ${idDocente}`);
   emitirNotificacionUsuario(req.app, idDocente, 'tarea_entregada', {
     id_tarea: tareaData.id_tarea,
     tarea_titulo: tareaData.titulo,
@@ -205,7 +205,7 @@ const notificarNuevoModulo = (req, idsEstudiantes, moduloData) => {
     fecha: new Date()
   };
 
-  console.log(`📢 Notificando nuevo módulo "${moduloData.nombre_modulo}" a ${idsEstudiantes.length} estudiantes`);
+  console.log(`Notificando nuevo módulo "${moduloData.nombre_modulo}" a ${idsEstudiantes.length} estudiantes`);
   emitirNotificacionMultiple(req.app, idsEstudiantes, 'nuevo_modulo', data);
 };
 
@@ -224,7 +224,7 @@ const notificarModuloActualizado = (req, idsEstudiantes, moduloData) => {
     fecha: new Date()
   };
 
-  console.log(`📢 Notificando módulo actualizado "${moduloData.nombre_modulo}" a ${idsEstudiantes.length} estudiantes`);
+  console.log(`Notificando módulo actualizado "${moduloData.nombre_modulo}" a ${idsEstudiantes.length} estudiantes`);
   emitirNotificacionMultiple(req.app, idsEstudiantes, 'modulo_actualizado', data);
 };
 
@@ -247,7 +247,7 @@ const notificarNuevaMatriculaCurso = (app, idDocente, estudiante, curso) => {
  * @param {Object} solicitudData - Datos de la solicitud { id_solicitud, nombre, apellido, curso_nombre }
  */
 const notificarNuevaSolicitudMatricula = (req, solicitudData) => {
-  console.log(`📢 Notificando nueva solicitud de matrícula a administradores`);
+  console.log(`Notificando nueva solicitud de matrícula a administradores`);
   emitirNotificacionRol(req.app, 'administrativo', 'nueva_solicitud_matricula', {
     id_solicitud: solicitudData.id_solicitud,
     nombre_solicitante: solicitudData.nombre,
@@ -264,7 +264,7 @@ const notificarNuevaSolicitudMatricula = (req, solicitudData) => {
  * @param {Number} cantidadPendientes - Cantidad de matrículas pendientes
  */
 const notificarMatriculasPendientes = (req, cantidadPendientes) => {
-  console.log(`📢 Notificando ${cantidadPendientes} matrículas pendientes a administradores`);
+  console.log(`Notificando ${cantidadPendientes} matrículas pendientes a administradores`);
   emitirNotificacionRol(req.app, 'administrativo', 'matriculas_pendientes', {
     cantidad_pendientes: cantidadPendientes,
     mensaje: `Tienes ${cantidadPendientes} ${cantidadPendientes === 1 ? 'matrícula' : 'matrículas'} pendiente(s) de aprobación`,
@@ -279,7 +279,7 @@ const notificarMatriculasPendientes = (req, cantidadPendientes) => {
  * @param {Object} entregaData - Datos de la entrega { id_tarea, titulo_tarea, id_estudiante, nombre_estudiante, apellido_estudiante }
  */
 const notificarTareaEntregadaDocente = (req, idDocente, entregaData) => {
-  console.log(`📢 Notificando tarea entregada al docente ${idDocente}`);
+  console.log(`Notificando tarea entregada al docente ${idDocente}`);
   emitirNotificacionUsuario(req.app, idDocente, 'tarea_entregada_docente', {
     id_tarea: entregaData.id_tarea,
     id_modulo: entregaData.id_modulo,
@@ -298,7 +298,7 @@ const notificarTareaEntregadaDocente = (req, idDocente, entregaData) => {
  * @param {Object} tareaData - Datos { id_tarea, titulo_tarea, cantidad_entregas_pendientes }
  */
 const notificarTareasPorCalificar = (req, idDocente, tareaData) => {
-  console.log(`📢 Notificando tareas por calificar al docente ${idDocente}`);
+  console.log(`Notificando tareas por calificar al docente ${idDocente}`);
   emitirNotificacionUsuario(req.app, idDocente, 'tareas_por_calificar', {
     id_tarea: tareaData.id_tarea,
     tarea_titulo: tareaData.titulo_tarea,
@@ -312,7 +312,7 @@ const notificarTareasPorCalificar = (req, idDocente, tareaData) => {
  * Emitir notificación de matrícula aprobada (para estudiante)
  */
 const notificarMatriculaAprobada = (req, idEstudiante, matriculaData) => {
-  console.log(`📢 Notificando matrícula aprobada al estudiante ${idEstudiante}`);
+  console.log(`Notificando matrícula aprobada al estudiante ${idEstudiante}`);
   emitirNotificacionUsuario(req.app, idEstudiante, 'matricula_aprobada', {
     id_matricula: matriculaData.id_matricula,
     id_curso: matriculaData.id_curso,

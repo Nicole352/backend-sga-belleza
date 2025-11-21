@@ -4,9 +4,9 @@ class DocentesModel {
   // Obtener todos los docentes con paginación y filtros
   static async getAll(filters = {}) {
     const { page = 1, limit = 10, search = '', estado = '' } = filters;
-    
+
     const offset = (page - 1) * limit;
-    
+
     // Consulta con JOIN a usuarios para obtener id_usuario, gmail y foto_perfil
     const docentesQuery = `
       SELECT 
@@ -31,17 +31,17 @@ class DocentesModel {
       LEFT JOIN usuarios u ON u.cedula = d.identificacion AND u.id_rol = (SELECT id_rol FROM roles WHERE nombre_rol = 'docente')
       ORDER BY d.apellidos ASC, d.nombres ASC
     `;
-    
+
     const [allDocentes] = await pool.execute(docentesQuery);
-    
+
     // Aplicar paginación manualmente
     const startIndex = (parseInt(page) - 1) * parseInt(limit);
     const endIndex = startIndex + parseInt(limit);
     const docentes = allDocentes.slice(startIndex, endIndex);
-    
+
     // Total es el length del array completo
     const total = allDocentes.length;
-    
+
     return {
       docentes,
       total,
@@ -57,7 +57,7 @@ class DocentesModel {
       'SELECT * FROM docentes WHERE id_docente = ?',
       [id]
     );
-    
+
     return docentes.length > 0 ? docentes[0] : null;
   }
 
@@ -67,7 +67,7 @@ class DocentesModel {
       'SELECT * FROM docentes WHERE identificacion = ?',
       [identificacion]
     );
-    
+
     return docentes.length > 0 ? docentes[0] : null;
   }
 
@@ -159,7 +159,7 @@ class DocentesModel {
       INNER JOIN roles r ON u.id_rol = r.id_rol
       WHERE r.nombre_rol = 'docente'
     `);
-    
+
     return stats[0];
   }
 
@@ -169,7 +169,7 @@ class DocentesModel {
       'SELECT telefono, genero, direccion, email, username, password_temporal, estado FROM usuarios WHERE cedula = ? LIMIT 1',
       [identificacion]
     );
-    
+
     return usuarios.length > 0 ? usuarios[0] : null;
   }
 
@@ -177,12 +177,12 @@ class DocentesModel {
   static async existsByIdentificacion(identificacion, excludeId = null) {
     let query = 'SELECT COUNT(*) as count FROM docentes WHERE identificacion = ?';
     let params = [identificacion];
-    
+
     if (excludeId) {
       query += ' AND id_docente != ?';
       params.push(excludeId);
     }
-    
+
     const [result] = await pool.execute(query, params);
     return result[0].count > 0;
   }
@@ -231,6 +231,9 @@ class DocentesModel {
         u.telefono,
         c.nombre as curso_nombre,
         c.codigo_curso,
+        c.fecha_inicio as fecha_inicio_curso,
+        c.fecha_fin as fecha_fin_curso,
+        c.estado as estado_curso,
         m.fecha_matricula
       FROM asignaciones_aulas aa
       INNER JOIN cursos c ON aa.id_curso = c.id_curso
@@ -243,7 +246,7 @@ class DocentesModel {
     return estudiantes;
   }
 
-  // Obtener horario semanal del docente
+  // Obtener horario semanal del docente (solo cursos activos)
   static async getMiHorario(id_docente) {
     const [horarios] = await pool.execute(`
       SELECT 
@@ -258,7 +261,10 @@ class DocentesModel {
       FROM asignaciones_aulas aa
       INNER JOIN cursos c ON aa.id_curso = c.id_curso
       INNER JOIN aulas a ON aa.id_aula = a.id_aula
-      WHERE aa.id_docente = ? AND aa.estado = 'activa'
+      WHERE aa.id_docente = ? 
+        AND aa.estado = 'activa'
+        AND c.estado NOT IN ('finalizado', 'cancelado')
+        AND c.fecha_fin >= CURDATE()
       ORDER BY aa.hora_inicio ASC
     `, [id_docente]);
 

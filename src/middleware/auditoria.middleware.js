@@ -18,7 +18,7 @@ async function registrarAuditoria(req, tabla, operacion, idRegistro, datosAnteri
 
     // Validar que tengamos al menos el usuario
     if (!usuarioId) {
-      console.warn('⚠️ Auditoría sin usuario autenticado:', { tabla, operacion, idRegistro });
+      console.warn('Auditoría sin usuario autenticado:', { tabla, operacion, idRegistro });
       return; // No registrar si no hay usuario (puede ser operación del sistema)
     }
 
@@ -44,10 +44,10 @@ async function registrarAuditoria(req, tabla, operacion, idRegistro, datosAnteri
       userAgent
     ]);
 
-    console.log(`✅ Auditoría registrada: ${operacion} en ${tabla} (ID: ${idRegistro}) por usuario ${usuarioId}`);
+    console.log(`Auditoría registrada: ${operacion} en ${tabla} (ID: ${idRegistro}) por usuario ${usuarioId}`);
   } catch (error) {
     // No lanzar error para no afectar la operación principal
-    console.error('-Error al registrar auditoría:', error);
+    console.error('Error al registrar auditoría:', error);
     console.error('Detalles:', { tabla, operacion, idRegistro });
   }
 }

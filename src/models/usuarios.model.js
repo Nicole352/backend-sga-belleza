@@ -49,6 +49,9 @@ async function getUserById(id) {
       u.estado,
       u.fecha_registro,
       u.fecha_ultima_conexion,
+      u.cuenta_bloqueada,
+      u.motivo_bloqueo,
+      u.fecha_bloqueo,
       r.nombre_rol
      FROM usuarios u
      JOIN roles r ON r.id_rol = u.id_rol
@@ -98,11 +101,11 @@ async function createRole(nombre_rol, descripcion = null) {
   return role;
 }
 
-async function createAdminUser({ cedula, nombre, apellido, email, telefono, fecha_nacimiento, direccion, genero, foto_perfil, foto_mime_type, passwordHash, id_rol }) {
+async function createAdminUser({ cedula, nombre, apellido, email, telefono, fecha_nacimiento, direccion, genero, foto_perfil, foto_mime_type, foto_perfil_url, foto_perfil_public_id, passwordHash, id_rol }) {
   const [result] = await pool.execute(
     `INSERT INTO usuarios (
-      cedula, nombre, apellido, email, telefono, fecha_nacimiento, direccion, foto_perfil, password, id_rol, estado
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'activo')`,
+      cedula, nombre, apellido, email, telefono, fecha_nacimiento, direccion, foto_perfil, foto_perfil_url, foto_perfil_public_id, password, id_rol, estado
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'activo')`,
     [
       cedula,
       nombre,
@@ -112,6 +115,8 @@ async function createAdminUser({ cedula, nombre, apellido, email, telefono, fech
       fecha_nacimiento,
       direccion,
       foto_perfil || null,
+      foto_perfil_url || null,
+      foto_perfil_public_id || null,
       passwordHash,
       id_rol
     ]
@@ -227,7 +232,7 @@ async function getAdminStats() {
 
   // Obtener matrículas de la tabla correcta
   const [matriculasAceptadas] = await pool.execute(
-    'SELECT COUNT(*) as total FROM solicitudes_matricula WHERE estado = "aceptada"'
+    'SELECT COUNT(*) as total FROM solicitudes_matricula WHERE estado = "aprobado"'
   );
   const [matriculasPendientes] = await pool.execute(
     'SELECT COUNT(*) as total FROM solicitudes_matricula WHERE estado = "pendiente"'
@@ -261,7 +266,7 @@ async function getAdminStats() {
     [ultimoDiaMesAnterior]
   );
   const [matriculasAceptadasMesAnterior] = await pool.execute(
-    'SELECT COUNT(*) as total FROM solicitudes_matricula WHERE estado = "aceptada" AND fecha_solicitud <= ?',
+    'SELECT COUNT(*) as total FROM solicitudes_matricula WHERE estado = "aprobado" AND fecha_solicitud <= ?',
     [ultimoDiaMesAnterior]
   );
   const [matriculasPendientesMesAnterior] = await pool.execute(
@@ -294,11 +299,11 @@ async function getAdminStats() {
 // Actualizar datos de un usuario (campos opcionales)
 async function updateAdminUser(id_usuario, fields) {
   const { pool } = require('../config/database');
-  
+
   // Separar campos que pertenecen a la tabla usuarios de los que pertenecen a otras tablas
   const userFields = {};
   const otherFields = {};
-  
+
   const userTableFields = {
     nombre: 'nombre',
     apellido: 'apellido',
@@ -308,7 +313,9 @@ async function updateAdminUser(id_usuario, fields) {
     direccion: 'direccion',
     genero: 'genero',
     id_rol: 'id_rol',
-    foto_perfil: 'foto_perfil'
+    foto_perfil: 'foto_perfil',
+    foto_perfil_url: 'foto_perfil_url',
+    foto_perfil_public_id: 'foto_perfil_public_id'
   };
 
   Object.keys(fields).forEach((field) => {
@@ -323,7 +330,7 @@ async function updateAdminUser(id_usuario, fields) {
   if (Object.keys(userFields).length > 0) {
     const setParts = [];
     const values = [];
-    
+
     Object.keys(userTableFields).forEach((k) => {
       if (Object.prototype.hasOwnProperty.call(userFields, k) && userFields[k] !== undefined) {
         setParts.push(`${userTableFields[k]} = ?`);
@@ -345,10 +352,10 @@ async function updateAdminUser(id_usuario, fields) {
       const [userData] = await pool.execute(`
         SELECT cedula FROM usuarios WHERE id_usuario = ?
       `, [id_usuario]);
-      
+
       if (userData.length > 0) {
         const cedula = userData[0].cedula;
-        
+
         // Actualizar el contacto de emergencia en la solicitud aprobada más reciente
         await pool.execute(`
           UPDATE solicitudes_matricula 
@@ -392,7 +399,7 @@ async function getAllUsersWithFilters({ search = '', rol = 'todos', estado = 'to
   const pageNum = parseInt(page) || 1;
   const limitNum = parseInt(limit) || 10;
   const offset = (pageNum - 1) * limitNum;
-  
+
   let whereConditions = [];
   let params = [];
 
@@ -411,8 +418,12 @@ async function getAllUsersWithFilters({ search = '', rol = 'todos', estado = 'to
 
   // Filtro por estado
   if (estado !== 'todos') {
-    whereConditions.push('u.estado = ?');
-    params.push(estado);
+    if (estado === 'bloqueado') {
+      whereConditions.push('u.cuenta_bloqueada = TRUE');
+    } else {
+      whereConditions.push('u.estado = ?');
+      params.push(estado);
+    }
   }
 
   const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
@@ -430,6 +441,9 @@ async function getAllUsersWithFilters({ search = '', rol = 'todos', estado = 'to
       u.estado, 
       u.fecha_ultima_conexion, 
       u.fecha_registro, 
+      u.cuenta_bloqueada,
+      u.motivo_bloqueo,
+      u.fecha_bloqueo,
       r.nombre_rol,
       CASE 
         WHEN u.foto_perfil IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(u.foto_perfil))
@@ -445,12 +459,12 @@ async function getAllUsersWithFilters({ search = '', rol = 'todos', estado = 'to
   const queryParams = [...params, limitNum, offset];
   console.log('Query params:', queryParams);
   console.log('Types:', queryParams.map(p => typeof p));
-  
+
   const [rows] = await pool.query(query, queryParams);
-  
+
   // DEBUG: Verificar fotos (simplificado)
   const conFoto = rows.filter(u => u.foto_perfil).length;
-  console.log('📸 Backend - Usuarios con foto:', conFoto, 'de', rows.length);
+  console.log('Backend - Usuarios con foto:', conFoto, 'de', rows.length);
 
   // Consulta para obtener total de registros
   const countQuery = `
@@ -475,26 +489,26 @@ async function getAllUsersWithFilters({ search = '', rol = 'todos', estado = 'to
 async function getControlUsuariosStats() {
   // Total de usuarios
   const [totalRows] = await pool.execute('SELECT COUNT(*) as total FROM usuarios');
-  
+
   // Usuarios activos
   const [activosRows] = await pool.execute('SELECT COUNT(*) as total FROM usuarios WHERE estado = "activo"');
-  
+
   // Usuarios inactivos
   const [inactivosRows] = await pool.execute('SELECT COUNT(*) as total FROM usuarios WHERE estado = "inactivo"');
-  
+
   // Por rol
   const [adminRows] = await pool.execute(
     `SELECT COUNT(*) as total FROM usuarios u 
      JOIN roles r ON r.id_rol = u.id_rol 
      WHERE r.nombre_rol = 'administrativo'`
   );
-  
+
   const [docenteRows] = await pool.execute(
     `SELECT COUNT(*) as total FROM usuarios u 
      JOIN roles r ON r.id_rol = u.id_rol 
      WHERE r.nombre_rol = 'docente'`
   );
-  
+
   const [estudianteRows] = await pool.execute(
     `SELECT COUNT(*) as total FROM usuarios u 
      JOIN roles r ON r.id_rol = u.id_rol 
@@ -600,6 +614,70 @@ async function deleteFotoPerfil(id_usuario) {
   return await getUserById(id_usuario);
 }
 
+// ========================================
+// Funciones para Bloqueo de Cuentas
+// ========================================
+
+/**
+ * Bloquea una cuenta de usuario
+ * @param {number} id_usuario 
+ * @param {string} motivo 
+ * @returns {Promise<Object>}
+ */
+async function bloquearCuenta(id_usuario, motivo = 'Bloqueo manual por administrador') {
+  await pool.execute(
+    `UPDATE usuarios 
+     SET cuenta_bloqueada = TRUE,
+         motivo_bloqueo = ?,
+         fecha_bloqueo = NOW()
+     WHERE id_usuario = ?`,
+    [motivo, id_usuario]
+  );
+  return await getUserById(id_usuario);
+}
+
+/**
+ * Desbloquea una cuenta de usuario
+ * @param {number} id_usuario 
+ * @returns {Promise<Object>}
+ */
+async function desbloquearCuenta(id_usuario) {
+  await pool.execute(
+    `UPDATE usuarios 
+     SET cuenta_bloqueada = FALSE,
+         motivo_bloqueo = NULL,
+         fecha_bloqueo = NULL
+     WHERE id_usuario = ?`,
+    [id_usuario]
+  );
+  return await getUserById(id_usuario);
+}
+
+/**
+ * Obtiene todas las cuentas bloqueadas
+ * @returns {Promise<Array>}
+ */
+async function getCuentasBloqueadas() {
+  const [rows] = await pool.execute(
+    `SELECT 
+      u.id_usuario,
+      u.cedula,
+      u.nombres,
+      u.apellidos,
+      u.email,
+      u.cuenta_bloqueada,
+      u.motivo_bloqueo,
+      u.fecha_bloqueo,
+      r.nombre_rol
+     FROM usuarios u
+     JOIN roles r ON r.id_rol = u.id_rol
+     WHERE u.cuenta_bloqueada = TRUE
+     ORDER BY u.fecha_bloqueo DESC`
+  );
+  return rows;
+}
+
+
 module.exports = {
   getUserByEmail,
   getUserByUsername,
@@ -627,5 +705,9 @@ module.exports = {
   // Funciones para Foto de Perfil
   updateFotoPerfil,
   getFotoPerfil,
-  deleteFotoPerfil
+  deleteFotoPerfil,
+  // Funciones para Bloqueo de Cuentas
+  bloquearCuenta,
+  desbloquearCuenta,
+  getCuentasBloqueadas
 };

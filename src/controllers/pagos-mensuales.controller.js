@@ -4,6 +4,7 @@ const { emitSocketEvent } = require('../services/socket.service');
 const { notificarNuevoPagoPendiente } = require('../utils/notificationHelper');
 const { pool } = require('../config/database');
 const ExcelJS = require('exceljs');
+const cloudinaryService = require('../services/cloudinary.service');
 
 // Obtener cuotas de una matrícula específica
 exports.getCuotasByMatricula = async (req, res) => {
@@ -11,23 +12,23 @@ exports.getCuotasByMatricula = async (req, res) => {
     const id_matricula = Number(req.params.id_matricula);
     const id_estudiante = req.user?.id_usuario;
 
-    console.log('🔍 getCuotasByMatricula - Parámetros recibidos:', {
+    console.log('getCuotasByMatricula - Parámetros recibidos:', {
       id_matricula,
       id_estudiante,
       user: req.user
     });
 
     if (!id_matricula || !id_estudiante) {
-      console.log('❌ Parámetros inválidos:', { id_matricula, id_estudiante });
+      console.log('Parámetros inválidos:', { id_matricula, id_estudiante });
       return res.status(400).json({ error: 'Parámetros inválidos' });
     }
 
     const cuotas = await PagosMenualesModel.getCuotasByMatricula(id_matricula, id_estudiante);
-    console.log('✅ Cuotas obtenidas exitosamente:', cuotas.length);
+    console.log('Cuotas obtenidas exitosamente:', cuotas.length);
     res.json(cuotas);
 
   } catch (error) {
-    console.error('❌ Error obteniendo cuotas:', {
+    console.error('Error obteniendo cuotas:', {
       message: error.message,
       id_matricula: req.params.id_matricula,
       id_estudiante: req.user?.id_usuario
@@ -81,7 +82,7 @@ exports.pagarCuota = async (req, res) => {
 
     const id_estudiante = req.user?.id_usuario;
 
-    console.log('🔍 Procesando pago:', {
+    console.log(' Procesando pago:', {
       id_pago,
       id_estudiante,
       metodo_pago,
@@ -139,16 +140,33 @@ exports.pagarCuota = async (req, res) => {
       }
     }
 
-    // Procesar archivo si existe
+    // Subir archivo a Cloudinary si existe
     let archivoData = null;
+    let comprobanteCloudinary = null;
+
     if (req.file) {
+      try {
+        console.log(' Subiendo comprobante a Cloudinary...');
+        comprobanteCloudinary = await cloudinaryService.uploadFile(
+          req.file.buffer,
+          'comprobantes',
+          `pago-cuota-${id_pago}-${Date.now()}`
+        );
+        console.log(' Comprobante subido a Cloudinary:', comprobanteCloudinary.secure_url);
+      } catch (cloudinaryError) {
+        console.error(' Error subiendo a Cloudinary:', cloudinaryError);
+        // Continuar sin Cloudinary (fallback a LONGBLOB)
+      }
+
       archivoData = {
         comprobanteBuffer: req.file.buffer,
         comprobanteMime: req.file.mimetype,
         comprobanteSizeKb: Math.round(req.file.size / 1024),
-        comprobanteNombreOriginal: req.file.originalname
+        comprobanteNombreOriginal: req.file.originalname,
+        comprobanteUrl: comprobanteCloudinary?.secure_url || null,
+        comprobantePublicId: comprobanteCloudinary?.public_id || null
       };
-      console.log('✅ Archivo procesado:', archivoData.comprobanteNombreOriginal);
+      console.log(' Archivo procesado:', archivoData.comprobanteNombreOriginal);
     }
 
     const pagoData = {
@@ -163,7 +181,7 @@ exports.pagarCuota = async (req, res) => {
 
     const resultado = await PagosMenualesModel.procesarPago(id_pago, pagoData, archivoData, id_estudiante);
 
-    console.log('✅ Pago procesado exitosamente:', resultado);
+    console.log(' Pago procesado exitosamente:', resultado);
 
     // ENVIAR EMAIL AL ADMIN NOTIFICANDO EL NUEVO PAGO (asíncrono)
     setImmediate(async () => {
@@ -204,10 +222,10 @@ exports.pagarCuota = async (req, res) => {
           };
 
           await enviarNotificacionPagoEstudiante(datosPagoEmail);
-          console.log('✅ Email de notificación de pago enviado al admin');
+          console.log(' Email de notificación de pago enviado al admin');
         }
       } catch (emailError) {
-        console.error('❌ Error enviando email de notificación (no afecta el pago):', emailError);
+        console.error(' Error enviando email de notificación (no afecta el pago):', emailError);
       }
     });
 
@@ -232,7 +250,7 @@ exports.pagarCuota = async (req, res) => {
 
       if (pagoInfo.length > 0) {
         const pago = pagoInfo[0];
-        
+
         // Notificar a administradores usando el helper
         notificarNuevoPagoPendiente(req, {
           id_pago: pago.id_pago,
@@ -243,11 +261,11 @@ exports.pagarCuota = async (req, res) => {
           nombre: pago.estudiante_nombre,
           apellido: pago.estudiante_apellido
         });
-        
-        console.log(`📢 Administradores notificados: nuevo pago pendiente de ${pago.estudiante_nombre} ${pago.estudiante_apellido} (${pago.curso_nombre})`);
+
+        console.log(` Administradores notificados: nuevo pago pendiente de ${pago.estudiante_nombre} ${pago.estudiante_apellido} (${pago.curso_nombre})`);
       }
     } catch (socketError) {
-      console.error('❌ Error emitiendo evento socket (no afecta el pago):', socketError);
+      console.error(' Error emitiendo evento socket (no afecta el pago):', socketError);
     }
 
     res.json({
@@ -257,8 +275,8 @@ exports.pagarCuota = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('-Error procesando pago:', error);
-    console.error('-Stack trace:', error.stack);
+    console.error('Error procesando pago:', error);
+    console.error('Stack trace:', error.stack);
     res.status(500).json({
       error: error.message || 'Error interno del servidor',
       details: error.stack
@@ -277,7 +295,7 @@ exports.getComprobante = async (req, res) => {
     }
 
     const comprobante = await PagosMenualesModel.getComprobante(id_pago, id_estudiante);
-    
+
     if (!comprobante) {
       return res.status(404).json({ error: 'Comprobante no encontrado' });
     }
@@ -288,9 +306,9 @@ exports.getComprobante = async (req, res) => {
 
   } catch (error) {
     console.error('Error obteniendo comprobante:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -309,9 +327,9 @@ exports.getResumenPagos = async (req, res) => {
 
   } catch (error) {
     console.error('Error obteniendo resumen de pagos:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -325,16 +343,54 @@ exports.getCursosConPagosPendientes = async (req, res) => {
       return res.status(401).json({ error: 'Usuario no autenticado' });
     }
 
-    console.log(`📚 Buscando cursos para estudiante ID: ${id_estudiante}`);
+    console.log(` Buscando cursos para estudiante ID: ${id_estudiante}`);
     const cursos = await PagosMenualesModel.getCursosConPagosPendientes(id_estudiante);
-    console.log(`✅ Cursos devueltos al frontend:`, JSON.stringify(cursos, null, 2));
+    console.log(` Cursos devueltos al frontend:`, JSON.stringify(cursos, null, 2));
     res.json(cursos);
 
   } catch (error) {
     console.error('Error obteniendo cursos con pagos pendientes:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
+    });
+  }
+};
+
+// Actualizar decisión del estudiante sobre un curso promocional
+exports.actualizarDecisionPromocion = async (req, res) => {
+  try {
+    const id_matricula = Number(req.params.id_matricula);
+    const { decision } = req.body || {};
+    const id_estudiante = req.user?.id_usuario;
+
+    const decisionesPermitidas = ['continuar', 'rechazar'];
+
+    if (!id_matricula || !id_estudiante) {
+      return res.status(400).json({ error: 'Parámetros inválidos' });
+    }
+
+    if (!decisionesPermitidas.includes(decision)) {
+      return res.status(400).json({ error: 'Decisión no válida' });
+    }
+
+    const resultado = await PagosMenualesModel.actualizarDecisionPromocion(
+      id_matricula,
+      id_estudiante,
+      decision
+    );
+
+    res.json({
+      success: true,
+      decision: resultado.decision_estudiante,
+      fecha_decision: resultado.fecha_decision,
+      fecha_inicio_cobro: resultado.fecha_inicio_cobro,
+      meses_gratis: resultado.meses_gratis
+    });
+  } catch (error) {
+    console.error('Error actualizando decisión de promoción:', error);
+    res.status(500).json({
+      error: error.message || 'No pudimos registrar tu decisión, intenta más tarde'
     });
   }
 };
@@ -474,9 +530,9 @@ exports.generarReporteExcel = async (req, res) => {
 
     // Agregar datos
     pagos.forEach(pago => {
-      const metodoPago = pago.metodo_pago === 'efectivo' ? 'Efectivo' : 
-                         (!pago.numero_comprobante ? 'En Espera' : 'Transferencia');
-      
+      const metodoPago = pago.metodo_pago === 'efectivo' ? 'Efectivo' :
+        (!pago.numero_comprobante ? 'En Espera' : 'Transferencia');
+
       // Mostrar verificado por: solo nombre si es admin o administrativo
       let verificadoPor = 'N/A';
       if (pago.verificado_por_nombre && pago.verificado_por_rol) {
@@ -485,7 +541,7 @@ exports.generarReporteExcel = async (req, res) => {
           verificadoPor = `${pago.verificado_por_nombre} ${pago.verificado_por_apellido}`;
         }
       }
-      
+
       sheet1.addRow({
         codigo_mat: pago.codigo_matricula,
         estudiante: `${pago.estudiante_nombre} ${pago.estudiante_apellido}`,
@@ -517,7 +573,7 @@ exports.generarReporteExcel = async (req, res) => {
           right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
         };
       });
-      
+
       if (rowNumber > 1 && rowNumber % 2 === 0) {
         row.fill = {
           type: 'pattern',
@@ -546,9 +602,9 @@ exports.generarReporteExcel = async (req, res) => {
 
     // Subtítulo con fecha
     sheet2.mergeCells('A2:F2');
-    sheet2.getCell('A2').value = `Generado el: ${new Date().toLocaleDateString('es-EC', { 
-      year: 'numeric', 
-      month: 'long', 
+    sheet2.getCell('A2').value = `Generado el: ${new Date().toLocaleDateString('es-EC', {
+      year: 'numeric',
+      month: 'long',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
@@ -599,13 +655,13 @@ exports.generarReporteExcel = async (req, res) => {
       sheet2.getCell(`B${row}`).value = dato.cantidad;
       sheet2.getCell(`C${row}`).value = `${porcentaje}%`;
       sheet2.getCell(`D${row}`).value = `$${parseFloat(dato.monto || 0).toFixed(2)}`;
-      
+
       sheet2.getCell(`B${row}`).alignment = { horizontal: 'center' };
       sheet2.getCell(`C${row}`).alignment = { horizontal: 'center' };
       sheet2.getCell(`D${row}`).alignment = { horizontal: 'right' };
       sheet2.getCell(`C${row}`).font = { bold: true, color: { argb: dato.color } };
       sheet2.getCell(`D${row}`).font = { bold: true, color: { argb: 'FF10B981' } };
-      
+
       row++;
     });
 
@@ -626,11 +682,11 @@ exports.generarReporteExcel = async (req, res) => {
     sheet2.getCell(`A${metodoRow}`).value = '💵 Efectivo';
     sheet2.getCell(`B${metodoRow}`).value = stats.pagos_efectivo;
     sheet2.getCell(`C${metodoRow}`).value = `${total > 0 ? ((stats.pagos_efectivo / total) * 100).toFixed(1) : '0.0'}%`;
-    
+
     sheet2.getCell(`A${metodoRow + 1}`).value = '🏦 Transferencia';
     sheet2.getCell(`B${metodoRow + 1}`).value = stats.pagos_transferencia;
     sheet2.getCell(`C${metodoRow + 1}`).value = `${total > 0 ? ((stats.pagos_transferencia / total) * 100).toFixed(1) : '0.0'}%`;
-    
+
     sheet2.getCell(`A${metodoRow + 2}`).value = '⏳ En Espera';
     sheet2.getCell(`B${metodoRow + 2}`).value = stats.pagos_en_espera;
     sheet2.getCell(`C${metodoRow + 2}`).value = `${total > 0 ? ((stats.pagos_en_espera / total) * 100).toFixed(1) : '0.0'}%`;
@@ -676,7 +732,7 @@ exports.generarReporteExcel = async (req, res) => {
       sheet2.getCell(`E${cursoRow}`).value = `$${parseFloat(curso.monto_total).toFixed(2)}`;
       sheet2.getCell(`F${cursoRow}`).value = `$${parseFloat(curso.monto_recaudado).toFixed(2)}`;
       sheet2.getCell(`G${cursoRow}`).value = `$${parseFloat(curso.monto_pendiente).toFixed(2)}`;
-      
+
       ['C', 'D'].forEach(col => {
         sheet2.getCell(`${col}${cursoRow}`).alignment = { horizontal: 'center' };
       });
@@ -686,7 +742,7 @@ exports.generarReporteExcel = async (req, res) => {
       });
       sheet2.getCell(`F${cursoRow}`).font.color = { argb: 'FF10B981' };
       sheet2.getCell(`G${cursoRow}`).font.color = { argb: 'FFEF4444' };
-      
+
       // Filas alternadas
       if (index % 2 === 0) {
         ['A', 'B', 'C', 'D', 'E', 'F', 'G'].forEach(col => {
@@ -697,7 +753,7 @@ exports.generarReporteExcel = async (req, res) => {
           };
         });
       }
-      
+
       cursoRow++;
     });
 
@@ -736,12 +792,12 @@ exports.generarReporteExcel = async (req, res) => {
       sheet2.getCell(`C${pendRow}`).value = `${est.codigo_curso} - ${est.curso_nombre}`;
       sheet2.getCell(`D${pendRow}`).value = est.cuotas_pendientes;
       sheet2.getCell(`E${pendRow}`).value = `$${parseFloat(est.monto_pendiente).toFixed(2)}`;
-      
+
       sheet2.getCell(`D${pendRow}`).alignment = { horizontal: 'center' };
       sheet2.getCell(`D${pendRow}`).font = { bold: true, color: { argb: 'FFF59E0B' } };
       sheet2.getCell(`E${pendRow}`).alignment = { horizontal: 'right' };
       sheet2.getCell(`E${pendRow}`).font = { bold: true, color: { argb: 'FFEF4444' } };
-      
+
       // Filas alternadas
       if (index % 2 === 0) {
         ['A', 'B', 'C', 'D', 'E'].forEach(col => {
@@ -752,7 +808,7 @@ exports.generarReporteExcel = async (req, res) => {
           };
         });
       }
-      
+
       pendRow++;
     });
 
@@ -813,7 +869,7 @@ exports.generarReporteExcel = async (req, res) => {
     // Generar archivo
     const buffer = await workbook.xlsx.writeBuffer();
     const fecha = new Date().toISOString().split('T')[0];
-    
+
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=Reporte_Pagos_${fecha}.xlsx`);
     res.send(buffer);

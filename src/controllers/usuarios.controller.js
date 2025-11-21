@@ -79,7 +79,7 @@ async function getUsuarioById(req, res) {
 
     // Si es estudiante, agregar información académica
     if (usuario.nombre_rol === 'estudiante') {
-      console.log(`🎓 Estudiante - id_usuario: ${id}`);
+      console.log(`Estudiante - id_usuario: ${id}`);
 
       // Contar cursos matriculados
       const [cursosMatriculados] = await pool.query(
@@ -107,9 +107,9 @@ async function getUsuarioById(req, res) {
         [id]
       );
 
-      console.log(`📚 Cursos matriculados:`, cursosMatriculados[0]);
-      console.log(`✅ Pagos completados:`, pagosCompletados[0]);
-      console.log(`⏳ Pagos pendientes:`, pagosPendientes[0]);
+      console.log(`Cursos matriculados:`, cursosMatriculados[0]);
+      console.log(`Pagos completados:`, pagosCompletados[0]);
+      console.log(`Pagos pendientes:`, pagosPendientes[0]);
 
       usuario.cursos_matriculados = cursosMatriculados[0]?.total || 0;
       usuario.pagos_completados = pagosCompletados[0]?.total || 0;
@@ -122,7 +122,7 @@ async function getUsuarioById(req, res) {
       const DocentesModel = require('../models/docentes.model');
       const id_docente = await DocentesModel.getDocenteIdByUserId(id);
 
-      console.log(`🔍 Docente - id_usuario: ${id}, id_docente: ${id_docente}`);
+      console.log(`Docente - id_usuario: ${id}, id_docente: ${id_docente}`);
 
       if (id_docente) {
 
@@ -134,7 +134,7 @@ async function getUsuarioById(req, res) {
           [id_docente]
         );
 
-        console.log(`📚 Cursos asignados:`, cursosAsignados[0]);
+        console.log(`Cursos asignados:`, cursosAsignados[0]);
 
         // Contar estudiantes activos en esos cursos
         const [estudiantesActivos] = await pool.query(
@@ -147,12 +147,12 @@ async function getUsuarioById(req, res) {
           [id_docente]
         );
 
-        console.log(`👥 Estudiantes activos:`, estudiantesActivos[0]);
+        console.log(`Estudiantes activos:`, estudiantesActivos[0]);
 
         usuario.cursos_asignados = cursosAsignados[0]?.total || 0;
         usuario.estudiantes_activos = estudiantesActivos[0]?.total || 0;
       } else {
-        console.log(`-No se encontró id_docente para usuario ${id}`);
+        console.log(`No se encontró id_docente para usuario ${id}`);
       }
     }
 
@@ -482,21 +482,21 @@ async function getAcciones(req, res) {
               let datosNuevos = {};
               if (accion.datos_nuevos) {
                 try {
-                  datosNuevos = typeof accion.datos_nuevos === 'string' 
-                    ? JSON.parse(accion.datos_nuevos) 
+                  datosNuevos = typeof accion.datos_nuevos === 'string'
+                    ? JSON.parse(accion.datos_nuevos)
                     : accion.datos_nuevos;
                 } catch (err) {
                   console.error('Error parseando datos_nuevos:', err);
                   datosNuevos = {};
                 }
               }
-              
+
               // Verificar si es cambio de contraseña
               if (datosNuevos.password_changed) {
                 const [user] = await pool.query(`
                   SELECT nombre, apellido, username, email FROM usuarios WHERE id_usuario = ?
                 `, [accion.id_registro]);
-                
+
                 if (user.length > 0) {
                   if (accion.id_registro === parseInt(id)) {
                     descripcion = 'Cambió su contraseña';
@@ -513,7 +513,7 @@ async function getAcciones(req, res) {
                 const [user] = await pool.query(`
                   SELECT nombre, apellido FROM usuarios WHERE id_usuario = ?
                 `, [accion.id_registro]);
-                
+
                 if (accion.id_registro === parseInt(id)) {
                   descripcion = 'Actualizó su perfil';
                   detalles = 'Modificación de información personal';
@@ -717,9 +717,34 @@ async function subirFotoPerfil(req, res) {
       });
     }
 
-    // Guardar la foto en la base de datos (BLOB)
+    // Subir foto a Cloudinary
     const fotoBuffer = req.file.buffer;
-    await usuariosModel.updateFotoPerfil(id, fotoBuffer);
+    let fotoPerfilUrl = null;
+    let fotoPerfilPublicId = null;
+
+    try {
+      const cloudinaryService = require('../services/cloudinary.service');
+      console.log('Subiendo foto de perfil a Cloudinary...');
+      const cloudinaryResult = await cloudinaryService.uploadFile(
+        fotoBuffer,
+        'perfiles',
+        `perfil-${usuario.cedula}-${Date.now()}`
+      );
+      console.log('Foto de perfil subida:', cloudinaryResult.secure_url);
+
+      fotoPerfilUrl = cloudinaryResult.secure_url;
+      fotoPerfilPublicId = cloudinaryResult.public_id;
+    } catch (cloudinaryError) {
+      console.error('Error subiendo foto a Cloudinary:', cloudinaryError);
+      // Continuar sin Cloudinary (fallback a LONGBLOB)
+    }
+
+    // Guardar la foto en la base de datos (BLOB + URL de Cloudinary)
+    await usuariosModel.updateAdminUser(parseInt(id), {
+      foto_perfil: fotoBuffer,
+      foto_perfil_url: fotoPerfilUrl,
+      foto_perfil_public_id: fotoPerfilPublicId
+    });
 
     // Registrar auditoría
     await registrarAuditoria({
@@ -739,7 +764,8 @@ async function subirFotoPerfil(req, res) {
       data: {
         id_usuario: parseInt(id),
         foto_actualizada: true,
-        tamano_kb: Math.round(req.file.size / 1024)
+        tamano_kb: Math.round(req.file.size / 1024),
+        cloudinary_url: fotoPerfilUrl
       }
     });
   } catch (error) {
@@ -994,6 +1020,165 @@ async function cambiarMiPassword(req, res) {
   }
 }
 
+// ========================================
+// POST /api/usuarios/:id/bloquear - Bloquear cuenta
+// ========================================
+async function bloquearCuenta(req, res) {
+  try {
+    const { id } = req.params;
+    const { motivo } = req.body;
+
+    // Verificar que el usuario existe
+    const usuario = await usuariosModel.getUserById(id);
+    if (!usuario) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuario no encontrado'
+      });
+    }
+
+    // Verificar que no esté ya bloqueado
+    if (usuario.cuenta_bloqueada) {
+      return res.status(400).json({
+        success: false,
+        message: 'La cuenta ya está bloqueada'
+      });
+    }
+
+    // Bloquear cuenta
+    const motivoBloqueo = motivo || 'Bloqueo manual por administrador';
+    await usuariosModel.bloquearCuenta(id, motivoBloqueo);
+
+    // Registrar auditoría
+    await registrarAuditoria({
+      tabla_afectada: 'usuarios',
+      operacion: 'UPDATE',
+      id_registro: parseInt(id),
+      usuario_id: req.user?.id_usuario,
+      datos_anteriores: { cuenta_bloqueada: false },
+      datos_nuevos: { cuenta_bloqueada: true, motivo_bloqueo: motivoBloqueo },
+      ip_address: req.ip || req.connection?.remoteAddress || null,
+      user_agent: req.get('user-agent') || null
+    });
+
+    // Enviar notificación WebSocket al estudiante
+    const { emitToUser, emitToRole } = require('../services/socket.service');
+    emitToUser(req, parseInt(id), 'cuenta_bloqueada', {
+      tipo: 'cuenta_bloqueada',
+      motivo: motivoBloqueo,
+      fecha_bloqueo: new Date()
+    });
+
+    // Enviar notificación WebSocket a los administradores
+    emitToRole(req, 'admin', 'cuenta_bloqueada', {
+      tipo: 'cuenta_bloqueada',
+      nombre_estudiante: `${usuario.nombre} ${usuario.apellido}`,
+      motivo: motivoBloqueo,
+      fecha_bloqueo: new Date()
+    });
+
+    res.json({
+      success: true,
+      message: 'Cuenta bloqueada correctamente',
+      data: {
+        id_usuario: parseInt(id),
+        cuenta_bloqueada: true,
+        motivo_bloqueo: motivoBloqueo
+      }
+    });
+  } catch (error) {
+    console.error('Error al bloquear cuenta:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al bloquear cuenta',
+      error: error.message
+    });
+  }
+}
+
+// ========================================
+// POST /api/usuarios/:id/desbloquear - Desbloquear cuenta
+// ========================================
+async function desbloquearCuenta(req, res) {
+  try {
+    const { id } = req.params;
+
+    // Verificar que el usuario existe
+    const usuario = await usuariosModel.getUserById(id);
+    if (!usuario) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuario no encontrado'
+      });
+    }
+
+    // Verificar que esté bloqueado
+    console.log('Usuario para desbloquear:', {
+      id: usuario.id_usuario,
+      nombre: usuario.nombre,
+      cuenta_bloqueada: usuario.cuenta_bloqueada,
+      tipo: typeof usuario.cuenta_bloqueada
+    });
+
+    if (!usuario.cuenta_bloqueada && usuario.cuenta_bloqueada !== 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'La cuenta no está bloqueada'
+      });
+    }
+
+    // Desbloquear cuenta
+    await usuariosModel.desbloquearCuenta(id);
+
+    // Registrar auditoría
+    await registrarAuditoria({
+      tabla_afectada: 'usuarios',
+      operacion: 'UPDATE',
+      id_registro: parseInt(id),
+      usuario_id: req.user?.id_usuario,
+      datos_anteriores: { cuenta_bloqueada: true, motivo_bloqueo: usuario.motivo_bloqueo },
+      datos_nuevos: { cuenta_bloqueada: false, motivo_bloqueo: null },
+      ip_address: req.ip || req.connection?.remoteAddress || null,
+      user_agent: req.get('user-agent') || null
+    });
+
+    // Enviar notificación WebSocket al estudiante
+    const { emitToUser, emitToRole } = require('../services/socket.service');
+    const adminNombre = req.user ? `${req.user.nombre || ''} ${req.user.apellido || ''}`.trim() : 'Administrador';
+
+    emitToUser(req, parseInt(id), 'cuenta_desbloqueada', {
+      tipo: 'cuenta_desbloqueada',
+      desbloqueado_por: adminNombre,
+      fecha_desbloqueo: new Date()
+    });
+
+    // Enviar notificación WebSocket a los administradores
+    emitToRole(req, 'admin', 'cuenta_desbloqueada', {
+      tipo: 'cuenta_desbloqueada',
+      nombre_estudiante: `${usuario.nombre} ${usuario.apellido}`,
+      desbloqueado_por: adminNombre,
+      fecha_desbloqueo: new Date()
+    });
+
+    res.json({
+      success: true,
+      message: 'Cuenta desbloqueada correctamente',
+      data: {
+        id_usuario: parseInt(id),
+        cuenta_bloqueada: false
+      }
+    });
+  } catch (error) {
+    console.error('Error al desbloquear cuenta:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al desbloquear cuenta',
+      error: error.message
+    });
+  }
+}
+
+
 module.exports = {
   getUsuarios,
   getUsuariosStats,
@@ -1008,5 +1193,8 @@ module.exports = {
   eliminarFotoPerfil,
   // Funciones para perfil propio
   actualizarMiPerfil,
-  cambiarMiPassword
+  cambiarMiPassword,
+  // Funciones para bloqueo de cuentas
+  bloquearCuenta,
+  desbloquearCuenta
 };

@@ -139,15 +139,15 @@ async function createTarea(req, res) {
 
     // --- DEBUG LOGS: imprimir id creado, estado y COUNT de tareas activas en el módulo
     try {
-      console.log(`🟢 TAREA CREADA id_tarea=${id_tarea}`);
-      console.log(`🟢 Estado de la tarea creada:`, tarea && tarea.estado ? tarea.estado : 'desconocido');
+      console.log(`TAREA CREADA id_tarea=${id_tarea}`);
+      console.log(`Estado de la tarea creada:`, tarea && tarea.estado ? tarea.estado : 'desconocido');
       const { pool } = require('../config/database');
       const [countRows] = await pool.execute(
         'SELECT COUNT(*) as cnt FROM tareas_modulo WHERE id_modulo = ? AND estado = ?',
         [id_modulo, 'activo']
       );
       const activoCount = countRows && countRows[0] ? countRows[0].cnt : 0;
-      console.log(`🧮 Tareas activas en id_modulo=${id_modulo}:`, activoCount);
+      console.log(`Tareas activas en id_modulo=${id_modulo}:`, activoCount);
     } catch (dbgErr) {
       console.error('Error calculando COUNT de tareas activas (debug):', dbgErr);
     }
@@ -185,7 +185,7 @@ async function createTarea(req, res) {
           WHERE m.id_curso = ? AND m.estado = 'activa'
         `, [modulo.id_curso]);
         
-        console.log(`📋 Estudiantes encontrados para notificar tarea en curso ${modulo.id_curso}:`, estudiantes);
+        console.log(`Estudiantes encontrados para notificar tarea en curso ${modulo.id_curso}:`, estudiantes);
         
         // Obtener información del docente
         const [docenteInfo] = await pool.execute(`
@@ -214,24 +214,24 @@ async function createTarea(req, res) {
         setTimeout(() => {
           const { emitToUser } = require('../services/socket.service');
           emitToUser(req, req.user.id_usuario, 'nueva_tarea', payloadTarea);
-          console.log(`👨‍🏫 Docente ${req.user.id_usuario} notificado de su nueva tarea`);
+          console.log(`Docente ${req.user.id_usuario} notificado de su nueva tarea`);
         }, 100);
         
         if (estudiantes && estudiantes.length > 0) {
           const idsEstudiantes = estudiantes.map(e => e.id_usuario);
           
-          console.log(`📤 Notificando nueva tarea a usuarios:`, idsEstudiantes);
+          console.log(`Notificando nueva tarea a usuarios:`, idsEstudiantes);
           
           // Notificar a todos los estudiantes del curso
           notificarNuevaTarea(req, idsEstudiantes, payloadTarea);
           
-          console.log(`✅ Notificaciones de nueva tarea enviadas a ${idsEstudiantes.length} estudiantes`);
+          console.log(`Notificaciones de nueva tarea enviadas a ${idsEstudiantes.length} estudiantes`);
         } else {
-          console.log(`⚠️ No hay estudiantes matriculados en el curso ${modulo.id_curso}`);
+          console.log(`No hay estudiantes matriculados en el curso ${modulo.id_curso}`);
         }
       }
     } catch (notifError) {
-      console.error('❌ Error al enviar notificaciones de tarea:', notifError);
+      console.error('Error al enviar notificaciones de tarea:', notifError);
       // No falla la creación de la tarea si falla la notificación
     }
 

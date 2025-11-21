@@ -7,17 +7,17 @@ const { pool } = require('../config/database');
  */
 async function inicializarTiposReportes() {
   try {
-    console.log('🔍 Verificando tipos de reportes...');
+    console.log('Verificando tipos de reportes...');
 
     // Verificar si ya existen tipos de reportes
     const [tipos] = await pool.query('SELECT COUNT(*) as total FROM tipos_reportes');
     
     if (tipos[0].total > 0) {
-      console.log(`✅ Tipos de reportes ya inicializados (${tipos[0].total} tipos encontrados)`);
+      console.log(`Tipos de reportes ya inicializados (${tipos[0].total} tipos encontrados)`);
       return;
     }
 
-    console.log('⚙️ Inicializando tipos de reportes por defecto...');
+    console.log('Inicializando tipos de reportes por defecto...');
 
     // Insertar los 3 tipos de reportes
     const queryInsert = `
@@ -47,13 +47,13 @@ async function inicializarTiposReportes() {
 
     await pool.query(queryInsert);
 
-    console.log('✅ Tipos de reportes inicializados correctamente:');
+    console.log('Tipos de reportes inicializados correctamente:');
     console.log('   1. Reporte de Estudiantes');
     console.log('   2. Reporte Financiero');
     console.log('   3. Reporte de Cursos');
 
   } catch (error) {
-    console.error('-Error al inicializar tipos de reportes:', error);
+    console.error('Error al inicializar tipos de reportes:', error);
     console.error('   El sistema de reportes puede no funcionar correctamente.');
     // No lanzamos el error para que el servidor pueda iniciar de todas formas
   }

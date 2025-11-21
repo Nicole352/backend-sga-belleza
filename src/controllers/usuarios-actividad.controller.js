@@ -6,7 +6,7 @@ exports.getPagosEstudiante = async (req, res) => {
     const id_usuario = parseInt(req.params.id_usuario);
     const limite = parseInt(req.query.limite) || 10;
 
-    console.log('🔍 Buscando pagos para estudiante:', id_usuario, 'límite:', limite);
+    console.log('Buscando pagos para estudiante:', id_usuario, 'límite:', limite);
 
     const [pagos] = await pool.query(`
       SELECT 
@@ -32,15 +32,15 @@ exports.getPagosEstudiante = async (req, res) => {
       LIMIT ?
     `, [id_usuario, limite]);
 
-    console.log('✅ Pagos encontrados:', pagos.length);
+    console.log('Pagos encontrados:', pagos.length);
 
     res.json({
       success: true,
       pagos
     });
   } catch (error) {
-    console.error('-Error al obtener pagos del estudiante:', error);
-    console.error('-SQL Error:', error.sqlMessage || error.message);
+    console.error('Error al obtener pagos del estudiante:', error);
+    console.error('SQL Error:', error.sqlMessage || error.message);
     res.status(500).json({
       success: false,
       message: 'Error al obtener pagos del estudiante',
@@ -56,7 +56,7 @@ exports.getDeberesEstudiante = async (req, res) => {
     const id_usuario = parseInt(req.params.id_usuario);
     const limite = parseInt(req.query.limite) || 10;
 
-    console.log('🔍 Buscando deberes para estudiante:', id_usuario, 'límite:', limite);
+    console.log('Buscando deberes para estudiante:', id_usuario, 'límite:', limite);
 
     const [deberes] = await pool.query(`
       SELECT 
@@ -85,15 +85,15 @@ exports.getDeberesEstudiante = async (req, res) => {
       LIMIT ?
     `, [id_usuario, limite]);
 
-    console.log('✅ Deberes encontrados:', deberes.length);
+    console.log('Deberes encontrados:', deberes.length);
 
     res.json({
       success: true,
       deberes
     });
   } catch (error) {
-    console.error('-Error al obtener deberes del estudiante:', error);
-    console.error('-SQL Error:', error.sqlMessage || error.message);
+    console.error('Error al obtener deberes del estudiante:', error);
+    console.error('SQL Error:', error.sqlMessage || error.message);
     res.status(500).json({
       success: false,
       message: 'Error al obtener deberes del estudiante',

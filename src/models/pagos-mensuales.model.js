@@ -34,7 +34,7 @@ class PagosMenualesModel {
 
   // Obtener cuotas de una matrícula específica
   static async getCuotasByMatricula(id_matricula, id_estudiante) {
-    console.log('🔍 Model getCuotasByMatricula - Verificando matrícula:', {
+    console.log('Model getCuotasByMatricula - Verificando matrícula:', {
       id_matricula,
       id_estudiante
     });
@@ -46,7 +46,7 @@ class PagosMenualesModel {
       WHERE m.id_matricula = ? AND m.id_estudiante = ?
     `, [id_matricula, id_estudiante]);
 
-    console.log('🔍 Resultado de verificación:', verificacion);
+    console.log('Resultado de verificación:', verificacion);
 
     if (verificacion.length === 0) {
       // Intentar encontrar la matrícula sin importar el estudiante para debugging
@@ -58,8 +58,8 @@ class PagosMenualesModel {
         WHERE m.id_matricula = ?
       `, [id_matricula]);
 
-      console.log('❌ Matrícula encontrada pero con diferente estudiante:', matriculaInfo);
-      
+      console.log('Matrícula encontrada pero con diferente estudiante:', matriculaInfo);
+
       throw new Error(`Matrícula no encontrada o no pertenece al estudiante. Matrícula: ${id_matricula}, Estudiante: ${id_estudiante}`);
     }
 
@@ -78,7 +78,8 @@ class PagosMenualesModel {
         tc.nombre as tipo_curso_nombre,
         tc.modalidad_pago,
         tc.numero_clases,
-        tc.precio_por_clase
+        tc.precio_por_clase,
+        tc.duracion_meses as meses_duracion
       FROM pagos_mensuales pm
       INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
       INNER JOIN cursos c ON m.id_curso = c.id_curso
@@ -111,7 +112,7 @@ class PagosMenualesModel {
   // Procesar pago de mensualidad con múltiples cuotas automáticas
   static async procesarPago(id_pago, pagoData, archivoData, id_estudiante) {
     const connection = await pool.getConnection();
-    
+
     try {
       await connection.beginTransaction();
 
@@ -136,68 +137,67 @@ class PagosMenualesModel {
       const montoCuota = parseFloat(cuotaActual.monto);
       const modalidadPago = cuotaActual.modalidad_pago || 'mensual';
 
-      console.log(`💰 Monto pagado: $${montoPagado}, Monto por cuota: $${montoCuota}`);
-      console.log(`📊 Modalidad de pago: ${modalidadPago}`);
+      console.log(`Monto pagado: $${montoPagado}, Monto por cuota: $${montoCuota}`);
+      console.log(`Modalidad de pago: ${modalidadPago}`);
 
       // Lógica diferente según modalidad de pago
+      let numeroCuotasACubrir;
       if (modalidadPago === 'clases') {
         // ========================================
-        // MODALIDAD POR CLASES - PAGO INDIVIDUAL
+        // MODALIDAD POR CLASES - PERMITE MÚLTIPLES CLASES
         // ========================================
-        console.log('🎯 Procesando pago por CLASE individual');
-        
-        // Para cursos por clases, solo se paga UNA clase a la vez
-        // No se permite pagar múltiples clases de una vez
-        if (Math.abs(montoPagado - montoCuota) > 0.01) {
-          throw new Error(`Para cursos por clases, debe pagar exactamente $${montoCuota.toFixed(2)} por esta clase`);
+        console.log('Procesando pago por CLASES en bloque');
+
+        const clasesCubiertas = Math.round(montoPagado / montoCuota);
+        const diferenciaMultiplo = Math.abs(montoPagado - (clasesCubiertas * montoCuota));
+
+        if (clasesCubiertas <= 0 || diferenciaMultiplo > 0.01) {
+          throw new Error(`Para cursos por clases, el monto debe ser múltiplo de $${montoCuota.toFixed(2)} (1 clase, 2 clases, etc.)`);
         }
 
-        // Procesar solo esta cuota específica
-        const numeroCuotasACubrir = 1;
-        const cuotasPendientes = [cuotaActual];
-        
+        numeroCuotasACubrir = clasesCubiertas;
       } else {
         // ========================================
         // MODALIDAD MENSUAL - MÚLTIPLES CUOTAS
         // ========================================
-        console.log('📅 Procesando pago MENSUAL (puede cubrir múltiples cuotas)');
-        
-        // Calcular cuántas cuotas cubre el monto pagado
-        var numeroCuotasACubrir = Math.floor(montoPagado / montoCuota);
-      }
-      
-      console.log(`📊 Cuotas a cubrir: ${numeroCuotasACubrir}`);
+        console.log('Procesando pago MENSUAL (puede cubrir múltiples cuotas)');
 
-      // Obtener cuotas pendientes según modalidad
-      let cuotasPendientes;
-      
-      if (modalidadPago === 'clases') {
-        // Para clases: solo la cuota específica seleccionada
-        cuotasPendientes = [cuotaActual];
-      } else {
-        // Para mensual: obtener múltiples cuotas desde la actual
-        const [cuotasResult] = await connection.execute(`
-          SELECT id_pago, numero_cuota, monto
-          FROM pagos_mensuales
-          WHERE id_matricula = ? 
-            AND numero_cuota >= ?
-            AND estado IN ('pendiente', 'vencido')
-          ORDER BY numero_cuota ASC
-          LIMIT ${numeroCuotasACubrir}
-        `, [cuotaActual.id_matricula, cuotaActual.numero_cuota]);
-        
-        cuotasPendientes = cuotasResult;
+        // Calcular cuántas cuotas cubre el monto pagado
+        numeroCuotasACubrir = Math.floor(montoPagado / montoCuota);
       }
+
+      console.log(`Cuotas a cubrir: ${numeroCuotasACubrir}`);
+
+      if (!numeroCuotasACubrir || numeroCuotasACubrir <= 0) {
+        throw new Error('El monto pagado no cubre ninguna cuota');
+      }
+
+      // Obtener cuotas pendientes desde la cuota actual
+      const [cuotasResult] = await connection.execute(`
+        SELECT id_pago, numero_cuota, monto
+        FROM pagos_mensuales
+        WHERE id_matricula = ? 
+          AND numero_cuota >= ?
+          AND estado IN ('pendiente', 'vencido')
+        ORDER BY numero_cuota ASC
+        LIMIT ${numeroCuotasACubrir}
+      `, [cuotaActual.id_matricula, cuotaActual.numero_cuota]);
+
+      const cuotasPendientes = cuotasResult;
 
       if (cuotasPendientes.length === 0) {
         throw new Error('No hay cuotas pendientes para procesar');
+      }
+
+      if (cuotasPendientes.length < numeroCuotasACubrir) {
+        throw new Error('El monto supera la cantidad de cuotas/clases pendientes disponibles');
       }
 
       // Verificar que el número de comprobante sea único
       if (pagoData.numero_comprobante) {
         const idsPendientes = cuotasPendientes.map(c => c.id_pago);
         const placeholders = idsPendientes.map(() => '?').join(',');
-        
+
         const [existingComprobante] = await connection.execute(`
           SELECT id_pago FROM pagos_mensuales 
           WHERE numero_comprobante = ? AND id_pago NOT IN (${placeholders})
@@ -214,10 +214,13 @@ class PagosMenualesModel {
         const esPrimera = i === 0;
 
         let observacionesFinal = pagoData.observaciones || '';
-        
+
         if (modalidadPago === 'clases') {
-          // Observaciones para cursos por clases
-          observacionesFinal = `Pago de clase #${cuota.numero_cuota} - $${montoPagado.toFixed(2)}${observacionesFinal ? '\n' + observacionesFinal : ''}`;
+          if (esPrimera) {
+            observacionesFinal = `Pago de ${numeroCuotasACubrir} clase(s) - $${montoPagado.toFixed(2)}${observacionesFinal ? '\n' + observacionesFinal : ''}`;
+          } else {
+            observacionesFinal = `Cubierto por pago múltiple de clases (#${cuotaActual.numero_cuota})`;
+          }
         } else {
           // Observaciones para cursos mensuales (lógica original)
           if (esPrimera) {
@@ -241,6 +244,8 @@ class PagosMenualesModel {
             comprobante_mime = ?,
             comprobante_size_kb = ?,
             comprobante_nombre_original = ?,
+            comprobante_pago_url = ?,
+            comprobante_pago_public_id = ?,
             observaciones = ?
           WHERE id_pago = ?
         `;
@@ -255,25 +260,27 @@ class PagosMenualesModel {
           esPrimera && archivoData ? archivoData.comprobanteMime : null,
           esPrimera && archivoData ? archivoData.comprobanteSizeKb : null,
           esPrimera && archivoData ? archivoData.comprobanteNombreOriginal : null,
+          esPrimera && archivoData ? archivoData.comprobanteUrl : null,
+          esPrimera && archivoData ? archivoData.comprobantePublicId : null,
           observacionesFinal,
           cuota.id_pago
         ]);
 
-        console.log(`✅ Cuota #${cuota.numero_cuota} marcada como pagado`);
+        console.log(`Cuota #${cuota.numero_cuota} marcada como pagado`);
       }
 
       await connection.commit();
-      
+
       // Mensaje específico según modalidad
       let mensaje;
       if (modalidadPago === 'clases') {
-        mensaje = `Pago de clase procesado exitosamente. Clase #${cuotaActual.numero_cuota} pagada.`;
+        mensaje = `Pago procesado exitosamente. ${numeroCuotasACubrir} clase(s) cubierta(s).`;
       } else {
         mensaje = `Pago procesado exitosamente. ${numeroCuotasACubrir} cuota(s) marcada(s) como pagado.`;
       }
-      
-      return { 
-        success: true, 
+
+      return {
+        success: true,
         message: mensaje,
         cuotas_cubiertas: numeroCuotasACubrir,
         modalidad_pago: modalidadPago
@@ -344,7 +351,7 @@ class PagosMenualesModel {
 
       // Si no hay datos, devolver valores por defecto
       const resultado = resumen[0] || {};
-      
+
       return {
         total_cuotas: parseInt(resultado.total_cuotas) || 0,
         cuotas_pagadas: parseInt(resultado.cuotas_pagadas) || 0,
@@ -391,6 +398,8 @@ class PagosMenualesModel {
           ep.id_promocion,
           ep.meses_gratis_aplicados,
           ep.fecha_inicio_cobro,
+          ep.decision_estudiante,
+          ep.fecha_decision,
           p.nombre_promocion,
           p.meses_gratis,
           p.id_curso_principal,
@@ -413,9 +422,10 @@ class PagosMenualesModel {
         ORDER BY es_curso_promocional DESC, proxima_fecha_vencimiento ASC
       `, [id_estudiante]);
 
-      console.log(`🔍 Cursos encontrados para estudiante ${id_estudiante}:`, cursos.length);
+      console.log(`Cursos encontrados para estudiante ${id_estudiante}:`, cursos.length);
       cursos.forEach(curso => {
-        console.log(`📚 ${curso.curso_nombre} - Promocional: ${curso.es_curso_promocional} - Total cuotas: ${curso.total_cuotas}`);
+        console.log(`Curso: "${curso.curso_nombre}" (length: ${curso.curso_nombre?.length}) - Promocional: ${curso.es_curso_promocional} - Total cuotas: ${curso.total_cuotas}`);
+        console.log(`Código ASCII de los últimos 3 caracteres:`, curso.curso_nombre?.slice(-3).split('').map(c => c.charCodeAt(0)));
       });
 
       return cursos || [];
@@ -424,6 +434,70 @@ class PagosMenualesModel {
       return [];
     }
   }
+
+  static async actualizarDecisionPromocion(id_matricula, id_estudiante, decision) {
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      const [registroPromocion] = await connection.execute(`
+        SELECT 
+          ep.id_estudiante_promocion,
+          ep.decision_estudiante,
+          ep.fecha_inicio_cobro,
+          ep.fecha_decision,
+          COALESCE(p.meses_gratis, ep.meses_gratis_aplicados) AS meses_gratis
+        FROM estudiante_promocion ep
+        INNER JOIN matriculas m ON ep.id_matricula = m.id_matricula
+        LEFT JOIN promociones p ON ep.id_promocion = p.id_promocion
+        WHERE ep.id_matricula = ? AND m.id_estudiante = ?
+        FOR UPDATE
+      `, [id_matricula, id_estudiante]);
+
+      if (registroPromocion.length === 0) {
+        throw new Error('No encontramos una promoción asociada a esta matrícula');
+      }
+
+      const promocion = registroPromocion[0];
+
+      if (promocion.decision_estudiante === decision) {
+        await connection.commit();
+        return {
+          decision_estudiante: promocion.decision_estudiante,
+          fecha_decision: promocion.fecha_decision,
+          meses_gratis: promocion.meses_gratis,
+          fecha_inicio_cobro: promocion.fecha_inicio_cobro
+        };
+      }
+
+      await connection.execute(`
+        UPDATE estudiante_promocion
+        SET decision_estudiante = ?, fecha_decision = NOW()
+        WHERE id_estudiante_promocion = ?
+      `, [decision, promocion.id_estudiante_promocion]);
+
+      const [registroActualizado] = await connection.execute(`
+        SELECT 
+          ep.decision_estudiante, 
+          ep.fecha_decision, 
+          COALESCE(p.meses_gratis, ep.meses_gratis_aplicados) AS meses_gratis, 
+          ep.fecha_inicio_cobro
+        FROM estudiante_promocion ep
+        LEFT JOIN promociones p ON ep.id_promocion = p.id_promocion
+        WHERE ep.id_estudiante_promocion = ?
+      `, [promocion.id_estudiante_promocion]);
+
+      await connection.commit();
+
+      return registroActualizado[0];
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
   // Validar que una cuota pertenece a un estudiante
   static async validarCuotaEstudiante(id_pago, id_estudiante) {
     try {
@@ -433,7 +507,7 @@ class PagosMenualesModel {
         INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
         WHERE pm.id_pago = ? AND m.id_estudiante = ?
       `, [id_pago, id_estudiante]);
-      
+
       return result.length > 0;
     } catch (error) {
       console.error('Error validando cuota estudiante:', error);
@@ -446,12 +520,12 @@ class PagosMenualesModel {
     try {
       let sql = 'SELECT id_pago FROM pagos_mensuales WHERE numero_comprobante = ?';
       let params = [numero_comprobante];
-      
+
       if (exclude_id_pago) {
         sql += ' AND id_pago != ?';
         params.push(exclude_id_pago);
       }
-      
+
       const [result] = await pool.execute(sql, params);
       return result.length > 0;
     } catch (error) {
@@ -463,8 +537,8 @@ class PagosMenualesModel {
   // Registrar pago de mensualidad
   static async registrarPago(id_pago, pagoData, archivoData = null) {
     try {
-      console.log('🔍 DEBUG registrarPago - pagoData recibido:', pagoData);
-      
+      console.log('DEBUG registrarPago - pagoData recibido:', pagoData);
+
       // Obtener el monto original de la cuota antes de actualizar
       const [cuotaOriginal] = await pool.execute(
         'SELECT monto FROM pagos_mensuales WHERE id_pago = ?',
@@ -472,25 +546,25 @@ class PagosMenualesModel {
       );
 
       const montoOriginal = parseFloat(cuotaOriginal[0]?.monto) || 0;
-      console.log('💰 Monto original de la cuota:', montoOriginal);
-      
+      console.log('Monto original de la cuota:', montoOriginal);
+
       // Determinar el monto final a guardar
       let montoFinal = montoOriginal;
       let observacionesFinal = pagoData.observaciones || '';
-      
+
       if (pagoData.monto_pagado && parseFloat(pagoData.monto_pagado) > 0) {
         const montoPagadoNum = parseFloat(pagoData.monto_pagado);
         montoFinal = montoPagadoNum;
-        console.log('💵 Monto pagado por estudiante:', montoPagadoNum);
-        console.log('✅ Monto final a guardar:', montoFinal);
-        
+        console.log('Monto pagado por estudiante:', montoPagadoNum);
+        console.log('Monto final a guardar:', montoFinal);
+
         // Si el monto pagado es diferente al original, guardarlo en observaciones
         if (Math.abs(montoPagadoNum - montoOriginal) > 0.01) {
           observacionesFinal = `Monto original de cuota: $${montoOriginal.toFixed(2)} | Monto pagado: $${montoPagadoNum.toFixed(2)}${observacionesFinal ? '\n' + observacionesFinal : ''}`;
-          console.log('📝 Observaciones:', observacionesFinal);
+          console.log('Observaciones:', observacionesFinal);
         }
       } else {
-        console.log('⚠️ No se recibió monto_pagado, usando monto original');
+        console.log('No se recibió monto_pagado, usando monto original');
       }
 
       let sql = `
@@ -504,7 +578,7 @@ class PagosMenualesModel {
             estado = 'pagado',
             fecha_pago = NOW()
       `;
-      
+
       let params = [
         pagoData.metodo_pago,
         montoFinal,
@@ -532,7 +606,7 @@ class PagosMenualesModel {
       params.push(id_pago);
 
       const [result] = await pool.execute(sql, params);
-      
+
       if (result.affectedRows === 0) {
         throw new Error('No se pudo actualizar el pago');
       }

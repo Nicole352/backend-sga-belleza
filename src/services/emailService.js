@@ -39,7 +39,7 @@ async function enviarNotificacionNuevaMatricula(solicitud) {
     // Obtener todos los administradores activos
     const admins = await getActiveAdmins();
     const adminEmails = admins.map(admin => admin.email);
-    
+
     const mailOptions = {
       from: `"${process.env.EMAIL_FROM_NAME || 'Escuela Jessica Vélez'}" <${process.env.EMAIL_USER}>`,
       to: adminEmails.join(', '), // Enviar a todos los admins activos
@@ -152,10 +152,10 @@ async function enviarNotificacionNuevaMatricula(solicitud) {
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Email de notificación enviado al admin:', info.messageId);
+    console.log('Email de notificación enviado al admin:', info.messageId);
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error('-Error enviando email de notificación:', error);
+    console.error('Error enviando email de notificación:', error);
     return { success: false, error: error.message };
   }
 }
@@ -586,10 +586,10 @@ async function enviarEmailBienvenidaEstudiante(estudiante, credenciales, pdfComp
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Email de bienvenida enviado a:', estudiante.email);
+    console.log('Email de bienvenida enviado a:', estudiante.email);
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error('-Error enviando email de bienvenida:', error);
+    console.error('Error enviando email de bienvenida:', error);
     return { success: false, error: error.message };
   }
 }
@@ -702,10 +702,10 @@ async function enviarComprobantePagoMensual(estudiante, pago, pdfBuffer) {
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Email con comprobante enviado a:', estudiante.email);
+    console.log('Email con comprobante enviado a:', estudiante.email);
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error('-Error enviando email con comprobante:', error);
+    console.error('Error enviando email con comprobante:', error);
     return { success: false, error: error.message };
   }
 }
@@ -825,9 +825,9 @@ async function enviarNotificacionPagoEstudiante(datosPago) {
     };
 
     await transporter.sendMail(mailOptions);
-    console.log('✅ Email de notificación de pago enviado al admin');
+    console.log('Email de notificación de pago enviado al admin');
   } catch (error) {
-    console.error('-Error enviando email de notificación de pago:', error);
+    console.error('Error enviando email de notificación de pago:', error);
     throw error;
   }
 }

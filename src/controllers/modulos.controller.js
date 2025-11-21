@@ -103,12 +103,12 @@ async function createModulo(req, res) {
         WHERE m.id_curso = ? AND m.estado = 'activa'
       `, [id_curso]);
       
-      console.log(`📋 Estudiantes encontrados para el curso ${id_curso}:`, estudiantes);
+      console.log(`Estudiantes encontrados para el curso ${id_curso}:`, estudiantes);
       
       if (estudiantes.length > 0) {
         const idsUsuarios = estudiantes.map(e => e.id_usuario);
         
-        console.log(`📤 IDs de usuarios a notificar:`, idsUsuarios);
+        console.log(`IDs de usuarios a notificar:`, idsUsuarios);
         
         // Obtener nombre del curso
         const [cursos] = await pool.execute('SELECT nombre FROM cursos WHERE id_curso = ?', [id_curso]);
@@ -136,12 +136,12 @@ async function createModulo(req, res) {
           docente_nombre: nombreDocente
         });
         
-        console.log(`✅ Notificaciones de nuevo módulo enviadas a ${idsUsuarios.length} estudiantes del curso ${id_curso}`);
+        console.log(` Notificaciones de nuevo módulo enviadas a ${idsUsuarios.length} estudiantes del curso ${id_curso}`);
       } else {
-        console.log(`⚠️ No hay estudiantes matriculados en el curso ${id_curso}`);
+        console.log(` No hay estudiantes matriculados en el curso ${id_curso}`);
       }
     } catch (notifError) {
-      console.error('❌ Error enviando notificaciones de módulo:', notifError);
+      console.error(' Error enviando notificaciones de módulo:', notifError);
       // No fallar la creación del módulo si falla la notificación
     }
 

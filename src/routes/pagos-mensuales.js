@@ -40,6 +40,9 @@ router.get('/cuotas/:id_matricula', pagosMenualesController.getCuotasByMatricula
 // GET /api/pagos-mensuales/pago/:id_pago - Obtener información de un pago específico
 router.get('/pago/:id_pago', pagosMenualesController.getPagoById);
 
+// PATCH /api/pagos-mensuales/cursos-promocionales/:id_matricula/decision - Actualizar decisión del estudiante
+router.patch('/cursos-promocionales/:id_matricula/decision', pagosMenualesController.actualizarDecisionPromocion);
+
 // POST /api/pagos-mensuales/pagar/:id_pago - Procesar pago de mensualidad
 router.post('/pagar/:id_pago', upload.single('comprobante'), pagosMenualesController.pagarCuota);
 

@@ -55,4 +55,14 @@ router.get('/:id/foto-perfil', usuariosController.obtenerFotoPerfil);
 // DELETE /api/usuarios/:id/foto-perfil - Eliminar foto de perfil
 router.delete('/:id/foto-perfil', usuariosController.eliminarFotoPerfil);
 
+// ========================================
+// RUTAS DE BLOQUEO DE CUENTAS
+// ========================================
+
+// POST /api/usuarios/:id/bloquear - Bloquear cuenta de usuario
+router.post('/:id/bloquear', usuariosController.bloquearCuenta);
+
+// POST /api/usuarios/:id/desbloquear - Desbloquear cuenta de usuario
+router.post('/:id/desbloquear', usuariosController.desbloquearCuenta);
+
 module.exports = router;

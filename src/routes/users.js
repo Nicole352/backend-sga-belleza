@@ -4,8 +4,8 @@ const { authMiddleware, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Obtener todos los usuarios (solo admin/administrativo)
-router.get('/', authMiddleware, requireRole(['admin', 'administrativo']), async (req, res) => {
+// Obtener todos los usuarios (superadmin, admin, administrativo)
+router.get('/', authMiddleware, requireRole(['superadmin', 'admin', 'administrativo']), async (req, res) => {
   try {
     const users = await getAllUsers();
     res.json(users);
@@ -15,8 +15,8 @@ router.get('/', authMiddleware, requireRole(['admin', 'administrativo']), async 
   }
 });
 
-// Obtener estadísticas de usuarios (solo admin/administrativo)
-router.get('/stats', authMiddleware, requireRole(['admin', 'administrativo']), async (req, res) => {
+// Obtener estadísticas de usuarios (superadmin, admin, administrativo)
+router.get('/stats', authMiddleware, requireRole(['superadmin', 'admin', 'administrativo']), async (req, res) => {
   try {
     const stats = await getUserStats();
     res.json(stats);
@@ -26,14 +26,14 @@ router.get('/stats', authMiddleware, requireRole(['admin', 'administrativo']), a
   }
 });
 
-// Obtener estadísticas específicas para Admin (admin y administrativo)
+// Obtener estadísticas específicas para Admin (superadmin, admin y administrativo)
 router.get('/admin-stats', authMiddleware, async (req, res) => {
   try {
-    // Verificar que el usuario sea admin o administrativo
-    if (req.user.rol !== 'admin' && req.user.rol !== 'administrativo') {
+    // Verificar que el usuario sea superadmin, admin o administrativo
+    if (req.user.rol !== 'superadmin' && req.user.rol !== 'admin' && req.user.rol !== 'administrativo') {
       return res.status(403).json({ error: 'Acceso denegado' });
     }
-    
+
     const stats = await getAdminStats();
     res.json(stats);
   } catch (error) {
