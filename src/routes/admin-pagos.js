@@ -5,7 +5,8 @@ const { authMiddleware, requireRole } = require('../middleware/auth');
 
 // Aplicar autenticación a todas las rutas
 router.use(authMiddleware);
-router.use(requireRole(['admin', 'administrativo']));
+// IMPORTANTE: Solo administrativos pueden gestionar pagos, NO superadmin
+router.use(requireRole(['administrativo']));
 
 // Obtener todos los pagos (con filtros)
 router.get('/', adminPagosController.getAllPagos);

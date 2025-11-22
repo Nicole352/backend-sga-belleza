@@ -349,8 +349,21 @@ const ReportesController = {
         fechaFin
       });
 
-      // Generar Excel
-      const excelBuffer = await generarExcelFinanciero(datos, {
+      // Para Estado de Cuenta: obtener TODOS los pagos sin filtro de estado
+      // Esto asegura que se calculen correctamente las cuotas pendientes
+      const datosSinFiltroEstado = await ReportesModel.getReporteFinanciero({
+        fechaInicio,
+        fechaFin,
+        tipoPago: tipoPago || 'todos',
+        estadoPago: 'todos', // SIN filtro de estado
+        idCurso: idCurso || null,
+        estadoCurso: estadoCurso || 'todos',
+        metodoPago: metodoPago || 'todos',
+        horario: horario || 'todos'
+      });
+
+      // Generar Excel: datos filtrados para "Pagos Detallados", datos completos para "Estado de Cuenta"
+      const excelBuffer = await generarExcelFinanciero(datos, datosSinFiltroEstado, {
         fechaInicio,
         fechaFin,
         tipoPago: tipoPago || 'todos',
@@ -465,8 +478,8 @@ const ReportesController = {
       }
 
       // Obtener datos
-      const datos = await ReportesModel.getReporteCursos({ 
-        fechaInicio, 
+      const datos = await ReportesModel.getReporteCursos({
+        fechaInicio,
         fechaFin,
         estado: estado || 'todos',
         ocupacion: ocupacion || 'todos',
@@ -475,8 +488,8 @@ const ReportesController = {
       const estadisticas = await ReportesModel.getEstadisticasCursos({ fechaInicio, fechaFin });
 
       // Generar PDF
-      const pdfBuffer = await generarPDFCursos(datos, { 
-        fechaInicio, 
+      const pdfBuffer = await generarPDFCursos(datos, {
+        fechaInicio,
         fechaFin,
         estado: estado || 'todos',
         ocupacion: ocupacion || 'todos',
@@ -517,8 +530,8 @@ const ReportesController = {
       }
 
       // Obtener datos
-      const datos = await ReportesModel.getReporteCursos({ 
-        fechaInicio, 
+      const datos = await ReportesModel.getReporteCursos({
+        fechaInicio,
         fechaFin,
         estado: estado || 'todos',
         ocupacion: ocupacion || 'todos',
@@ -527,8 +540,8 @@ const ReportesController = {
       const estadisticas = await ReportesModel.getEstadisticasCursos({ fechaInicio, fechaFin });
 
       // Generar Excel
-      const excelBuffer = await generarExcelCursos(datos, { 
-        fechaInicio, 
+      const excelBuffer = await generarExcelCursos(datos, {
+        fechaInicio,
         fechaFin,
         estado: estado || 'todos',
         ocupacion: ocupacion || 'todos',
@@ -723,15 +736,21 @@ const ReportesController = {
         horario: horario || 'todos'
       };
 
-      // Obtener datos
+      // Obtener datos CON filtros
       const datos = await ReportesModel.getReporteFinanciero(parametros);
       const estadisticas = await ReportesModel.getEstadisticasFinancieras({
         fechaInicio,
         fechaFin
       });
 
-      // Generar Excel
-      const excelBuffer = await generarExcelFinanciero(datos, parametros, estadisticas);
+      // Obtener TODOS los pagos SIN filtro de estado para Estado de Cuenta
+      const datosSinFiltroEstado = await ReportesModel.getReporteFinanciero({
+        ...parametros,
+        estadoPago: 'todos' // SIN filtro de estado
+      });
+
+      // Generar Excel con ambos conjuntos de datos
+      const excelBuffer = await generarExcelFinanciero(datos, datosSinFiltroEstado, parametros, estadisticas);
 
       // Nombre del archivo
       const nombreArchivo = `Reporte_Financiero_${fechaInicio}_${fechaFin}.xlsx`;
@@ -776,8 +795,8 @@ const ReportesController = {
         });
       }
 
-      const parametros = { 
-        fechaInicio, 
+      const parametros = {
+        fechaInicio,
         fechaFin,
         estado: estado || 'todos',
         ocupacion: ocupacion || 'todos',

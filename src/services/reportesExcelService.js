@@ -204,14 +204,14 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
  * GENERAR EXCEL - REPORTE FINANCIERO MEJORADO
  * Incluye hoja de estado de cuenta por estudiante
  */
-async function generarExcelFinanciero(datos, filtros, estadisticas) {
+async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, estadisticas) {
   try {
     const workbook = new ExcelJS.Workbook();
 
     workbook.creator = 'Sistema SGA Belleza';
     workbook.created = new Date();
 
-    // HOJA 1: DATOS DETALLADOS DE PAGOS
+    // HOJA 1: DATOS DETALLADOS DE PAGOS (con filtros aplicados)
     const hojaDatos = workbook.addWorksheet('Pagos Detallados', {
       properties: { tabColor: { argb: 'FF10B981' } }
     });
@@ -228,6 +228,7 @@ async function generarExcelFinanciero(datos, filtros, estadisticas) {
       { header: 'MÉTODO PAGO', key: 'metodo_pago', width: 15 },
       { header: 'N° COMPROBANTE', key: 'numero_comprobante', width: 20 },
       { header: 'ESTADO', key: 'estado_pago', width: 14 },
+      { header: 'VERIFICADO POR', key: 'verificado_por', width: 30 },
       { header: 'OBSERVACIONES', key: 'observaciones', width: 30 }
     ];
 
@@ -241,7 +242,7 @@ async function generarExcelFinanciero(datos, filtros, estadisticas) {
     hojaDatos.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
     hojaDatos.getRow(1).height = 25;
 
-    // Agregar datos
+    // Agregar datos FILTRADOS
     datos.forEach(pago => {
       const row = hojaDatos.addRow({
         cedula_estudiante: pago.cedula_estudiante || 'N/A',
@@ -255,6 +256,7 @@ async function generarExcelFinanciero(datos, filtros, estadisticas) {
         metodo_pago: pago.metodo_pago?.toUpperCase() || 'N/A',
         numero_comprobante: pago.numero_comprobante || 'N/A',
         estado_pago: pago.estado_pago?.toUpperCase(),
+        verificado_por: pago.verificado_por_nombre ? `${pago.verificado_por_nombre} ${pago.verificado_por_apellido || ''}`.trim() : 'N/A',
         observaciones: pago.observaciones || ''
       });
 
@@ -283,11 +285,11 @@ async function generarExcelFinanciero(datos, filtros, estadisticas) {
 
     hojaDatos.autoFilter = {
       from: 'A1',
-      to: 'L1'
+      to: 'M1'
     };
 
 
-    // HOJA 2: ESTADO DE CUENTA POR ESTUDIANTE
+    // HOJA 2: ESTADO DE CUENTA POR ESTUDIANTE (con TODOS los datos, sin filtro de estado)
     const hojaEstadoCuenta = workbook.addWorksheet('Estado de Cuenta', {
       properties: { tabColor: { argb: 'FF3B82F6' } }
     });
@@ -298,6 +300,7 @@ async function generarExcelFinanciero(datos, filtros, estadisticas) {
       { header: 'CURSO', key: 'curso', width: 28 },
       { header: 'TOTAL A PAGAR', key: 'total', width: 15 },
       { header: 'CUOTAS VERIFICADAS', key: 'verificadas', width: 18 },
+      { header: 'CUOTAS PAGADAS', key: 'pagadas', width: 16 },
       { header: 'MONTO PAGADO', key: 'pagado', width: 15 },
       { header: 'CUOTAS PENDIENTES', key: 'pendientes', width: 18 },
       { header: 'SALDO PENDIENTE', key: 'saldo', width: 15 },
@@ -314,9 +317,9 @@ async function generarExcelFinanciero(datos, filtros, estadisticas) {
     hojaEstadoCuenta.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
     hojaEstadoCuenta.getRow(1).height = 25;
 
-    // Agrupar datos por estudiante
+    // Agrupar datos SIN FILTRO DE ESTADO por estudiante
     const estudiantesPorCedula = {};
-    datos.forEach(pago => {
+    datosSinFiltroEstado.forEach(pago => {
       const cedula = pago.cedula_estudiante || 'SIN_CEDULA';
       if (!estudiantesPorCedula[cedula]) {
         estudiantesPorCedula[cedula] = {
@@ -333,7 +336,8 @@ async function generarExcelFinanciero(datos, filtros, estadisticas) {
     Object.values(estudiantesPorCedula).forEach(estudiante => {
       const totalPagos = estudiante.pagos.length;
       const cuotasVerificadas = estudiante.pagos.filter(p => p.estado_pago === 'verificado').length;
-      const cuotasPendientes = estudiante.pagos.filter(p => p.estado_pago === 'pendiente' || p.estado_pago === 'pagado').length;
+      const cuotasPagadas = estudiante.pagos.filter(p => p.estado_pago === 'pagado').length;
+      const cuotasPendientes = estudiante.pagos.filter(p => p.estado_pago === 'pendiente' || p.estado_pago === 'vencido').length;
 
       const totalAPagar = estudiante.pagos.reduce((sum, p) => sum + parseFloat(p.monto || 0), 0);
       const montoPagado = estudiante.pagos
@@ -364,6 +368,7 @@ async function generarExcelFinanciero(datos, filtros, estadisticas) {
         curso: estudiante.curso,
         total: totalAPagar,
         verificadas: cuotasVerificadas,
+        pagadas: cuotasPagadas,
         pagado: montoPagado,
         pendientes: cuotasPendientes,
         saldo: saldoPendiente,
@@ -408,7 +413,7 @@ async function generarExcelFinanciero(datos, filtros, estadisticas) {
 
     hojaEstadoCuenta.autoFilter = {
       from: 'A1',
-      to: 'J1'
+      to: 'K1'
     };
 
 
