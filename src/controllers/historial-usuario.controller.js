@@ -79,12 +79,12 @@ exports.getHistorialEstudiante = async (req, res) => {
             'tarea', t.titulo,
             'curso', c.nombre,
             'modulo', mo.nombre,
-            'archivo', e.archivo_entrega,
-            'estado', e.estado_entrega
+            'archivo_url', e.archivo_url,
+            'estado', e.estado
           ) as detalles
-        FROM entregas e
-        INNER JOIN tareas t ON e.id_tarea = t.id_tarea
-        INNER JOIN modulos mo ON t.id_modulo = mo.id_modulo
+        FROM entregas_tareas e
+        INNER JOIN tareas_modulo t ON e.id_tarea = t.id_tarea
+        INNER JOIN modulos_curso mo ON t.id_modulo = mo.id_modulo
         INNER JOIN cursos c ON mo.id_curso = c.id_curso
         WHERE e.id_estudiante = ?
         ORDER BY e.fecha_entrega DESC
@@ -94,23 +94,23 @@ exports.getHistorialEstudiante = async (req, res) => {
       const [calificaciones] = await pool.execute(`
         SELECT 
           'calificacion' as tipo_accion,
-          CONCAT('Calificación recibida: ', c.valor, '/10 - ', t.titulo) as accion,
-          c.fecha_calificacion as fecha,
+          CONCAT('Calificación recibida: ', ct.nota, '/10 - ', t.titulo) as accion,
+          ct.fecha_calificacion as fecha,
           JSON_OBJECT(
             'tarea', t.titulo,
-            'nota', c.valor,
-            'comentario', c.comentario,
+            'nota', ct.nota,
+            'comentario', ct.comentario_docente,
             'curso', cu.nombre,
-            'docente', CONCAT(d.nombre, ' ', d.apellido)
+            'docente', CONCAT(d.nombres, ' ', d.apellidos)
           ) as detalles
-        FROM calificaciones c
-        INNER JOIN entregas e ON c.id_entrega = e.id_entrega
-        INNER JOIN tareas t ON e.id_tarea = t.id_tarea
-        INNER JOIN modulos mo ON t.id_modulo = mo.id_modulo
+        FROM calificaciones_tareas ct
+        INNER JOIN entregas_tareas e ON ct.id_entrega = e.id_entrega
+        INNER JOIN tareas_modulo t ON e.id_tarea = t.id_tarea
+        INNER JOIN modulos_curso mo ON t.id_modulo = mo.id_modulo
         INNER JOIN cursos cu ON mo.id_curso = cu.id_curso
-        INNER JOIN usuarios d ON c.id_docente = d.id_usuario
+        INNER JOIN docentes d ON ct.calificado_por = d.id_docente
         WHERE e.id_estudiante = ?
-        ORDER BY c.fecha_calificacion DESC
+        ORDER BY ct.fecha_calificacion DESC
       `, [id_usuario]);
 
       // 3. Matrículas/Cursos inscritos
@@ -205,7 +205,7 @@ exports.getHistorialDocente = async (req, res) => {
             'curso', c.nombre,
             'descripcion', mo.descripcion
           ) as detalles
-        FROM modulos mo
+        FROM modulos_curso mo
         INNER JOIN cursos c ON mo.id_curso = c.id_curso
         WHERE mo.id_docente = ?
         ORDER BY mo.fecha_creacion DESC
@@ -222,12 +222,12 @@ exports.getHistorialDocente = async (req, res) => {
             'modulo', mo.nombre,
             'curso', c.nombre,
             'fecha_limite', t.fecha_limite,
-            'puntos', t.puntos_maximo
+            'nota_maxima', t.nota_maxima
           ) as detalles
-        FROM tareas t
-        INNER JOIN modulos mo ON t.id_modulo = mo.id_modulo
+        FROM tareas_modulo t
+        INNER JOIN modulos_curso mo ON t.id_modulo = mo.id_modulo
         INNER JOIN cursos c ON mo.id_curso = c.id_curso
-        WHERE mo.id_docente = ?
+        WHERE t.id_docente = ?
         ORDER BY t.fecha_creacion DESC
       `, [id_usuario]);
 
@@ -236,22 +236,22 @@ exports.getHistorialDocente = async (req, res) => {
         SELECT 
           'entrega_calificada' as tipo_accion,
           CONCAT('Calificó a ', u.nombre, ' ', u.apellido, ' - ', t.titulo) as accion,
-          ca.fecha_calificacion as fecha,
+          ct.fecha_calificacion as fecha,
           JSON_OBJECT(
             'estudiante', CONCAT(u.nombre, ' ', u.apellido),
             'tarea', t.titulo,
-            'nota', ca.valor,
-            'comentario', ca.comentario,
+            'nota', ct.nota,
+            'comentario', ct.comentario_docente,
             'curso', c.nombre
           ) as detalles
-        FROM calificaciones ca
-        INNER JOIN entregas e ON ca.id_entrega = e.id_entrega
+        FROM calificaciones_tareas ct
+        INNER JOIN entregas_tareas e ON ct.id_entrega = e.id_entrega
         INNER JOIN usuarios u ON e.id_estudiante = u.id_usuario
-        INNER JOIN tareas t ON e.id_tarea = t.id_tarea
-        INNER JOIN modulos mo ON t.id_modulo = mo.id_modulo
+        INNER JOIN tareas_modulo t ON e.id_tarea = t.id_tarea
+        INNER JOIN modulos_curso mo ON t.id_modulo = mo.id_modulo
         INNER JOIN cursos c ON mo.id_curso = c.id_curso
-        WHERE ca.id_docente = ?
-        ORDER BY ca.fecha_calificacion DESC
+        WHERE ct.calificado_por = (SELECT id_docente FROM docentes WHERE identificacion = (SELECT cedula FROM usuarios WHERE id_usuario = ?))
+        ORDER BY ct.fecha_calificacion DESC
       `, [id_usuario]);
 
       historial = tipo === 'academicas'

@@ -736,15 +736,23 @@ async function subirFotoPerfil(req, res) {
       fotoPerfilPublicId = cloudinaryResult.public_id;
     } catch (cloudinaryError) {
       console.error('Error subiendo foto a Cloudinary:', cloudinaryError);
-      // Continuar sin Cloudinary (fallback a LONGBLOB)
+      return res.status(500).json({
+        success: false,
+        message: 'Error subiendo foto a Cloudinary. Por favor, intenta nuevamente.',
+        error: cloudinaryError.message
+      });
     }
 
-    // Guardar la foto en la base de datos (BLOB + URL de Cloudinary)
+    // Guardar la foto en la base de datos (solo URL de Cloudinary)
+    console.log('Actualizando usuario en BD - ID:', parseInt(id));
+    console.log('Datos a actualizar:', { foto_perfil_url: fotoPerfilUrl, foto_perfil_public_id: fotoPerfilPublicId });
+    
     await usuariosModel.updateAdminUser(parseInt(id), {
-      foto_perfil: fotoBuffer,
       foto_perfil_url: fotoPerfilUrl,
       foto_perfil_public_id: fotoPerfilPublicId
     });
+    
+    console.log('✓ Foto actualizada en BD exitosamente');
 
     // Registrar auditoría
     await registrarAuditoria({
@@ -757,6 +765,20 @@ async function subirFotoPerfil(req, res) {
       ip_address: req.ip || req.connection?.remoteAddress || null,
       user_agent: req.get('user-agent') || null
     });
+
+    // Emitir evento WebSocket para actualizar la foto en tiempo real
+    const io = req.app.get('io');
+    if (io) {
+      // Enviar al usuario específico
+      io.to(`user_${parseInt(id)}`).emit('profile_picture_updated', {
+        id_usuario: parseInt(id),
+        foto_perfil: fotoPerfilUrl, // Cambiar foto_perfil_url a foto_perfil
+        foto_perfil_url: fotoPerfilUrl,
+        foto_perfil_public_id: fotoPerfilPublicId,
+        timestamp: new Date().toISOString()
+      });
+      console.log(`✓ Evento profile_picture_updated enviado al usuario ${id} con URL: ${fotoPerfilUrl}`);
+    }
 
     res.json({
       success: true,
@@ -779,26 +801,37 @@ async function subirFotoPerfil(req, res) {
 }
 
 // ========================================
-// GET /api/usuarios/:id/foto-perfil - Obtener foto de perfil
+// GET /api/usuarios/:id/foto-perfil - Obtener URL de foto de perfil
 // ========================================
+// Retorna la URL de Cloudinary en formato JSON
 async function obtenerFotoPerfil(req, res) {
   try {
     const { id } = req.params;
 
-    // Obtener la foto desde la base de datos
-    const fotoBuffer = await usuariosModel.getFotoPerfil(id);
+    // Obtener la URL de Cloudinary desde la base de datos
+    const usuario = await usuariosModel.getUserById(id);
 
-    if (!fotoBuffer) {
+    if (!usuario) {
       return res.status(404).json({
         success: false,
-        message: 'El usuario no tiene foto de perfil'
+        message: 'Usuario no encontrado'
       });
     }
 
-    // Enviar la imagen como respuesta
-    res.set('Content-Type', 'image/jpeg'); // Asumimos JPEG por defecto
-    res.set('Cache-Control', 'public, max-age=86400'); // Cache de 1 día
-    res.send(fotoBuffer);
+    if (!usuario.foto_perfil_url) {
+      return res.status(404).json({
+        success: false,
+        message: 'El usuario no tiene foto de perfil',
+        foto_perfil_url: null
+      });
+    }
+
+    // Retornar la URL de Cloudinary en JSON
+    return res.json({
+      success: true,
+      foto_perfil_url: usuario.foto_perfil_url,
+      foto_perfil_public_id: usuario.foto_perfil_public_id
+    });
   } catch (error) {
     console.error('Error al obtener foto de perfil:', error);
     res.status(500).json({
@@ -847,6 +880,19 @@ async function eliminarFotoPerfil(req, res) {
       ip_address: req.ip || req.connection?.remoteAddress || null,
       user_agent: req.get('user-agent') || null
     });
+
+    // Emitir evento WebSocket para actualizar en tiempo real
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${parseInt(id)}`).emit('profile_picture_updated', {
+        id_usuario: parseInt(id),
+        foto_perfil_url: null,
+        foto_perfil_public_id: null,
+        deleted: true,
+        timestamp: new Date().toISOString()
+      });
+      console.log(`✓ Evento profile_picture_updated (deleted) enviado al usuario ${id}`);
+    }
 
     res.json({
       success: true,

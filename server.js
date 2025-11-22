@@ -39,7 +39,7 @@ const startServer = async () => {
             'http://localhost:3000',
             'http://localhost:5173',
             'http://localhost:4173'
-        ],
+          ],
         credentials: true
       }
     });
@@ -51,18 +51,18 @@ const startServer = async () => {
     io.on('connection', (socket) => {
       console.log('Cliente conectado:', socket.id);
 
-      // Evento para registrar un usuario con su socket y rol
+      // Evento para registrar un usuario con su socket, rol y cursos
       socket.on('register', (userData) => {
-        // userData puede ser un número (userId) o un objeto {userId, rol}
-        let userId, rol;
+        // userData puede ser un número (userId) o un objeto {userId, rol, cursos}
+        let userId, rol, cursos;
 
         if (typeof userData === 'number') {
           userId = userData;
-          // Si es solo número, intentar obtener rol del token (si está disponible)
           rol = 'unknown';
         } else if (typeof userData === 'object') {
           userId = userData.userId || userData.id_usuario;
           rol = userData.rol;
+          cursos = userData.cursos || []; // Array de IDs de cursos
         } else {
           return;
         }
@@ -80,6 +80,15 @@ const startServer = async () => {
           // Unir al usuario a su "room" por rol (si está disponible)
           if (rol && rol !== 'unknown') {
             socket.join(`rol_${rol}`);
+          }
+
+          // Unir al usuario a las rooms de sus cursos
+          if (cursos && Array.isArray(cursos) && cursos.length > 0) {
+            cursos.forEach(id_curso => {
+              socket.join(`curso_${id_curso}`);
+            });
+            console.log(`Usuario ${userId} (${rol}) registrado con socket ${socket.id}, rooms: user_${userId}, rol_${rol}, cursos: ${cursos.join(', ')}`);
+          } else if (rol && rol !== 'unknown') {
             console.log(`Usuario ${userId} (${rol}) registrado con socket ${socket.id}, rooms: user_${userId}, rol_${rol}`);
           } else {
             console.log(`Usuario ${userId} registrado con socket ${socket.id}, rooms: user_${userId}`);

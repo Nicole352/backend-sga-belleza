@@ -101,10 +101,9 @@ async function getAsistenciaByFechaController(req, res) {
         a.justificacion,
         a.hora_registro,
         a.fecha,
-        a.documento_nombre_original,
-        a.documento_size_kb,
-        a.documento_mime,
-        (CASE WHEN a.documento_justificacion IS NOT NULL THEN 1 ELSE 0 END) AS tiene_documento,
+        a.documento_justificacion_url,
+        a.documento_justificacion_public_id,
+        (CASE WHEN a.documento_justificacion_url IS NOT NULL THEN 1 ELSE 0 END) AS tiene_documento,
         u.nombre,
         u.apellido,
         u.cedula
@@ -170,12 +169,8 @@ async function guardarAsistenciaController(req, res) {
       const { id_estudiante, estado, observaciones } = registro;
 
       // Buscar archivo adjunto para este registro si existe
-      let documento_justificacion = null;
-      let documento_mime = null;
-      let documento_size_kb = null;
-      let documento_nombre_original = null;
-      let documento_justificacion_url = null;
-      let documento_justificacion_public_id = null;
+      let documento_url = null;
+      let documento_public_id = null;
 
       if (req.files && req.files.length > 0) {
         // Buscar archivo para este estudiante específico
@@ -194,17 +189,12 @@ async function guardarAsistenciaController(req, res) {
             );
             console.log('Justificación subida:', cloudinaryResult.secure_url);
 
-            // Guardar URL en variables (se agregarán a la query después)
-            documento_justificacion_url = cloudinaryResult.secure_url;
-            documento_justificacion_public_id = cloudinaryResult.public_id;
+            documento_url = cloudinaryResult.secure_url;
+            documento_public_id = cloudinaryResult.public_id;
           } catch (cloudinaryError) {
             console.error('Error subiendo a Cloudinary:', cloudinaryError);
+            // Continuar sin documento si falla Cloudinary
           }
-
-          documento_justificacion = archivoEstudiante.buffer;
-          documento_mime = archivoEstudiante.mimetype;
-          documento_size_kb = Math.round(archivoEstudiante.size / 1024);
-          documento_nombre_original = archivoEstudiante.originalname;
         }
       }
 
@@ -225,18 +215,16 @@ async function guardarAsistenciaController(req, res) {
         observaciones || null, justificacion];
 
       // Agregar campos de documento si están presentes
-      if (documento_justificacion) {
-        query += `, documento_justificacion, documento_mime, documento_size_kb, documento_nombre_original, documento_justificacion_url, documento_justificacion_public_id`;
-        params.push(documento_justificacion, documento_mime || null,
-          documento_size_kb || null, documento_nombre_original || null,
-          documento_justificacion_url || null, documento_justificacion_public_id || null);
+      if (documento_url) {
+        query += `, documento_justificacion_url, documento_justificacion_public_id`;
+        params.push(documento_url, documento_public_id);
       }
 
       query += `)
         VALUES (?, ?, ?, ?, ?, ?, ?`;
 
-      if (documento_justificacion) {
-        query += `, ?, ?, ?, ?, ?, ?`;
+      if (documento_url) {
+        query += `, ?, ?`;
       }
 
       query += `)
@@ -247,12 +235,8 @@ async function guardarAsistenciaController(req, res) {
           fecha_actualizacion = CURRENT_TIMESTAMP`;
 
       // Actualizar campos de documento si están presentes
-      if (documento_justificacion) {
+      if (documento_url) {
         query += `,
-          documento_justificacion = VALUES(documento_justificacion),
-          documento_mime = VALUES(documento_mime),
-          documento_size_kb = VALUES(documento_size_kb),
-          documento_nombre_original = VALUES(documento_nombre_original),
           documento_justificacion_url = VALUES(documento_justificacion_url),
           documento_justificacion_public_id = VALUES(documento_justificacion_public_id)`;
       }
@@ -312,10 +296,9 @@ async function getHistorialEstudianteController(req, res) {
         a.observaciones,
         a.justificacion,
         a.hora_registro,
-        a.documento_nombre_original,
-        a.documento_size_kb,
-        a.documento_mime,
-        (CASE WHEN a.documento_justificacion IS NOT NULL THEN 1 ELSE 0 END) AS tiene_documento,
+        a.documento_justificacion_url,
+        a.documento_justificacion_public_id,
+        (CASE WHEN a.documento_justificacion_url IS NOT NULL THEN 1 ELSE 0 END) AS tiene_documento,
         CONCAT(d.nombres, ' ', d.apellidos) AS docente_nombre
       FROM asistencias a
       INNER JOIN docentes d ON a.id_docente = d.id_docente

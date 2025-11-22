@@ -12,8 +12,8 @@ router.get('/estudiante/tarea/:id_tarea', entregasController.getEntregaByTareaEs
 // GET /api/entregas/tarea/:id_tarea - Obtener entregas de una tarea (docente)
 router.get('/tarea/:id_tarea', entregasController.getEntregasByTarea);
 
-// GET /api/entregas/:id/archivo - Descargar archivo de entrega
-router.get('/:id/archivo', entregasController.getArchivoEntrega);
+// NOTA: Los archivos ahora se sirven directamente desde Cloudinary
+// Las URLs están disponibles en el campo archivo_url
 
 // GET /api/entregas/:id - Obtener entrega por ID
 router.get('/:id', entregasController.getEntregaById);

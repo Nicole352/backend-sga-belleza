@@ -13,24 +13,24 @@ async function generateUniqueUsername(nombre, apellido) {
     // Extraer iniciales del nombre (todas las palabras)
     const nombreParts = nombre.trim().split(' ').filter(part => part.length > 0);
     const inicialesNombre = nombreParts.map(part => part.charAt(0).toLowerCase()).join('');
-    
+
     // Extraer primer apellido
     const apellidoParts = apellido.trim().split(' ').filter(part => part.length > 0);
     const primerApellido = apellidoParts[0]?.toLowerCase() || '';
-    
+
     // Crear username base
     const baseUsername = inicialesNombre + primerApellido;
-    
+
     // Verificar si el username ya existe (en columna usuarios.username)
     const [existingUsers] = await pool.execute(
       'SELECT COUNT(*) as count FROM usuarios WHERE username = ?',
       [baseUsername]
     );
-    
+
     if (existingUsers[0].count === 0) {
       return baseUsername;
     }
-    
+
     // Si existe, buscar el siguiente número disponible (usernameX)
     let counter = 2;
     while (counter <= 99) {
@@ -39,13 +39,13 @@ async function generateUniqueUsername(nombre, apellido) {
         'SELECT COUNT(*) as count FROM usuarios WHERE username = ?',
         [numberedUsername]
       );
-      
+
       if (checkUsers[0].count === 0) {
         return numberedUsername;
       }
       counter++;
     }
-    
+
     // Fallback si no se puede generar
     return baseUsername + Math.floor(Math.random() * 1000);
   } catch (error) {
@@ -59,18 +59,18 @@ async function generateUniqueUsername(nombre, apellido) {
 
 exports.createEstudianteFromSolicitud = async (req, res) => {
   const connection = await pool.getConnection();
-  
+
   try {
     await connection.beginTransaction();
-    
+
     const { id_solicitud, aprobado_por } = req.body;
-    
+
     if (!id_solicitud || !aprobado_por) {
-      return res.status(400).json({ 
-        error: 'Se requiere id_solicitud y aprobado_por' 
+      return res.status(400).json({
+        error: 'Se requiere id_solicitud y aprobado_por'
       });
     }
-    
+
     // 1. Obtener datos de la solicitud
     const [solicitudes] = await connection.execute(`
       SELECT 
@@ -80,28 +80,37 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
       LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = s.id_tipo_curso
       WHERE s.id_solicitud = ? AND s.estado = 'pendiente'
     `, [id_solicitud]);
-    
+
     if (solicitudes.length === 0) {
       await connection.rollback();
-      return res.status(404).json({ 
-        error: 'Solicitud no encontrada o ya procesada' 
+      return res.status(404).json({
+        error: 'Solicitud no encontrada o ya procesada'
       });
     }
-    
+
     const solicitud = solicitudes[0];
-    
+
+    // Normalizar campos NULL (pueden venir como undefined desde MySQL)
+    solicitud.comprobante_pago_url = solicitud.comprobante_pago_url || null;
+    solicitud.comprobante_pago_public_id = solicitud.comprobante_pago_public_id || null;
+    solicitud.recibido_por = solicitud.recibido_por || null;
+    solicitud.numero_comprobante = solicitud.numero_comprobante || null;
+    solicitud.banco_comprobante = solicitud.banco_comprobante || null;
+    solicitud.fecha_transferencia = solicitud.fecha_transferencia || null;
+    solicitud.metodo_pago = solicitud.metodo_pago || null;
+
     // 2. Verificar si es estudiante existente o nuevo
     let id_estudiante;
     let username = null;
     let passwordTemporal = null;
     let esEstudianteExistente = false;
-    
+
     if (solicitud.id_estudiante_existente) {
       // CASO 1: Estudiante YA existe en el sistema (inscripción a nuevo curso)
       console.log('Estudiante existente detectado, ID:', solicitud.id_estudiante_existente);
       id_estudiante = solicitud.id_estudiante_existente;
       esEstudianteExistente = true;
-      
+
       // Verificar que el estudiante existe y está activo
       const [estudianteCheck] = await connection.execute(`
         SELECT u.id_usuario, u.username, u.estado
@@ -109,40 +118,40 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         INNER JOIN roles r ON u.id_rol = r.id_rol
         WHERE u.id_usuario = ? AND r.nombre_rol = 'estudiante'
       `, [id_estudiante]);
-      
+
       if (estudianteCheck.length === 0) {
         await connection.rollback();
-        return res.status(400).json({ 
-          error: 'Estudiante no encontrado o no válido' 
+        return res.status(400).json({
+          error: 'Estudiante no encontrado o no válido'
         });
       }
-      
+
       if (estudianteCheck[0].estado !== 'activo') {
         await connection.rollback();
-        return res.status(400).json({ 
-          error: 'El estudiante no está activo en el sistema' 
+        return res.status(400).json({
+          error: 'El estudiante no está activo en el sistema'
         });
       }
-      
+
       username = estudianteCheck[0].username;
-      
+
     } else {
       // CASO 2: Estudiante NUEVO (flujo original)
-      
+
       // Verificar que no exista ya un usuario con esa cédula
       const [existingUser] = await connection.execute(
         'SELECT id_usuario FROM usuarios WHERE cedula = ?',
         [solicitud.identificacion_solicitante]
       );
-      
+
       if (existingUser.length > 0) {
         await connection.rollback();
-        return res.status(400).json({ 
-          error: 'Ya existe un usuario con esa cédula' 
+        return res.status(400).json({
+          error: 'Ya existe un usuario con esa cédula'
         });
       }
     }
-    
+
     // 3. Solo crear usuario si es estudiante NUEVO
     if (!esEstudianteExistente) {
       // Obtener el rol de estudiante
@@ -150,7 +159,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         'SELECT id_rol FROM roles WHERE nombre_rol = ?',
         ['estudiante']
       );
-      
+
       let id_rol_estudiante;
       if (roles.length === 0) {
         // Crear rol estudiante si no existe
@@ -162,21 +171,21 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
       } else {
         id_rol_estudiante = roles[0].id_rol;
       }
-      
+
       // 4. Generar username único
       username = await generateUniqueUsername(
-        solicitud.nombre_solicitante, 
+        solicitud.nombre_solicitante,
         solicitud.apellido_solicitante
       );
-      
+
       // 5. Guardar email personal del solicitante
       const emailEstudiante = solicitud.email_solicitante || null;
-      
+
       // 6. Generar contraseña temporal (documento) con bcrypt
       passwordTemporal = solicitud.identificacion_solicitante;
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(passwordTemporal, salt);
-      
+
       // 7. Crear usuario estudiante
       const [userResult] = await connection.execute(`
         INSERT INTO usuarios (
@@ -198,14 +207,14 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         id_rol_estudiante,
         'activo'
       ]);
-      
+
       id_estudiante = userResult.insertId;
       console.log('Nuevo estudiante creado, ID:', id_estudiante);
     }
-    
+
     // 8. Crear matrícula automáticamente
     const codigoMatricula = `MAT-${Date.now()}-${id_estudiante}`;
-    
+
     // Obtener el curso asociado al tipo de curso de la solicitud CON EL HORARIO CORRECTO
     console.log(' Buscando curso con horario:', solicitud.horario_preferido);
     const [cursosDisponibles] = await connection.execute(`
@@ -239,18 +248,18 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
       ORDER BY c.fecha_inicio ASC 
       LIMIT 1
     `, [id_solicitud, id_solicitud, solicitud.id_tipo_curso, solicitud.horario_preferido]);
-    
+
     let id_curso = null;
     if (cursosDisponibles.length > 0) {
       id_curso = cursosDisponibles[0].id_curso;
       console.log('Curso encontrado:', id_curso, 'Horario:', cursosDisponibles[0].horario, 'Cupos libres:', cursosDisponibles[0].cupos_reales_disponibles);
     } else {
       await connection.rollback();
-      return res.status(400).json({ 
-        error: `No hay cursos disponibles con horario ${solicitud.horario_preferido} para el tipo de curso seleccionado. Por favor, crea un curso con este horario primero.` 
+      return res.status(400).json({
+        error: `No hay cursos disponibles con horario ${solicitud.horario_preferido} para el tipo de curso seleccionado. Por favor, crea un curso con este horario primero.`
       });
     }
-    
+
     if (id_curso) {
       // Obtener email del estudiante (existente o nuevo)
       let emailParaMatricula;
@@ -264,7 +273,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         const emailEstudiante = solicitud.email_solicitante || null;
         emailParaMatricula = emailEstudiante || `${username}@estudiante.belleza.com`;
       }
-      
+
       const [matriculaResult] = await connection.execute(`
         INSERT INTO matriculas (
           codigo_matricula, id_solicitud, id_tipo_curso, id_estudiante, 
@@ -280,7 +289,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         emailParaMatricula,
         aprobado_por
       ]);
-      
+
       const id_matricula = matriculaResult.insertId;
       console.log('Matrícula creada:', codigoMatricula, 'ID:', id_matricula);
 
@@ -292,7 +301,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
       console.log('Estudiante agregado a estudiante_curso para reportes');
       console.log('Los cupos del curso ya fueron actualizados al crear la solicitud');
       console.log('Generando cuotas para matrícula:', id_matricula);
-      
+
       // Obtener información completa del tipo de curso
       const [tipoCurso] = await connection.execute(`
         SELECT 
@@ -311,64 +320,63 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
       if (tipoCurso.length > 0) {
         const tipoCursoData = tipoCurso[0];
         const modalidadPago = tipoCursoData.modalidad_pago || 'mensual';
-        
+
         console.log('Debug - Modalidad de pago:', modalidadPago);
-        
+
         if (modalidadPago === 'clases') {
           // ========================================
           // MODALIDAD POR CLASES
           // ========================================
           const numeroClases = tipoCursoData.numero_clases;
           const precioPorClase = parseFloat(tipoCursoData.precio_por_clase);
-          
+
           console.log('Debug - Generando cuotas por CLASES:', {
             numeroClases,
             precioPorClase,
             id_matricula
           });
-          
+
           // Generar cuotas por clases
           const fechaInicio = new Date();
-          
+
           // Calcular intervalo entre clases basado en la duración del curso
           // Si el curso dura 8 semanas (56 días) y tiene 16 clases, cada clase es cada 3.5 días
           const duracionSemanas = 8; // Duración estándar en semanas
           const diasTotales = duracionSemanas * 7;
           const diasPorClase = Math.floor(diasTotales / numeroClases);
-          
+
           console.log(`Intervalo calculado: ${diasPorClase} días por clase (${numeroClases} clases en ${duracionSemanas} semanas)`);
-          
+
           for (let i = 1; i <= numeroClases; i++) {
             // Fecha de vencimiento: distribuir clases uniformemente en la duración del curso
             const fechaVencimiento = new Date(fechaInicio);
             fechaVencimiento.setDate(fechaInicio.getDate() + (i - 1) * diasPorClase);
-            
+
             // Monto: primera clase = $50 (matrícula), resto = precio por clase
             const montoCuota = i === 1 ? 50.00 : precioPorClase;
-            
+
             console.log(`Creando cuota clase ${i}:`, {
               id_matricula,
               numero_cuota: i,
               monto: montoCuota,
               fecha_vencimiento: fechaVencimiento.toISOString().split('T')[0]
             });
-            
+
             if (i === 1) {
               // Primera clase VERIFICADA (matrícula pagada)
               await connection.execute(`
                 INSERT INTO pagos_mensuales (
                   id_matricula, numero_cuota, monto, fecha_vencimiento, 
                   fecha_pago, metodo_pago, numero_comprobante, banco_comprobante, 
-                  fecha_transferencia, recibido_por, comprobante_pago_blob, 
-                  comprobante_mime, comprobante_size_kb, comprobante_nombre_original,
-                  verificado_por, fecha_verificacion, estado, observaciones
-                ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'verificado', ?)
+                  fecha_transferencia, recibido_por, comprobante_pago_url, 
+                  comprobante_pago_public_id, verificado_por, fecha_verificacion, 
+                  estado, observaciones
+                ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'verificado', ?)
               `, [
                 id_matricula, i, montoCuota, fechaVencimiento.toISOString().split('T')[0],
                 solicitud.metodo_pago, solicitud.numero_comprobante, solicitud.banco_comprobante,
-                solicitud.fecha_transferencia, solicitud.recibido_por, solicitud.comprobante_pago,
-                solicitud.comprobante_mime, solicitud.comprobante_size_kb, solicitud.comprobante_nombre_original,
-                aprobado_por, `Matrícula pagada - Clase ${i} de ${numeroClases}`
+                solicitud.fecha_transferencia, solicitud.recibido_por, solicitud.comprobante_pago_url,
+                solicitud.comprobante_pago_public_id, aprobado_por, `Matrícula pagada - Clase ${i} de ${numeroClases}`
               ]);
               console.log(`Cuota clase #${i} creada con estado VERIFICADO`);
             } else {
@@ -384,46 +392,46 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
               console.log(`Cuota clase #${i} creada con estado PENDIENTE`);
             }
           }
-          
+
           console.log(`${numeroClases} clases generadas exitosamente para matrícula: ${id_matricula}`);
-          
+
         } else {
           // ========================================
           // MODALIDAD MENSUAL (LÓGICA ORIGINAL)
           // ========================================
           const duracionMeses = tipoCursoData.duracion_meses;
           const precioMensual = tipoCursoData.precio_base / duracionMeses;
-          
+
           console.log('Debug - Generando cuotas MENSUALES:', {
             duracionMeses,
             precioMensual,
             id_matricula
           });
-          
+
           const fechaAprobacion = new Date();
           const diaAprobacion = fechaAprobacion.getDate();
-          
+
           // Calcular cuántas cuotas cubre el monto pagado
           const MONTO_BASE = 90;
           const montoPagado = parseFloat(solicitud.monto_matricula) || MONTO_BASE;
           const numeroCuotasACubrir = Math.floor(montoPagado / MONTO_BASE);
-          
+
           console.log(`Monto pagado: $${montoPagado} → Cubre ${numeroCuotasACubrir} cuota(s)`);
-          
+
           for (let i = 1; i <= duracionMeses; i++) {
             const fechaVencimiento = new Date(fechaAprobacion);
-            
+
             if (i === 1) {
               fechaVencimiento.setDate(diaAprobacion);
             } else {
               fechaVencimiento.setMonth(fechaAprobacion.getMonth() + (i - 1));
               fechaVencimiento.setDate(diaAprobacion);
             }
-            
+
             // Marcar como verificado las primeras N cuotas según el monto pagado
             const esCuotaCubierta = i <= numeroCuotasACubrir;
             const esPrimeraCuota = i === 1;
-            
+
             if (esCuotaCubierta) {
               // Cuotas cubiertas por el pago inicial
               let observacionesCuota = '';
@@ -432,31 +440,29 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
               } else {
                 observacionesCuota = `Cubierto por pago inicial de matrícula (cuota #1)`;
               }
-              
+
               await connection.execute(`
                 INSERT INTO pagos_mensuales (
                   id_matricula, numero_cuota, monto, fecha_vencimiento, 
                   fecha_pago, metodo_pago, numero_comprobante, banco_comprobante,
-                  fecha_transferencia, recibido_por, comprobante_pago_blob,
-                  comprobante_mime, comprobante_size_kb, comprobante_nombre_original,
-                  verificado_por, fecha_verificacion, estado, observaciones
-                ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'verificado', ?)
+                  fecha_transferencia, recibido_por, comprobante_pago_url,
+                  comprobante_pago_public_id, verificado_por, fecha_verificacion, 
+                  estado, observaciones
+                ) VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'verificado', ?)
               `, [
                 id_matricula, i, MONTO_BASE,
                 fechaVencimiento.toISOString().split('T')[0],
-                solicitud.metodo_pago, 
-                esPrimeraCuota ? solicitud.numero_comprobante : null, 
+                solicitud.metodo_pago,
+                esPrimeraCuota ? solicitud.numero_comprobante : null,
                 esPrimeraCuota ? solicitud.banco_comprobante : null,
-                esPrimeraCuota ? solicitud.fecha_transferencia : null, 
-                esPrimeraCuota ? solicitud.recibido_por : null, 
-                esPrimeraCuota ? solicitud.comprobante_pago : null,
-                esPrimeraCuota ? solicitud.comprobante_mime : null, 
-                esPrimeraCuota ? solicitud.comprobante_size_kb : null, 
-                esPrimeraCuota ? solicitud.comprobante_nombre_original : null,
+                esPrimeraCuota ? solicitud.fecha_transferencia : null,
+                esPrimeraCuota ? solicitud.recibido_por : null,
+                esPrimeraCuota ? solicitud.comprobante_pago_url : null,
+                esPrimeraCuota ? solicitud.comprobante_pago_public_id : null,
                 aprobado_por,
                 observacionesCuota
               ]);
-              
+
               console.log(`Cuota #${i} marcada como VERIFICADA (cubierta por pago inicial)`);
             } else {
               // Cuotas pendientes
@@ -465,11 +471,11 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
                   id_matricula, numero_cuota, monto, fecha_vencimiento, estado, metodo_pago
                 ) VALUES (?, ?, ?, ?, 'pendiente', 'transferencia')
               `, [id_matricula, i, MONTO_BASE, fechaVencimiento.toISOString().split('T')[0]]);
-              
+
               console.log(`Cuota #${i} creada como PENDIENTE`);
             }
           }
-          
+
           console.log('Cuotas mensuales generadas exitosamente para matrícula:', id_matricula);
         }
       } else {
@@ -481,7 +487,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
       // ========================================
       if (solicitud.id_promocion_seleccionada) {
         console.log(`Solicitud tiene promoción ID: ${solicitud.id_promocion_seleccionada}`);
-        
+
         // Obtener datos de la promoción
         const [promoRows] = await connection.execute(`
           SELECT p.id_curso_promocional, p.meses_gratis, p.nombre_promocion,
@@ -504,12 +510,12 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
           if (matriculaPromoExistente.length === 0) {
             // Generar código de matrícula para el curso promocional
             const codigoMatriculaPromo = `MAT-PROMO-${Date.now()}-${id_estudiante}`;
-            
+
             // Obtener id_tipo_curso del curso promocional
             const [tipoCursoPromo] = await connection.execute(`
               SELECT id_tipo_curso FROM cursos WHERE id_curso = ?
             `, [promo.id_curso_promocional]);
-            
+
             // Crear matrícula del curso promocional con monto 0 (gratis)
             const [resultMatriculaPromo] = await connection.execute(`
               INSERT INTO matriculas 
@@ -550,7 +556,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
             `, [tipoCursoPromo[0].id_tipo_curso]);
 
             console.log(` Tipo de curso encontrado:`, tipoCursoPromoInfo);
-            
+
             if (tipoCursoPromoInfo.length > 0) {
               const tipoCursoPromoData = tipoCursoPromoInfo[0];
               const mesesGratis = promo.meses_gratis || 0;
@@ -576,9 +582,9 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
                     id_matricula, numero_cuota, monto, fecha_vencimiento, estado, metodo_pago, observaciones
                   ) VALUES (?, ?, ?, ?, ?, 'transferencia', ?)
                 `, [
-                  id_matricula_promo, 
-                  i, 
-                  montoCuota, 
+                  id_matricula_promo,
+                  i,
+                  montoCuota,
                   fechaVencimiento.toISOString().split('T')[0],
                   estadoCuota,
                   i <= mesesGratis ? ` Mes ${i} de ${mesesGratis} - PROMOCIONAL GRATIS` : `Cuota mensual ${i}`
@@ -623,7 +629,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         }
       }
     }
-    
+
     // 9. Actualizar estado de la solicitud
     await connection.execute(`
       UPDATE solicitudes_matricula 
@@ -632,9 +638,9 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
           fecha_verificacion = NOW()
       WHERE id_solicitud = ?
     `, [aprobado_por, id_solicitud]);
-    
+
     await connection.commit();
-    
+
     // ========================================
     // EMITIR EVENTO DE WEBSOCKET - NUEVA MATRÍCULA APROBADA
     // ========================================
@@ -650,14 +656,14 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
           tipo_estudiante: esEstudianteExistente ? 'existente' : 'nuevo',
           timestamp: new Date().toISOString()
         });
-        
+
         console.log(' Evento WebSocket emitido: matricula_aprobada');
       }
     } catch (socketError) {
       console.error('Error emitiendo evento WebSocket:', socketError);
       // No afecta el flujo principal
     }
-    
+
     // Registrar auditoría - Creación de estudiante (solo si es nuevo)
     if (!esEstudianteExistente) {
       await registrarAuditoria(
@@ -677,7 +683,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         req
       );
     }
-    
+
     // Registrar auditoría - Aprobación de solicitud
     await registrarAuditoria(
       'solicitudes_matricula',
@@ -688,7 +694,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
       { estado: 'aprobado', verificado_por: aprobado_por },
       req
     );
-    
+
     // 10. ENVIAR EMAIL DE BIENVENIDA CON CREDENCIALES Y PDF DEL PRIMER PAGO (solo para estudiantes nuevos, asíncrono)
     if (!esEstudianteExistente && passwordTemporal) {
       setImmediate(async () => {
@@ -759,13 +765,13 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
           if (pdfComprobante) {
             console.log(' PDF del primer pago incluido en el email');
           }
-          
+
         } catch (emailError) {
           console.error('Error enviando email de bienvenida (no afecta la creación):', emailError);
         }
       });
     }
-    
+
     // Respuesta diferente según si es nuevo o existente
     if (esEstudianteExistente) {
       res.json({
@@ -794,13 +800,13 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         }
       });
     }
-    
+
   } catch (error) {
     await connection.rollback();
     console.error('Error creando estudiante:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   } finally {
     connection.release();
@@ -814,10 +820,10 @@ exports.getEstudiantes = async (req, res) => {
       limit: req.query.limit || 10,
       search: req.query.search || ''
     };
-    
+
     const result = await EstudiantesModel.getAll(filters);
     const { estudiantes, total } = result;
-    
+
     // Obtener cursos inscritos para cada estudiante
     for (const estudiante of estudiantes) {
       try {
@@ -827,28 +833,28 @@ exports.getEstudiantes = async (req, res) => {
             c.nombre,
             c.codigo_curso,
             c.horario,
-            c.estado
-          FROM estudiante_curso ec
-          INNER JOIN cursos c ON c.id_curso = ec.id_curso
-          WHERE ec.id_estudiante = ?
-          ORDER BY c.fecha_inicio DESC
+            m.estado
+          FROM matriculas m
+          INNER JOIN cursos c ON c.id_curso = m.id_curso
+          WHERE m.id_estudiante = ?
+          ORDER BY m.fecha_matricula DESC
         `, [estudiante.id_usuario]);
-        
+
         estudiante.cursos = cursos;
       } catch (err) {
         console.error(`Error obteniendo cursos del estudiante ${estudiante.id_usuario}:`, err);
         estudiante.cursos = [];
       }
     }
-    
+
     res.setHeader('X-Total-Count', String(total));
     res.json(estudiantes);
-    
+
   } catch (error) {
     console.error('Error obteniendo estudiantes:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -856,14 +862,14 @@ exports.getEstudiantes = async (req, res) => {
 exports.getMisCursos = async (req, res) => {
   try {
     const id_usuario = req.user?.id_usuario;
-    
+
     if (!id_usuario) {
       return res.status(401).json({ error: 'Usuario no autenticado' });
     }
 
     // Verificar que el usuario sea estudiante
     const isEstudiante = await EstudiantesModel.isEstudiante(id_usuario);
-    
+
     if (!isEstudiante) {
       return res.status(403).json({ error: 'Acceso denegado. Solo estudiantes pueden acceder a esta información.' });
     }
@@ -877,21 +883,21 @@ exports.getMisCursos = async (req, res) => {
     // - La fecha de fin NO ha pasado (es hoy o futura)
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0); // Normalizar a medianoche para comparación justa
-    
+
     const cursosActivos = todosCursos.filter(curso => {
       const fechaFin = new Date(curso.fecha_fin);
       fechaFin.setHours(0, 0, 0, 0); // Normalizar a medianoche
-      
+
       // Excluir cursos finalizados o cancelados
       if (curso.estado === 'finalizado' || curso.estado === 'cancelado') {
         return false;
       }
-      
+
       // Excluir cursos cuya fecha de fin ya pasó
       if (fechaFin < hoy) {
         return false;
       }
-      
+
       // Incluir cursos activos o planificados con fecha futura
       return true;
     });
@@ -899,12 +905,12 @@ exports.getMisCursos = async (req, res) => {
     console.log(`Cursos activos - Usuario ${id_usuario}: ${cursosActivos.length} de ${todosCursos.length} total`);
 
     res.json(cursosActivos);
-    
+
   } catch (error) {
     console.error('Error obteniendo cursos del estudiante:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -913,43 +919,43 @@ exports.getMisCursos = async (req, res) => {
 exports.getHistorialAcademico = async (req, res) => {
   try {
     const id_usuario = req.user?.id_usuario;
-    
+
     if (!id_usuario) {
       return res.status(401).json({ error: 'Usuario no autenticado' });
     }
 
     // Verificar que el usuario sea estudiante
     const isEstudiante = await EstudiantesModel.isEstudiante(id_usuario);
-    
+
     if (!isEstudiante) {
       return res.status(403).json({ error: 'Acceso denegado. Solo estudiantes pueden acceder a esta información.' });
     }
 
     // Obtener todos los cursos (activos y finalizados)
     const todosCursos = await EstudiantesModel.getMisCursos(id_usuario);
-    
+
     // Separar cursos activos y finalizados basándose en la fecha_fin Y el estado del curso
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0); // Normalizar a medianoche para comparación justa
-    
+
     const cursosActivos = [];
     const cursosFinalizados = [];
-    
+
     todosCursos.forEach(curso => {
       const fechaFin = new Date(curso.fecha_fin);
       fechaFin.setHours(0, 0, 0, 0); // Normalizar a medianoche
-      
+
       // Un curso está FINALIZADO si:
       // 1. El estado del curso es 'finalizado' o 'cancelado', O
       // 2. La fecha de fin ya pasó (es menor que hoy)
-      const estaFinalizado = curso.estado === 'finalizado' || 
-                            curso.estado === 'cancelado' ||
-                            fechaFin < hoy;
-      
+      const estaFinalizado = curso.estado === 'finalizado' ||
+        curso.estado === 'cancelado' ||
+        fechaFin < hoy;
+
       // Un curso está ACTIVO si:
       // - El estado es 'activo' o 'planificado', Y
       // - La fecha de fin NO ha pasado (es hoy o futura)
-      
+
       if (estaFinalizado) {
         cursosFinalizados.push(curso);
       } else {
@@ -964,12 +970,12 @@ exports.getHistorialAcademico = async (req, res) => {
       finalizados: cursosFinalizados,
       total: todosCursos.length
     });
-    
+
   } catch (error) {
     console.error('Error obteniendo historial académico:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -980,7 +986,7 @@ exports.getEstudianteById = async (req, res) => {
     if (!id) {
       return res.status(400).json({ error: 'ID inválido' });
     }
-    
+
     const [estudiantes] = await pool.execute(`
       SELECT 
         u.id_usuario,
@@ -1000,18 +1006,18 @@ exports.getEstudianteById = async (req, res) => {
       INNER JOIN roles r ON u.id_rol = r.id_rol
       WHERE r.nombre_rol = 'estudiante' AND u.id_usuario = ?
     `, [id]);
-    
+
     if (estudiantes.length === 0) {
       return res.status(404).json({ error: 'Estudiante no encontrado' });
     }
-    
+
     res.json(estudiantes[0]);
-    
+
   } catch (error) {
     console.error('Error obteniendo estudiante:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -1022,7 +1028,7 @@ exports.updateEstudiante = async (req, res) => {
     if (!id) {
       return res.status(400).json({ error: 'ID inválido' });
     }
-    
+
     const {
       nombre,
       apellido,
@@ -1033,7 +1039,7 @@ exports.updateEstudiante = async (req, res) => {
       estado,
       contacto_emergencia
     } = req.body;
-    
+
     // Verificar que el estudiante existe
     const [existing] = await pool.execute(`
       SELECT u.id_usuario 
@@ -1041,11 +1047,11 @@ exports.updateEstudiante = async (req, res) => {
       INNER JOIN roles r ON u.id_rol = r.id_rol
       WHERE r.nombre_rol = 'estudiante' AND u.id_usuario = ?
     `, [id]);
-    
+
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Estudiante no encontrado' });
     }
-    
+
     // Actualizar datos en la tabla usuarios
     await pool.execute(`
       UPDATE usuarios 
@@ -1053,17 +1059,17 @@ exports.updateEstudiante = async (req, res) => {
           fecha_nacimiento = ?, genero = ?, direccion = ?, estado = ?
       WHERE id_usuario = ?
     `, [nombre, apellido, telefono, fecha_nacimiento, genero, direccion, estado, id]);
-    
+
     // Si se proporciona contacto_emergencia, actualizar en la tabla solicitudes_matricula
     if (contacto_emergencia !== undefined) {
       // Obtener la cédula del estudiante
       const [userData] = await pool.execute(`
         SELECT cedula FROM usuarios WHERE id_usuario = ?
       `, [id]);
-      
+
       if (userData.length > 0) {
         const cedula = userData[0].cedula;
-        
+
         // Actualizar el contacto de emergencia en la solicitud aprobada más reciente
         await pool.execute(`
           UPDATE solicitudes_matricula 
@@ -1074,14 +1080,14 @@ exports.updateEstudiante = async (req, res) => {
         `, [contacto_emergencia, cedula]);
       }
     }
-    
+
     res.json({ success: true, message: 'Estudiante actualizado exitosamente' });
-    
+
   } catch (error) {
     console.error('Error actualizando estudiante:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -1104,7 +1110,7 @@ exports.getEstudiantesRecientes = async (req, res) => {
       ORDER BY u.fecha_registro DESC
       LIMIT 3
     `);
-    
+
     res.json({
       message: 'Estudiantes recientes (últimos 3)',
       estudiantes: estudiantes.map(est => ({
@@ -1120,12 +1126,12 @@ exports.getEstudiantesRecientes = async (req, res) => {
         }
       }))
     });
-    
+
   } catch (error) {
     console.error('Error obteniendo estudiantes recientes:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -1146,7 +1152,7 @@ exports.getMisPagosMenuales = async (req, res) => {
       JOIN roles r ON u.id_rol = r.id_rol 
       WHERE u.id_usuario = ?
     `, [id_estudiante]);
-    
+
     if (userCheck.length === 0 || userCheck[0].nombre_rol !== 'estudiante') {
       return res.status(403).json({ error: 'Acceso denegado. Solo estudiantes pueden acceder a esta información.' });
     }
@@ -1182,9 +1188,9 @@ exports.getMisPagosMenuales = async (req, res) => {
 
   } catch (error) {
     console.error('Error obteniendo pagos mensuales del estudiante:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -1193,7 +1199,7 @@ exports.getMisPagosMenuales = async (req, res) => {
 exports.verificarEstudiante = async (req, res) => {
   try {
     const { identificacion } = req.query;
-    
+
     if (!identificacion || !identificacion.trim()) {
       return res.status(400).json({ error: 'Identificación es requerida' });
     }
@@ -1220,7 +1226,7 @@ exports.verificarEstudiante = async (req, res) => {
     `, [identificacion.trim().toUpperCase()]);
 
     if (usuarios.length === 0) {
-      return res.json({ 
+      return res.json({
         existe: false,
         mensaje: 'Estudiante no encontrado en el sistema'
       });
@@ -1261,9 +1267,9 @@ exports.verificarEstudiante = async (req, res) => {
 
   } catch (error) {
     console.error('Error verificando estudiante:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -1392,7 +1398,7 @@ exports.generarReporteExcel = async (req, res) => {
     // Agregar datos
     estudiantes.forEach(est => {
       const cursos = cursosMap[est.id_usuario] || [];
-      const cursosTexto = cursos.length > 0 
+      const cursosTexto = cursos.length > 0
         ? cursos.map(c => `${c.codigo_curso} - ${c.curso_nombre} (${c.horario})`).join('; ')
         : 'Sin cursos';
 
@@ -1423,7 +1429,7 @@ exports.generarReporteExcel = async (req, res) => {
           right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
         };
       });
-      
+
       if (rowNumber > 1 && rowNumber % 2 === 0) {
         row.fill = {
           type: 'pattern',
@@ -1452,9 +1458,9 @@ exports.generarReporteExcel = async (req, res) => {
 
     // Subtítulo con fecha
     sheet2.mergeCells('A2:F2');
-    sheet2.getCell('A2').value = `Generado el: ${new Date().toLocaleDateString('es-EC', { 
-      year: 'numeric', 
-      month: 'long', 
+    sheet2.getCell('A2').value = `Generado el: ${new Date().toLocaleDateString('es-EC', {
+      year: 'numeric',
+      month: 'long',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
@@ -1505,11 +1511,11 @@ exports.generarReporteExcel = async (req, res) => {
       sheet2.getCell(`A${row}`).value = dato.categoria;
       sheet2.getCell(`B${row}`).value = dato.cantidad;
       sheet2.getCell(`C${row}`).value = `${porcentaje}%`;
-      
+
       sheet2.getCell(`B${row}`).alignment = { horizontal: 'center' };
       sheet2.getCell(`C${row}`).alignment = { horizontal: 'center' };
       sheet2.getCell(`C${row}`).font = { bold: true, color: { argb: dato.color } };
-      
+
       row++;
     });
 
@@ -1548,10 +1554,10 @@ exports.generarReporteExcel = async (req, res) => {
       sheet2.getCell(`C${cursoRow}`).value = curso.tipo_curso;
       sheet2.getCell(`D${cursoRow}`).value = curso.horario;
       sheet2.getCell(`E${cursoRow}`).value = curso.total_estudiantes;
-      
+
       sheet2.getCell(`E${cursoRow}`).alignment = { horizontal: 'center' };
       sheet2.getCell(`E${cursoRow}`).font = { bold: true, color: { argb: 'FF10B981' } };
-      
+
       // Filas alternadas
       if (index % 2 === 0) {
         ['A', 'B', 'C', 'D', 'E'].forEach(col => {
@@ -1562,7 +1568,7 @@ exports.generarReporteExcel = async (req, res) => {
           };
         });
       }
-      
+
       cursoRow++;
     });
 
@@ -1599,7 +1605,7 @@ exports.generarReporteExcel = async (req, res) => {
     // Generar archivo
     const buffer = await workbook.xlsx.writeBuffer();
     const fecha = new Date().toISOString().split('T')[0];
-    
+
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=Reporte_Estudiantes_${fecha}.xlsx`);
     res.send(buffer);

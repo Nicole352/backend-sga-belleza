@@ -38,8 +38,6 @@ async function createAdminController(req, res) {
     }
 
     // Subir foto a Cloudinary si existe
-    let fotoPerfilBuffer = null;
-    let fotoMimeType = null;
     let fotoPerfilUrl = null;
     let fotoPerfilPublicId = null;
 
@@ -58,9 +56,6 @@ async function createAdminController(req, res) {
       } catch (cloudinaryError) {
         console.error('Error subiendo foto a Cloudinary:', cloudinaryError);
       }
-
-      fotoPerfilBuffer = req.file.buffer;
-      fotoMimeType = req.file.mimetype;
     }
 
     // Hashear password
@@ -75,8 +70,6 @@ async function createAdminController(req, res) {
       fecha_nacimiento: fecha_nacimiento || null,
       direccion: direccion || null,
       genero: genero || null,
-      foto_perfil: fotoPerfilBuffer,
-      foto_mime_type: fotoMimeType,
       foto_perfil_url: fotoPerfilUrl,
       foto_perfil_public_id: fotoPerfilPublicId,
       passwordHash: hash,
@@ -167,7 +160,6 @@ async function updateAdminController(req, res) {
     }
 
     // Subir foto a Cloudinary si existe
-    let foto_perfil = undefined;
     let foto_perfil_url = undefined;
     let foto_perfil_public_id = undefined;
 
@@ -186,8 +178,6 @@ async function updateAdminController(req, res) {
       } catch (cloudinaryError) {
         console.error('Error subiendo foto a Cloudinary:', cloudinaryError);
       }
-
-      foto_perfil = req.file.buffer;
     }
 
     const fields = {
@@ -199,7 +189,6 @@ async function updateAdminController(req, res) {
       direccion: direccion ?? undefined,
       genero: genero ?? undefined,
       id_rol: id_rol ?? undefined,
-      foto_perfil: foto_perfil ?? undefined,
       foto_perfil_url: foto_perfil_url ?? undefined,
       foto_perfil_public_id: foto_perfil_public_id ?? undefined,
     };

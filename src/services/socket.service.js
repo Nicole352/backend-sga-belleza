@@ -29,8 +29,17 @@ const emitToRole = (req, role, event, data) => {
   }
 };
 
+const emitToCurso = (req, id_curso, event, data) => {
+  const io = req.app.get('io');
+  if (io) {
+    io.to(`curso_${id_curso}`).emit(event, data);
+    console.log(`Evento '${event}' enviado al curso ${id_curso}`);
+  }
+};
+
 module.exports = {
   emitSocketEvent,
   emitToUser,
-  emitToRole
+  emitToRole,
+  emitToCurso
 };

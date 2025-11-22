@@ -8,9 +8,8 @@ class EntregasModel {
         e.id_entrega,
         e.id_tarea,
         e.id_estudiante,
-        e.archivo_nombre_original as archivo_nombre,
-        e.archivo_mime,
-        e.archivo_size_kb,
+        e.archivo_url,
+        e.archivo_public_id,
         e.comentario_estudiante,
         e.fecha_entrega,
         e.estado,
@@ -80,17 +79,12 @@ class EntregasModel {
     const [result] = await pool.execute(`
       INSERT INTO entregas_tareas (
         id_tarea, id_estudiante, 
-        archivo_entregado, archivo_mime, archivo_size_kb, archivo_nombre_original,
         archivo_url, archivo_public_id,
         comentario_estudiante, estado
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'entregado')
+      ) VALUES (?, ?, ?, ?, ?, 'entregado')
     `, [
       id_tarea,
       id_estudiante,
-      archivoData ? archivoData.buffer : null,
-      archivoData ? archivoData.mime : null,
-      archivoData ? archivoData.sizeKb : null,
-      archivoData ? archivoData.nombreOriginal : null,
       archivoData ? archivoData.url : null,
       archivoData ? archivoData.publicId : null,
       comentario_estudiante ? comentario_estudiante.trim() : null
@@ -107,12 +101,8 @@ class EntregasModel {
     let params = [comentario_estudiante ? comentario_estudiante.trim() : null];
 
     if (archivoData) {
-      query += ', archivo_entregado = ?, archivo_mime = ?, archivo_size_kb = ?, archivo_nombre_original = ?, archivo_url = ?, archivo_public_id = ?';
+      query += ', archivo_url = ?, archivo_public_id = ?';
       params.push(
-        archivoData.buffer,
-        archivoData.mime,
-        archivoData.sizeKb,
-        archivoData.nombreOriginal,
         archivoData.url || null,
         archivoData.publicId || null
       );
@@ -134,27 +124,8 @@ class EntregasModel {
     return result.affectedRows > 0;
   }
 
-  // Obtener archivo de entrega
-  static async getArchivo(id_entrega) {
-    const [entregas] = await pool.execute(`
-      SELECT 
-        archivo_entregado,
-        archivo_mime,
-        archivo_nombre_original
-      FROM entregas_tareas
-      WHERE id_entrega = ?
-    `, [id_entrega]);
-
-    if (entregas.length === 0 || !entregas[0].archivo_entregado) {
-      return null;
-    }
-
-    return {
-      buffer: entregas[0].archivo_entregado,
-      mime: entregas[0].archivo_mime || 'application/octet-stream',
-      filename: entregas[0].archivo_nombre_original || `entrega-${id_entrega}`
-    };
-  }
+  // NOTA: Los archivos ahora se sirven directamente desde Cloudinary
+  // Las URLs están disponibles en el campo archivo_url
 
   // Verificar si el estudiante ya entregó
   static async existsEntrega(id_tarea, id_estudiante) {

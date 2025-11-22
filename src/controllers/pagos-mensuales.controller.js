@@ -140,33 +140,30 @@ exports.pagarCuota = async (req, res) => {
       }
     }
 
-    // Subir archivo a Cloudinary si existe
+    // Subir archivo a Cloudinary si existe (SOLO CLOUDINARY)
     let archivoData = null;
     let comprobanteCloudinary = null;
 
     if (req.file) {
       try {
-        console.log(' Subiendo comprobante a Cloudinary...');
+        console.log('✓ Subiendo comprobante a Cloudinary...');
         comprobanteCloudinary = await cloudinaryService.uploadFile(
           req.file.buffer,
           'comprobantes',
           `pago-cuota-${id_pago}-${Date.now()}`
         );
-        console.log(' Comprobante subido a Cloudinary:', comprobanteCloudinary.secure_url);
-      } catch (cloudinaryError) {
-        console.error(' Error subiendo a Cloudinary:', cloudinaryError);
-        // Continuar sin Cloudinary (fallback a LONGBLOB)
-      }
+        console.log('✓ Comprobante subido a Cloudinary:', comprobanteCloudinary.secure_url);
 
-      archivoData = {
-        comprobanteBuffer: req.file.buffer,
-        comprobanteMime: req.file.mimetype,
-        comprobanteSizeKb: Math.round(req.file.size / 1024),
-        comprobanteNombreOriginal: req.file.originalname,
-        comprobanteUrl: comprobanteCloudinary?.secure_url || null,
-        comprobantePublicId: comprobanteCloudinary?.public_id || null
-      };
-      console.log(' Archivo procesado:', archivoData.comprobanteNombreOriginal);
+        archivoData = {
+          comprobanteUrl: comprobanteCloudinary.secure_url,
+          comprobantePublicId: comprobanteCloudinary.public_id
+        };
+      } catch (cloudinaryError) {
+        console.error('✗ Error subiendo a Cloudinary:', cloudinaryError);
+        return res.status(500).json({
+          error: 'Error al subir el comprobante. Por favor, intenta nuevamente.'
+        });
+      }
     }
 
     const pagoData = {
@@ -284,34 +281,8 @@ exports.pagarCuota = async (req, res) => {
   }
 };
 
-// Obtener comprobante de pago
-exports.getComprobante = async (req, res) => {
-  try {
-    const id_pago = Number(req.params.id_pago);
-    const id_estudiante = req.user?.id_usuario;
-
-    if (!id_pago || !id_estudiante) {
-      return res.status(400).json({ error: 'Parámetros inválidos' });
-    }
-
-    const comprobante = await PagosMenualesModel.getComprobante(id_pago, id_estudiante);
-
-    if (!comprobante) {
-      return res.status(404).json({ error: 'Comprobante no encontrado' });
-    }
-
-    res.setHeader('Content-Type', comprobante.mime);
-    res.setHeader('Content-Disposition', `attachment; filename="${comprobante.filename}"`);
-    res.send(comprobante.buffer);
-
-  } catch (error) {
-    console.error('Error obteniendo comprobante:', error);
-    res.status(500).json({
-      error: 'Error interno del servidor',
-      details: error.message
-    });
-  }
-};
+// NOTA: Los archivos ahora se sirven directamente desde Cloudinary
+// Las URLs están disponibles en el campo comprobante_pago_url
 
 // Obtener resumen de pagos del estudiante
 exports.getResumenPagos = async (req, res) => {

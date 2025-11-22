@@ -33,7 +33,7 @@ function formatearFecha(fecha) {
 async function generarExcelEstudiantes(datos, filtros, estadisticas) {
   try {
     const workbook = new ExcelJS.Workbook();
-    
+
     // Metadata del archivo
     workbook.creator = 'Sistema SGA Belleza';
     workbook.created = new Date();
@@ -152,7 +152,7 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
     hojaResumen.getCell('A3').font = { bold: true, size: 12 };
     hojaResumen.addRow(['Desde:', formatearFecha(filtros.fechaInicio)]);
     hojaResumen.addRow(['Hasta:', formatearFecha(filtros.fechaFin)]);
-    
+
     if (filtros.estado && filtros.estado !== 'todos') {
       hojaResumen.addRow(['Estado:', filtros.estado.toUpperCase()]);
     }
@@ -176,7 +176,7 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
       const row = hojaResumen.addRow([label, valor]);
       row.getCell(1).font = { bold: true };
       row.getCell(2).alignment = { horizontal: 'center' };
-      
+
       // Color según tipo
       if (label.includes('Aprobados')) {
         row.getCell(2).font = { color: { argb: 'FF10B981' }, bold: true };
@@ -207,7 +207,7 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
 async function generarExcelFinanciero(datos, filtros, estadisticas) {
   try {
     const workbook = new ExcelJS.Workbook();
-    
+
     workbook.creator = 'Sistema SGA Belleza';
     workbook.created = new Date();
 
@@ -334,7 +334,7 @@ async function generarExcelFinanciero(datos, filtros, estadisticas) {
       const totalPagos = estudiante.pagos.length;
       const cuotasVerificadas = estudiante.pagos.filter(p => p.estado_pago === 'verificado').length;
       const cuotasPendientes = estudiante.pagos.filter(p => p.estado_pago === 'pendiente' || p.estado_pago === 'pagado').length;
-      
+
       const totalAPagar = estudiante.pagos.reduce((sum, p) => sum + parseFloat(p.monto || 0), 0);
       const montoPagado = estudiante.pagos
         .filter(p => p.estado_pago === 'verificado')
@@ -350,7 +350,7 @@ async function generarExcelFinanciero(datos, filtros, estadisticas) {
           }
           return false;
         }).length;
-        
+
         if (cuotasVencidas > 0) {
           estado = 'VENCIDO';
         } else {
@@ -450,8 +450,8 @@ async function generarExcelFinanciero(datos, filtros, estadisticas) {
       ['Promedio por Pago', `$${parseFloat(estadisticas.promedio_pago || 0).toFixed(2)}`],
       ['Matrículas Pagadas', estadisticas.matriculas_pagadas || 0],
       ['Estudiantes con Saldo', Object.values(estudiantesPorCedula).filter(e => {
-        const saldo = e.pagos.reduce((sum, p) => sum + parseFloat(p.monto || 0), 0) - 
-                      e.pagos.filter(p => p.estado_pago === 'verificado').reduce((sum, p) => sum + parseFloat(p.monto || 0), 0);
+        const saldo = e.pagos.reduce((sum, p) => sum + parseFloat(p.monto || 0), 0) -
+          e.pagos.filter(p => p.estado_pago === 'verificado').reduce((sum, p) => sum + parseFloat(p.monto || 0), 0);
         return saldo > 0;
       }).length]
     ];
@@ -460,7 +460,7 @@ async function generarExcelFinanciero(datos, filtros, estadisticas) {
       const row = hojaResumen.addRow([label, valor]);
       row.getCell(1).font = { bold: true };
       row.getCell(2).alignment = { horizontal: 'center' };
-      
+
       if (label.includes('Ingresos Totales')) {
         row.getCell(2).font = { color: { argb: 'FF10B981' }, bold: true, size: 14 };
       } else if (label.includes('Pendientes') || label.includes('Vencidos')) {
@@ -486,7 +486,7 @@ async function generarExcelFinanciero(datos, filtros, estadisticas) {
 async function generarExcelCursos(datos, filtros, estadisticas) {
   try {
     const workbook = new ExcelJS.Workbook();
-    
+
     workbook.creator = 'Sistema SGA Belleza';
     workbook.created = new Date();
     workbook.modified = new Date();

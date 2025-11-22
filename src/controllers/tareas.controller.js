@@ -46,7 +46,8 @@ async function getTareasByModulo(req, res) {
       if (tarea.id_entrega) {
         tareaBase.entrega = {
           id_entrega: tarea.id_entrega,
-          archivo_nombre: tarea.archivo_nombre,
+          archivo_url: tarea.archivo_url,
+          archivo_public_id: tarea.archivo_public_id,
           fecha_entrega: tarea.fecha_entrega,
           estado: tarea.entrega_estado,
           calificacion: tarea.calificacion,

@@ -5,7 +5,7 @@ const { strictLimiter } = require('../middleware/rateLimit');
 
 const router = express.Router();
 
-// Configuración de Multer (memoria) para subir comprobantes y guardarlos en BD (columna comprobante_pago LONGBLOB)
+// Configuración de Multer (memoria) para subir archivos y guardarlos en Cloudinary
 const storage = multer.memoryStorage();
 
 const upload = multer({
@@ -30,7 +30,8 @@ router.post('/',
   upload.fields([
     { name: 'comprobante', maxCount: 1 },
     { name: 'documento_identificacion', maxCount: 1 },
-    { name: 'documento_estatus_legal', maxCount: 1 }
+    { name: 'documento_estatus_legal', maxCount: 1 },
+    { name: 'certificado_cosmetologia', maxCount: 1 } // Certificado de Cosmetología (solo para Cosmetría)
   ]),
   solicitudesController.createSolicitud
 );
@@ -41,14 +42,8 @@ router.get('/', solicitudesController.getSolicitudes);
 // GET /api/solicitudes/:id (admin)
 router.get('/:id', solicitudesController.getSolicitudById);
 
-// GET /api/solicitudes/:id/comprobante (admin)
-router.get('/:id/comprobante', solicitudesController.getComprobante);
-
-// GET /api/solicitudes/:id/documento-identificacion (admin)
-router.get('/:id/documento-identificacion', solicitudesController.getDocumentoIdentificacion);
-
-// GET /api/solicitudes/:id/documento-estatus-legal (admin)
-router.get('/:id/documento-estatus-legal', solicitudesController.getDocumentoEstatusLegal);
+// NOTA: Los archivos ahora se sirven directamente desde Cloudinary
+// Las URLs están en los campos: comprobante_pago_url, documento_identificacion_url, etc.
 
 // PATCH /api/solicitudes/:id/decision (admin)
 router.patch('/:id/decision', solicitudesController.updateDecision);

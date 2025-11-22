@@ -2,7 +2,30 @@ const { pool } = require('../config/database');
 
 async function getUserByEmail(email) {
   const [rows] = await pool.execute(
-    `SELECT u.*, r.nombre_rol
+    `SELECT 
+      u.id_usuario,
+      u.cedula,
+      u.nombre,
+      u.apellido,
+      u.fecha_nacimiento,
+      u.telefono,
+      u.email,
+      u.username,
+      u.direccion,
+      u.genero,
+      u.foto_perfil_url as foto_perfil,
+      u.foto_perfil_public_id,
+      u.password,
+      u.password_temporal,
+      u.needs_password_reset,
+      u.id_rol,
+      u.estado,
+      u.cuenta_bloqueada,
+      u.motivo_bloqueo,
+      u.fecha_bloqueo,
+      u.fecha_registro,
+      u.fecha_ultima_conexion,
+      r.nombre_rol
      FROM usuarios u
      JOIN roles r ON r.id_rol = u.id_rol
      WHERE u.email = ?
@@ -15,7 +38,30 @@ async function getUserByEmail(email) {
 // Obtener usuario por username (para login de estudiantes)
 async function getUserByUsername(username) {
   const [rows] = await pool.execute(
-    `SELECT u.*, r.nombre_rol
+    `SELECT 
+      u.id_usuario,
+      u.cedula,
+      u.nombre,
+      u.apellido,
+      u.fecha_nacimiento,
+      u.telefono,
+      u.email,
+      u.username,
+      u.direccion,
+      u.genero,
+      u.foto_perfil_url as foto_perfil,
+      u.foto_perfil_public_id,
+      u.password,
+      u.password_temporal,
+      u.needs_password_reset,
+      u.id_rol,
+      u.estado,
+      u.cuenta_bloqueada,
+      u.motivo_bloqueo,
+      u.fecha_bloqueo,
+      u.fecha_registro,
+      u.fecha_ultima_conexion,
+      r.nombre_rol
      FROM usuarios u
      JOIN roles r ON r.id_rol = u.id_rol
      WHERE u.username = ?
@@ -38,10 +84,7 @@ async function getUserById(id) {
       u.username,
       u.direccion,
       u.genero,
-      CASE 
-        WHEN u.foto_perfil IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(u.foto_perfil))
-        ELSE NULL 
-      END as foto_perfil,
+      u.foto_perfil_url as foto_perfil,
       u.password,
       u.password_temporal,
       u.needs_password_reset,
@@ -68,7 +111,30 @@ async function updateLastLogin(id_usuario) {
 
 async function getUserByCedula(cedula) {
   const [rows] = await pool.execute(
-    `SELECT u.*, r.nombre_rol
+    `SELECT 
+      u.id_usuario,
+      u.cedula,
+      u.nombre,
+      u.apellido,
+      u.fecha_nacimiento,
+      u.telefono,
+      u.email,
+      u.username,
+      u.direccion,
+      u.genero,
+      u.foto_perfil_url as foto_perfil,
+      u.foto_perfil_public_id,
+      u.password,
+      u.password_temporal,
+      u.needs_password_reset,
+      u.id_rol,
+      u.estado,
+      u.cuenta_bloqueada,
+      u.motivo_bloqueo,
+      u.fecha_bloqueo,
+      u.fecha_registro,
+      u.fecha_ultima_conexion,
+      r.nombre_rol
      FROM usuarios u
      JOIN roles r ON r.id_rol = u.id_rol
      WHERE u.cedula = ?
@@ -101,10 +167,10 @@ async function createRole(nombre_rol, descripcion = null) {
   return role;
 }
 
-async function createAdminUser({ cedula, nombre, apellido, email, telefono, fecha_nacimiento, direccion, genero, foto_perfil, foto_mime_type, foto_perfil_url, foto_perfil_public_id, passwordHash, id_rol }) {
+async function createAdminUser({ cedula, nombre, apellido, email, telefono, fecha_nacimiento, direccion, genero, foto_perfil_url, foto_perfil_public_id, passwordHash, id_rol }) {
   const [result] = await pool.execute(
     `INSERT INTO usuarios (
-      cedula, nombre, apellido, email, telefono, fecha_nacimiento, direccion, foto_perfil, foto_perfil_url, foto_perfil_public_id, password, id_rol, estado
+      cedula, nombre, apellido, email, telefono, fecha_nacimiento, direccion, genero, foto_perfil_url, foto_perfil_public_id, password, id_rol, estado
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'activo')`,
     [
       cedula,
@@ -114,7 +180,7 @@ async function createAdminUser({ cedula, nombre, apellido, email, telefono, fech
       telefono,
       fecha_nacimiento,
       direccion,
-      foto_perfil || null,
+      genero,
       foto_perfil_url || null,
       foto_perfil_public_id || null,
       passwordHash,
@@ -128,7 +194,30 @@ async function createAdminUser({ cedula, nombre, apellido, email, telefono, fech
 
 async function getAdmins() {
   const [rows] = await pool.execute(
-    `SELECT u.*, r.nombre_rol
+    `SELECT 
+      u.id_usuario,
+      u.cedula,
+      u.nombre,
+      u.apellido,
+      u.fecha_nacimiento,
+      u.telefono,
+      u.email,
+      u.username,
+      u.direccion,
+      u.genero,
+      u.foto_perfil_url as foto_perfil,
+      u.foto_perfil_public_id,
+      u.password,
+      u.password_temporal,
+      u.needs_password_reset,
+      u.id_rol,
+      u.estado,
+      u.cuenta_bloqueada,
+      u.motivo_bloqueo,
+      u.fecha_bloqueo,
+      u.fecha_registro,
+      u.fecha_ultima_conexion,
+      r.nombre_rol
      FROM usuarios u
      JOIN roles r ON r.id_rol = u.id_rol
      WHERE r.nombre_rol = 'administrativo'
@@ -139,7 +228,30 @@ async function getAdmins() {
 
 async function getAllUsers() {
   const [rows] = await pool.execute(
-    `SELECT u.*, r.nombre_rol
+    `SELECT 
+      u.id_usuario,
+      u.cedula,
+      u.nombre,
+      u.apellido,
+      u.fecha_nacimiento,
+      u.telefono,
+      u.email,
+      u.username,
+      u.direccion,
+      u.genero,
+      u.foto_perfil_url as foto_perfil,
+      u.foto_perfil_public_id,
+      u.password,
+      u.password_temporal,
+      u.needs_password_reset,
+      u.id_rol,
+      u.estado,
+      u.cuenta_bloqueada,
+      u.motivo_bloqueo,
+      u.fecha_bloqueo,
+      u.fecha_registro,
+      u.fecha_ultima_conexion,
+      r.nombre_rol
      FROM usuarios u
      JOIN roles r ON r.id_rol = u.id_rol
      ORDER BY u.fecha_registro DESC`
@@ -341,7 +453,10 @@ async function updateAdminUser(id_usuario, fields) {
     if (setParts.length > 0) {
       values.push(id_usuario);
       const sql = `UPDATE usuarios SET ${setParts.join(', ')} WHERE id_usuario = ?`;
+      console.log('SQL UPDATE:', sql);
+      console.log('Valores:', values);
       await pool.execute(sql, values);
+      console.log('✓ UPDATE ejecutado exitosamente');
     }
   }
 
@@ -367,7 +482,6 @@ async function updateAdminUser(id_usuario, fields) {
       }
     } catch (error) {
       console.error('Error updating emergency contact:', error);
-      // Don't throw the error, just log it since this is a secondary update
     }
   }
 
@@ -428,7 +542,7 @@ async function getAllUsersWithFilters({ search = '', rol = 'todos', estado = 'to
 
   const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
 
-  // Consulta para obtener usuarios (incluye foto_perfil como base64)
+  // Consulta para obtener usuarios (incluye foto_perfil_url de Cloudinary)
   const query = `
     SELECT 
       u.id_usuario, 
@@ -445,10 +559,7 @@ async function getAllUsersWithFilters({ search = '', rol = 'todos', estado = 'to
       u.motivo_bloqueo,
       u.fecha_bloqueo,
       r.nombre_rol,
-      CASE 
-        WHEN u.foto_perfil IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(u.foto_perfil))
-        ELSE NULL 
-      END as foto_perfil
+      u.foto_perfil_url as foto_perfil
     FROM usuarios u 
     JOIN roles r ON r.id_rol = u.id_rol 
     ${whereClause} 
@@ -587,28 +698,28 @@ async function getUserActions(id_usuario, limit = 20) {
 // FUNCIONES PARA FOTO DE PERFIL
 // ========================================
 
-// Actualizar foto de perfil (guardar en BLOB)
-async function updateFotoPerfil(id_usuario, fotoBuffer) {
+// Actualizar foto de perfil (Cloudinary URL)
+async function updateFotoPerfil(id_usuario, foto_perfil_url, foto_perfil_public_id = null) {
   await pool.execute(
-    'UPDATE usuarios SET foto_perfil = ? WHERE id_usuario = ?',
-    [fotoBuffer, id_usuario]
+    'UPDATE usuarios SET foto_perfil_url = ?, foto_perfil_public_id = ? WHERE id_usuario = ?',
+    [foto_perfil_url, foto_perfil_public_id, id_usuario]
   );
   return await getUserById(id_usuario);
 }
 
-// Obtener foto de perfil
+// Obtener foto de perfil URL
 async function getFotoPerfil(id_usuario) {
   const [rows] = await pool.execute(
-    'SELECT foto_perfil FROM usuarios WHERE id_usuario = ?',
+    'SELECT foto_perfil_url, foto_perfil_public_id FROM usuarios WHERE id_usuario = ?',
     [id_usuario]
   );
-  return rows[0]?.foto_perfil || null;
+  return rows[0] || null;
 }
 
 // Eliminar foto de perfil
 async function deleteFotoPerfil(id_usuario) {
   await pool.execute(
-    'UPDATE usuarios SET foto_perfil = NULL WHERE id_usuario = ?',
+    'UPDATE usuarios SET foto_perfil_url = NULL, foto_perfil_public_id = NULL WHERE id_usuario = ?',
     [id_usuario]
   );
   return await getUserById(id_usuario);

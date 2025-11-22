@@ -1,7 +1,7 @@
 const { pool } = require('../config/database');
 
 class SolicitudesModel {
-  // Crear nueva solicitud
+  // Crear nueva solicitud (solo Cloudinary - sin LONGBLOB)
   static async create(solicitudData, archivos) {
     const {
       codigo_solicitud,
@@ -15,27 +15,27 @@ class SolicitudesModel {
       genero_solicitante,
       horario_preferido,
       id_tipo_curso,
+      id_curso,
       monto_matricula,
       metodo_pago,
       numero_comprobante,
       banco_comprobante,
       fecha_transferencia,
-      recibido_por
+      recibido_por,
+      id_estudiante_existente,
+      contacto_emergencia,
+      id_promocion_seleccionada
     } = solicitudData;
 
     const {
-      comprobanteBuffer,
-      comprobanteMime,
-      comprobanteSizeKb,
-      comprobanteNombreOriginal,
-      documentoIdentificacionBuffer,
-      documentoIdentificacionMime,
-      documentoIdentificacionSizeKb,
-      documentoIdentificacionNombreOriginal,
-      documentoEstatusLegalBuffer,
-      documentoEstatusLegalMime,
-      documentoEstatusLegalSizeKb,
-      documentoEstatusLegalNombreOriginal
+      comprobanteUrl,
+      comprobantePublicId,
+      documentoIdentificacionUrl,
+      documentoIdentificacionPublicId,
+      documentoEstatusLegalUrl,
+      documentoEstatusLegalPublicId,
+      certificadoCosmetologiaUrl,
+      certificadoCosmetologiaPublicId
     } = archivos;
 
     const sql = `INSERT INTO solicitudes_matricula (
@@ -50,31 +50,31 @@ class SolicitudesModel {
       genero_solicitante,
       horario_preferido,
       id_tipo_curso,
+      id_curso,
       monto_matricula,
       metodo_pago,
       numero_comprobante,
       banco_comprobante,
       fecha_transferencia,
       recibido_por,
-      comprobante_pago,
-      comprobante_mime,
-      comprobante_size_kb,
-      comprobante_nombre_original,
-      documento_identificacion,
-      documento_identificacion_mime,
-      documento_identificacion_size_kb,
-      documento_identificacion_nombre_original,
-      documento_estatus_legal,
-      documento_estatus_legal_mime,
-      documento_estatus_legal_size_kb,
-      documento_estatus_legal_nombre_original
+      comprobante_pago_url,
+      comprobante_pago_public_id,
+      documento_identificacion_url,
+      documento_identificacion_public_id,
+      documento_estatus_legal_url,
+      documento_estatus_legal_public_id,
+      certificado_cosmetologia_url,
+      certificado_cosmetologia_public_id,
+      id_estudiante_existente,
+      contacto_emergencia,
+      id_promocion_seleccionada
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const values = [
       codigo_solicitud,
       identificacion_solicitante,
-      nombre_solicitante,
-      apellido_solicitante,
+      nombre_solicitante || null,
+      apellido_solicitante || null,
       telefono_solicitante || null,
       email_solicitante,
       fecha_nacimiento_solicitante || null,
@@ -82,24 +82,24 @@ class SolicitudesModel {
       genero_solicitante || null,
       horario_preferido,
       Number(id_tipo_curso),
+      id_curso ? Number(id_curso) : null,
       Number(monto_matricula),
       metodo_pago,
       numero_comprobante ? numero_comprobante.trim().toUpperCase() : null,
       banco_comprobante || null,
       fecha_transferencia || null,
       recibido_por ? recibido_por.trim().toUpperCase() : null,
-      comprobanteBuffer,
-      comprobanteMime,
-      comprobanteSizeKb,
-      comprobanteNombreOriginal,
-      documentoIdentificacionBuffer,
-      documentoIdentificacionMime,
-      documentoIdentificacionSizeKb,
-      documentoIdentificacionNombreOriginal,
-      documentoEstatusLegalBuffer,
-      documentoEstatusLegalMime,
-      documentoEstatusLegalSizeKb,
-      documentoEstatusLegalNombreOriginal
+      comprobanteUrl || null,
+      comprobantePublicId || null,
+      documentoIdentificacionUrl || null,
+      documentoIdentificacionPublicId || null,
+      documentoEstatusLegalUrl || null,
+      documentoEstatusLegalPublicId || null,
+      certificadoCosmetologiaUrl || null,
+      certificadoCosmetologiaPublicId || null,
+      id_estudiante_existente ? Number(id_estudiante_existente) : null,
+      contacto_emergencia || null,
+      id_promocion_seleccionada ? Number(id_promocion_seleccionada) : null
     ];
 
     const [result] = await pool.execute(sql, values);
@@ -131,20 +131,24 @@ class SolicitudesModel {
         s.banco_comprobante,
         s.fecha_transferencia,
         s.recibido_por,
-        s.id_estudiante_existente
+        s.id_estudiante_existente,
+        s.comprobante_pago_url,
+        s.documento_identificacion_url,
+        s.documento_estatus_legal_url,
+        s.certificado_cosmetologia_url
       FROM solicitudes_matricula s
       LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = s.id_tipo_curso
       WHERE 1=1
     `;
     const params = [];
 
-    if (estado) { 
-      sql += ' AND s.estado = ?'; 
-      params.push(estado); 
+    if (estado) {
+      sql += ' AND s.estado = ?';
+      params.push(estado);
     }
-    if (tipo) { 
-      sql += ' AND s.id_tipo_curso = ?'; 
-      params.push(tipo); 
+    if (tipo) {
+      sql += ' AND s.id_tipo_curso = ?';
+      params.push(tipo);
     }
 
     // Evitar placeholders en LIMIT/OFFSET para compatibilidad
@@ -153,20 +157,20 @@ class SolicitudesModel {
     // Total count with same filters
     let sqlCount = `SELECT COUNT(*) AS total FROM solicitudes_matricula s WHERE 1=1`;
     const paramsCount = [];
-    if (estado) { 
-      sqlCount += ' AND s.estado = ?'; 
-      paramsCount.push(estado); 
+    if (estado) {
+      sqlCount += ' AND s.estado = ?';
+      paramsCount.push(estado);
     }
-    if (tipo) { 
-      sqlCount += ' AND s.id_tipo_curso = ?'; 
-      paramsCount.push(tipo); 
+    if (tipo) {
+      sqlCount += ' AND s.id_tipo_curso = ?';
+      paramsCount.push(tipo);
     }
 
     const [[countRow]] = await pool.execute(sqlCount, paramsCount);
     const totalCount = Number(countRow?.total || 0);
 
     const [rows] = await pool.execute(sql, params);
-    
+
     return {
       solicitudes: rows,
       total: totalCount,
@@ -180,15 +184,15 @@ class SolicitudesModel {
   static async getCountsByEstado(tipo = null) {
     let sqlAgg = `SELECT s.estado, COUNT(*) AS total FROM solicitudes_matricula s WHERE 1=1`;
     const paramsAgg = [];
-    
-    if (tipo) { 
-      sqlAgg += ' AND s.id_tipo_curso = ?'; 
-      paramsAgg.push(tipo); 
+
+    if (tipo) {
+      sqlAgg += ' AND s.id_tipo_curso = ?';
+      paramsAgg.push(tipo);
     }
-    
+
     sqlAgg += ' GROUP BY s.estado';
     const [rowsAgg] = await pool.execute(sqlAgg, paramsAgg);
-    
+
     // Normalize to include all estados keys
     const result = {
       pendiente: 0,
@@ -196,13 +200,13 @@ class SolicitudesModel {
       rechazado: 0,
       observaciones: 0,
     };
-    
+
     for (const r of rowsAgg) {
       if (r.estado in result) {
         result[r.estado] = Number(r.total) || 0;
       }
     }
-    
+
     return result;
   }
 
@@ -230,66 +234,16 @@ class SolicitudesModel {
       LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = s.id_tipo_curso
       WHERE s.id_solicitud = ? AND s.estado = 'pendiente'
     `, [id]);
-    
+
     return solicitudes.length > 0 ? solicitudes[0] : null;
   }
 
-  // Obtener comprobante de pago
-  static async getComprobante(id) {
-    const [rows] = await pool.execute(`
-      SELECT comprobante_pago, comprobante_mime, comprobante_nombre_original
-      FROM solicitudes_matricula
-      WHERE id_solicitud = ?
-    `, [id]);
-    
-    if (rows.length === 0 || !rows[0].comprobante_pago) {
-      return null;
-    }
-    
-    return {
-      buffer: rows[0].comprobante_pago,
-      mime: rows[0].comprobante_mime || 'application/octet-stream',
-      filename: rows[0].comprobante_nombre_original || `comprobante-${id}`
-    };
-  }
-
-  // Obtener documento de identificación
-  static async getDocumentoIdentificacion(id) {
-    const [rows] = await pool.execute(`
-      SELECT documento_identificacion, documento_identificacion_mime, documento_identificacion_nombre_original
-      FROM solicitudes_matricula
-      WHERE id_solicitud = ?
-    `, [id]);
-    
-    if (rows.length === 0 || !rows[0].documento_identificacion) {
-      return null;
-    }
-    
-    return {
-      buffer: rows[0].documento_identificacion,
-      mime: rows[0].documento_identificacion_mime || 'application/octet-stream',
-      filename: rows[0].documento_identificacion_nombre_original || `documento-identificacion-${id}`
-    };
-  }
-
-  // Obtener documento de estatus legal
-  static async getDocumentoEstatusLegal(id) {
-    const [rows] = await pool.execute(`
-      SELECT documento_estatus_legal, documento_estatus_legal_mime, documento_estatus_legal_nombre_original
-      FROM solicitudes_matricula
-      WHERE id_solicitud = ?
-    `, [id]);
-    
-    if (rows.length === 0 || !rows[0].documento_estatus_legal) {
-      return null;
-    }
-    
-    return {
-      buffer: rows[0].documento_estatus_legal,
-      mime: rows[0].documento_estatus_legal_mime || 'application/octet-stream',
-      filename: rows[0].documento_estatus_legal_nombre_original || `documento-estatus-legal-${id}`
-    };
-  }
+  // NOTA: Los archivos ahora se almacenan en Cloudinary
+  // Las URLs están disponibles en los campos:
+  // - comprobante_pago_url
+  // - documento_identificacion_url
+  // - documento_estatus_legal_url
+  // - certificado_cosmetologia_url
 
   // Actualizar decisión de solicitud
   static async updateDecision(id, decisionData) {
@@ -312,29 +266,29 @@ class SolicitudesModel {
   // Verificar si existe número de comprobante
   static async existsNumeroComprobante(numero_comprobante) {
     const [existingRows] = await pool.execute(
-      'SELECT id_solicitud FROM solicitudes_matricula WHERE numero_comprobante = ?', 
+      'SELECT id_solicitud FROM solicitudes_matricula WHERE numero_comprobante = ?',
       [numero_comprobante.trim().toUpperCase()]
     );
-    
+
     return existingRows.length > 0;
   }
 
   // Validar tipo de curso
   static async validateTipoCurso(id_tipo_curso) {
     const [tipoCursoRows] = await pool.execute(
-      'SELECT id_tipo_curso, estado FROM tipos_cursos WHERE id_tipo_curso = ?', 
+      'SELECT id_tipo_curso, estado, card_key, nombre FROM tipos_cursos WHERE id_tipo_curso = ?',
       [id_tipo_curso]
     );
-    
+
     if (tipoCursoRows.length === 0) {
       return { valid: false, message: 'El tipo de curso no existe' };
     }
-    
+
     const tipoCurso = tipoCursoRows[0];
     if (tipoCurso.estado !== 'activo') {
       return { valid: false, message: 'El tipo de curso no está disponible para matrícula' };
     }
-    
+
     return { valid: true, tipoCurso };
   }
 }

@@ -20,6 +20,8 @@ exports.getAllPagos = async (req, res) => {
         pm.numero_comprobante,
         pm.banco_comprobante,
         pm.fecha_transferencia,
+        pm.comprobante_pago_url,
+        pm.comprobante_pago_public_id,
         pm.recibido_por,
         pm.estado,
         pm.observaciones,
@@ -401,61 +403,70 @@ exports.descargarComprobante = async (req, res) => {
     const [pagos] = await pool.execute(`
       SELECT
         id_matricula,
-        comprobante_pago_blob,
-        comprobante_mime,
-        comprobante_nombre_original
+        comprobante_pago_url,
+        comprobante_pago_public_id
       FROM pagos_mensuales
       WHERE id_pago = ?
     `, [id]);
 
     console.log('Resultado de la consulta por ID:', {
       encontrado: pagos.length > 0,
-      tieneBlob: pagos.length > 0 && !!pagos[0].comprobante_pago_blob,
-      mime: pagos.length > 0 ? pagos[0].comprobante_mime : null,
-      nombreOriginal: pagos.length > 0 ? pagos[0].comprobante_nombre_original : null
+      tieneUrl: pagos.length > 0 && !!pagos[0].comprobante_pago_url
     });
 
     if (pagos.length === 0) {
       console.log('Pago no encontrado');
-      return res.status(404).json({ error: 'Comprobante no encontrado' });
+      return res.status(404).json({
+        success: false,
+        error: 'Comprobante no encontrado'
+      });
     }
 
     let pago = pagos[0];
 
-    if (!pago.comprobante_pago_blob && pago.id_matricula) {
+    if (!pago.comprobante_pago_url && pago.id_matricula) {
       console.log('No hay comprobante en esta cuota, buscando en la misma matrícula...');
       const [pagosMismaMatricula] = await pool.execute(`
         SELECT
-          comprobante_pago_blob,
-          comprobante_mime,
-          comprobante_nombre_original
+          comprobante_pago_url,
+          comprobante_pago_public_id
         FROM pagos_mensuales
-        WHERE id_matricula = ? AND comprobante_pago_blob IS NOT NULL
+        WHERE id_matricula = ? AND comprobante_pago_url IS NOT NULL
         ORDER BY numero_cuota ASC, id_pago ASC
         LIMIT 1
       `, [pago.id_matricula]);
 
       if (pagosMismaMatricula.length === 0) {
         console.log('No se encontró ningún comprobante en la matrícula');
-        return res.status(404).json({ error: 'Comprobante no encontrado' });
+        return res.status(404).json({
+          success: false,
+          error: 'Comprobante no encontrado'
+        });
       }
 
       pago = pagosMismaMatricula[0];
       console.log('Comprobante encontrado en otra cuota de la misma matrícula');
     }
 
-    console.log('Enviando comprobante:', {
-      mime: pago.comprobante_mime,
-      nombre: pago.comprobante_nombre_original,
-      tamañoBytes: pago.comprobante_pago_blob.length
-    });
+    if (!pago.comprobante_pago_url) {
+      return res.status(404).json({
+        success: false,
+        error: 'Comprobante no encontrado'
+      });
+    }
 
-    res.setHeader('Content-Type', pago.comprobante_mime || 'image/jpeg');
-    res.setHeader('Content-Disposition', `inline; filename="${pago.comprobante_nombre_original || `comprobante-${id}.jpg`}"`);
-    res.send(pago.comprobante_pago_blob);
+    console.log('Retornando URL de Cloudinary:', pago.comprobante_pago_url);
+
+    // Retornar JSON con la URL de Cloudinary
+    res.json({
+      success: true,
+      comprobante_pago_url: pago.comprobante_pago_url,
+      comprobante_pago_public_id: pago.comprobante_pago_public_id
+    });
   } catch (error) {
     console.error('Error descargando comprobante:', error);
     res.status(500).json({
+      success: false,
       error: 'Error interno del servidor',
       details: error.message
     });

@@ -240,10 +240,6 @@ class PagosMenualesModel {
             fecha_transferencia = ?,
             recibido_por = ?,
             fecha_pago = NOW(),
-            comprobante_pago_blob = ?,
-            comprobante_mime = ?,
-            comprobante_size_kb = ?,
-            comprobante_nombre_original = ?,
             comprobante_pago_url = ?,
             comprobante_pago_public_id = ?,
             observaciones = ?
@@ -256,10 +252,6 @@ class PagosMenualesModel {
           esPrimera ? pagoData.banco_comprobante : null,
           esPrimera ? pagoData.fecha_transferencia : null,
           esPrimera ? pagoData.recibido_por : null,
-          esPrimera && archivoData ? archivoData.comprobanteBuffer : null,
-          esPrimera && archivoData ? archivoData.comprobanteMime : null,
-          esPrimera && archivoData ? archivoData.comprobanteSizeKb : null,
-          esPrimera && archivoData ? archivoData.comprobanteNombreOriginal : null,
           esPrimera && archivoData ? archivoData.comprobanteUrl : null,
           esPrimera && archivoData ? archivoData.comprobantePublicId : null,
           observacionesFinal,
@@ -294,28 +286,8 @@ class PagosMenualesModel {
     }
   }
 
-  // Obtener comprobante de pago
-  static async getComprobante(id_pago, id_estudiante) {
-    const [pagos] = await pool.execute(`
-      SELECT 
-        pm.comprobante_pago_blob,
-        pm.comprobante_mime,
-        pm.comprobante_nombre_original
-      FROM pagos_mensuales pm
-      INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
-      WHERE pm.id_pago = ? AND m.id_estudiante = ?
-    `, [id_pago, id_estudiante]);
-
-    if (pagos.length === 0 || !pagos[0].comprobante_pago_blob) {
-      return null;
-    }
-
-    return {
-      buffer: pagos[0].comprobante_pago_blob,
-      mime: pagos[0].comprobante_mime || 'application/octet-stream',
-      filename: pagos[0].comprobante_nombre_original || `comprobante-pago-${id_pago}`
-    };
-  }
+  // NOTA: Los archivos ahora se sirven directamente desde Cloudinary
+  // Las URLs están disponibles en el campo comprobante_pago_url
 
   // Verificar si existe número de comprobante
   static async existsNumeroComprobante(numero_comprobante, exclude_id_pago = null) {
@@ -588,17 +560,13 @@ class PagosMenualesModel {
         observacionesFinal
       ];
 
-      // Agregar datos del archivo si existe
+      // Agregar datos del archivo si existe (solo Cloudinary URLs)
       if (archivoData) {
-        sql += `, comprobante_pago_blob = ?, 
-                 comprobante_mime = ?, 
-                 comprobante_size_kb = ?, 
-                 comprobante_nombre_original = ?`;
+        sql += `, comprobante_pago_url = ?, 
+                 comprobante_pago_public_id = ?`;
         params.push(
-          archivoData.comprobanteBuffer,
-          archivoData.comprobanteMime,
-          archivoData.comprobanteSizeKb,
-          archivoData.comprobanteNombreOriginal
+          archivoData.comprobanteUrl,
+          archivoData.comprobantePublicId
         );
       }
 

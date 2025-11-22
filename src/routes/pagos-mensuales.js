@@ -46,7 +46,7 @@ router.patch('/cursos-promocionales/:id_matricula/decision', pagosMenualesContro
 // POST /api/pagos-mensuales/pagar/:id_pago - Procesar pago de mensualidad
 router.post('/pagar/:id_pago', upload.single('comprobante'), pagosMenualesController.pagarCuota);
 
-// GET /api/pagos-mensuales/comprobante/:id_pago - Descargar comprobante de pago
-router.get('/comprobante/:id_pago', pagosMenualesController.getComprobante);
+// NOTA: Los comprobantes ahora se sirven directamente desde Cloudinary
+// Las URLs están disponibles en el campo comprobante_pago_url
 
 module.exports = router;

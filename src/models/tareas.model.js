@@ -12,12 +12,13 @@ class TareasModel {
         (SELECT COUNT(*) FROM entregas_tareas e 
          INNER JOIN calificaciones_tareas c ON e.id_entrega = c.id_entrega 
          WHERE e.id_tarea = t.id_tarea) as entregas_calificadas`;
-    
+
     // Si se proporciona id_estudiante, incluir información de su entrega
     if (id_estudiante) {
       query += `,
         e.id_entrega,
-        e.archivo_nombre_original as archivo_nombre,
+        e.archivo_url,
+        e.archivo_public_id,
         e.fecha_entrega,
         e.estado as entrega_estado,
         cal.nota as calificacion,
@@ -26,25 +27,25 @@ class TareasModel {
         dcal.nombres as calificador_nombres,
         dcal.apellidos as calificador_apellidos`;
     }
-    
+
     query += `
       FROM tareas_modulo t
       INNER JOIN docentes d ON t.id_docente = d.id_docente`;
-    
+
     if (id_estudiante) {
       query += `
       LEFT JOIN entregas_tareas e ON t.id_tarea = e.id_tarea AND e.id_estudiante = ?
       LEFT JOIN calificaciones_tareas cal ON e.id_entrega = cal.id_entrega
       LEFT JOIN docentes dcal ON cal.calificado_por = dcal.id_docente`;
     }
-    
+
     query += `
       WHERE t.id_modulo = ?
       ORDER BY t.fecha_limite ASC`;
-    
+
     const params = id_estudiante ? [id_estudiante, id_modulo] : [id_modulo];
     const [tareas] = await pool.execute(query, params);
-    
+
     return tareas;
   }
 
@@ -69,7 +70,7 @@ class TareasModel {
       INNER JOIN docentes d ON t.id_docente = d.id_docente
       WHERE t.id_tarea = ?
     `, [id_tarea]);
-    
+
     return tareas.length > 0 ? tareas[0] : null;
   }
 
@@ -195,6 +196,8 @@ class TareasModel {
         e.id_entrega,
         e.fecha_entrega,
         e.estado as estado_entrega,
+        e.archivo_url,
+        e.archivo_public_id,
         cal.nota,
         cal.resultado,
         cal.comentario_docente,
@@ -212,7 +215,7 @@ class TareasModel {
       WHERE m.id_curso = ? AND t.estado = 'activo'
       ORDER BY m.id_modulo ASC, t.fecha_limite ASC
     `, [id_estudiante, id_curso]);
-    
+
     return tareas;
   }
 
@@ -230,7 +233,7 @@ class TareasModel {
       LEFT JOIN calificaciones_tareas c ON e.id_entrega = c.id_entrega
       WHERE t.id_tarea = ?
     `, [id_tarea]);
-    
+
     return stats[0];
   }
 }

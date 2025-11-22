@@ -183,7 +183,7 @@ exports.createSolicitud = async (req, res) => {
   try {
     const idTipoCursoNum = Number(id_tipo_curso);
     if (!idTipoCursoNum) return res.status(400).json({ error: 'id_tipo_curso inválido' });
-    const [tipoCursoRows] = await pool.execute('SELECT id_tipo_curso, estado, modalidad_pago FROM tipos_cursos WHERE id_tipo_curso = ?', [idTipoCursoNum]);
+    const [tipoCursoRows] = await pool.execute('SELECT id_tipo_curso, nombre, card_key, estado, modalidad_pago FROM tipos_cursos WHERE id_tipo_curso = ?', [idTipoCursoNum]);
     if (!tipoCursoRows.length) return res.status(400).json({ error: 'El tipo de curso no existe' });
     tipoCurso = tipoCursoRows[0];
     if (tipoCurso.estado !== 'activo') {
@@ -290,25 +290,48 @@ exports.createSolicitud = async (req, res) => {
   // VALIDAR CUPOS DISPONIBLES Y BUSCAR CURSO ACTIVO CON HORARIO
   let cursoSeleccionado = null;
   try {
-    const [cursosDisponibles] = await pool.execute(
-      `SELECT id_curso, codigo_curso, nombre, horario, capacidad_maxima, cupos_disponibles
-       FROM cursos
-       WHERE id_tipo_curso = ?
-       AND horario = ?
-       AND estado = 'activo'
-       AND cupos_disponibles > 0
-       ORDER BY fecha_inicio ASC
-       LIMIT 1`,
-      [id_tipo_curso, horario_preferido]
-    );
+    // Si se envía un ID de curso específico (para distinguir fechas), usarlo
+    if (req.body.id_curso) {
+      const [cursoEspecifico] = await pool.execute(
+        `SELECT id_curso, codigo_curso, nombre, horario, capacidad_maxima, cupos_disponibles
+         FROM cursos
+         WHERE id_curso = ?
+         AND estado = 'activo'
+         AND cupos_disponibles > 0`,
+        [req.body.id_curso]
+      );
 
-    if (!cursosDisponibles.length) {
-      return res.status(400).json({
-        error: `No hay cupos disponibles para el horario ${horario_preferido}. Por favor, intenta con otro horario o contacta con la institución.`
-      });
+      if (!cursoEspecifico.length) {
+        return res.status(400).json({
+          error: 'El curso seleccionado no está disponible o no tiene cupos.'
+        });
+      }
+      cursoSeleccionado = cursoEspecifico[0];
+
+      // Validar que coincida con el tipo y horario (por seguridad)
+      // Nota: El horario podría ser diferente si el usuario manipuló el request, pero confiamos en el ID
+    } else {
+      // Lógica anterior: buscar el primero disponible por tipo y horario
+      const [cursosDisponibles] = await pool.execute(
+        `SELECT id_curso, codigo_curso, nombre, horario, capacidad_maxima, cupos_disponibles
+         FROM cursos
+         WHERE id_tipo_curso = ?
+         AND horario = ?
+         AND estado = 'activo'
+         AND cupos_disponibles > 0
+         ORDER BY fecha_inicio ASC
+         LIMIT 1`,
+        [id_tipo_curso, horario_preferido]
+      );
+
+      if (!cursosDisponibles.length) {
+        return res.status(400).json({
+          error: `No hay cupos disponibles para el horario ${horario_preferido}. Por favor, intenta con otro horario o contacta con la institución.`
+        });
+      }
+      cursoSeleccionado = cursosDisponibles[0];
     }
 
-    cursoSeleccionado = cursosDisponibles[0];
     console.log(`Curso seleccionado: ${cursoSeleccionado.nombre} (${cursoSeleccionado.horario}) - Cupos: ${cursoSeleccionado.cupos_disponibles}/${cursoSeleccionado.capacidad_maxima}`);
   } catch (e) {
     console.error('Error validando cupos disponibles:', e);
@@ -394,70 +417,84 @@ exports.createSolicitud = async (req, res) => {
     }
   }
 
-  // Declarar variable de archivo de estatus legal ANTES de usarla
+  // Declarar variables de archivos
   const documentoEstatusLegalFile = req.files?.documento_estatus_legal?.[0];
+  const certificadoCosmetologiaFile = req.files?.certificado_cosmetologia?.[0];
 
   // ========================================
-  // SUBIR ARCHIVOS A CLOUDINARY (DUAL STORAGE)
+  // VALIDAR CERTIFICADO DE COSMETOLOGÍA (solo para Cosmetría)
+  // ========================================
+  const esCosmetria = tipoCurso.card_key === 'cosmiatria' ||
+    tipoCurso.nombre.toLowerCase().includes('cosmiatría') ||
+    tipoCurso.nombre.toLowerCase().includes('cosmiatria');
+
+  if (esCosmetria && !certificadoCosmetologiaFile) {
+    return res.status(400).json({
+      error: 'El certificado de Cosmetología es obligatorio para inscribirse en Cosmetría. Debes ser graduado de Cosmetología.'
+    });
+  }
+
+  // ========================================
+  // SUBIR ARCHIVOS A CLOUDINARY (SOLO CLOUDINARY - SIN LONGBLOB)
   // ========================================
   let comprobanteCloudinary = null;
   let documentoIdentificacionCloudinary = null;
   let documentoEstatusLegalCloudinary = null;
+  let certificadoCosmetologiaCloudinary = null;
 
   try {
     // Subir comprobante a Cloudinary
     if (comprobanteFile) {
-      console.log('Subiendo comprobante a Cloudinary...');
+      console.log('✓ Subiendo comprobante a Cloudinary...');
       comprobanteCloudinary = await cloudinaryService.uploadFile(
         comprobanteFile.buffer,
         'comprobantes',
         `comprobante-${Date.now()}-${Math.random().toString(36).substring(7)}`
       );
-      console.log(' Comprobante subido:', comprobanteCloudinary.secure_url);
+      console.log('✓ Comprobante subido:', comprobanteCloudinary.secure_url);
     }
 
     // Subir documento de identificación a Cloudinary
     if (documentoIdentificacionFile) {
-      console.log('Subiendo documento de identificación a Cloudinary...');
+      console.log('✓ Subiendo documento de identificación a Cloudinary...');
       documentoIdentificacionCloudinary = await cloudinaryService.uploadFile(
         documentoIdentificacionFile.buffer,
         'documentos',
         `documento-${identificacion_solicitante}-${Date.now()}`
       );
-      console.log(' Documento de identificación subido:', documentoIdentificacionCloudinary.secure_url);
+      console.log('✓ Documento de identificación subido:', documentoIdentificacionCloudinary.secure_url);
     }
 
     // Subir documento de estatus legal a Cloudinary (si existe)
     if (documentoEstatusLegalFile) {
-      console.log(' Subiendo documento de estatus legal a Cloudinary...');
+      console.log('✓ Subiendo documento de estatus legal a Cloudinary...');
       documentoEstatusLegalCloudinary = await cloudinaryService.uploadFile(
         documentoEstatusLegalFile.buffer,
         'documentos',
         `estatus-legal-${identificacion_solicitante}-${Date.now()}`
       );
-      console.log(' Documento de estatus legal subido:', documentoEstatusLegalCloudinary.secure_url);
+      console.log('✓ Documento de estatus legal subido:', documentoEstatusLegalCloudinary.secure_url);
+    }
+
+    // Subir certificado de Cosmetología a Cloudinary (si existe)
+    if (certificadoCosmetologiaFile) {
+      console.log('✓ Subiendo certificado de Cosmetología a Cloudinary...');
+      // Detectar si es PDF para usar resource_type: 'raw'
+      const isPDF = certificadoCosmetologiaFile.mimetype === 'application/pdf';
+      certificadoCosmetologiaCloudinary = await cloudinaryService.uploadFile(
+        certificadoCosmetologiaFile.buffer,
+        'certificados_cosmetologia',
+        `certificado-${identificacion_solicitante}-${Date.now()}`,
+        isPDF ? 'raw' : 'image'
+      );
+      console.log('✓ Certificado de Cosmetología subido:', certificadoCosmetologiaCloudinary.secure_url);
     }
   } catch (cloudinaryError) {
-    console.error(' Error subiendo archivos a Cloudinary:', cloudinaryError);
-    // Continuar sin Cloudinary (fallback a LONGBLOB)
+    console.error('✗ Error subiendo archivos a Cloudinary:', cloudinaryError);
+    return res.status(500).json({
+      error: 'Error al subir archivos. Por favor, intenta nuevamente.'
+    });
   }
-
-  // Procesar archivos para LONGBLOB (respaldo)
-  const comprobanteBuffer = comprobanteFile ? comprobanteFile.buffer : null;
-  const comprobanteMime = comprobanteFile ? comprobanteFile.mimetype : null;
-  const comprobanteSizeKb = comprobanteFile ? Math.ceil(comprobanteFile.size / 1024) : null;
-  const comprobanteNombreOriginal = comprobanteFile ? comprobanteFile.originalname : null;
-
-  const documentoIdentificacionBuffer = documentoIdentificacionFile ? documentoIdentificacionFile.buffer : null;
-  const documentoIdentificacionMime = documentoIdentificacionFile ? documentoIdentificacionFile.mimetype : null;
-  const documentoIdentificacionSizeKb = documentoIdentificacionFile ? Math.ceil(documentoIdentificacionFile.size / 1024) : null;
-  const documentoIdentificacionNombreOriginal = documentoIdentificacionFile ? documentoIdentificacionFile.originalname : null;
-
-  // documentoEstatusLegalFile ya declarado arriba antes del bloque de Cloudinary
-  const documentoEstatusLegalBuffer = documentoEstatusLegalFile ? documentoEstatusLegalFile.buffer : null;
-  const documentoEstatusLegalMime = documentoEstatusLegalFile ? documentoEstatusLegalFile.mimetype : null;
-  const documentoEstatusLegalSizeKb = documentoEstatusLegalFile ? Math.ceil(documentoEstatusLegalFile.size / 1024) : null;
-  const documentoEstatusLegalNombreOriginal = documentoEstatusLegalFile ? documentoEstatusLegalFile.originalname : null;
 
   const codigo = generarCodigoSolicitud();
 
@@ -471,7 +508,7 @@ exports.createSolicitud = async (req, res) => {
   try {
     await connection.beginTransaction();
 
-    // 1. INSERTAR SOLICITUD CON id_curso + URLs de Cloudinary (39 columnas)
+    // 1. INSERTAR SOLICITUD CON id_curso + URLs de Cloudinary (SOLO CLOUDINARY)
     const sql = `INSERT INTO solicitudes_matricula (
       codigo_solicitud,
       identificacion_solicitante,
@@ -491,28 +528,18 @@ exports.createSolicitud = async (req, res) => {
       banco_comprobante,
       fecha_transferencia,
       recibido_por,
-      comprobante_pago,
-      comprobante_mime,
-      comprobante_size_kb,
-      comprobante_nombre_original,
       comprobante_pago_url,
       comprobante_pago_public_id,
-      documento_identificacion,
-      documento_identificacion_mime,
-      documento_identificacion_size_kb,
-      documento_identificacion_nombre_original,
       documento_identificacion_url,
       documento_identificacion_public_id,
-      documento_estatus_legal,
-      documento_estatus_legal_mime,
-      documento_estatus_legal_size_kb,
-      documento_estatus_legal_nombre_original,
       documento_estatus_legal_url,
       documento_estatus_legal_public_id,
+      certificado_cosmetologia_url,
+      certificado_cosmetologia_public_id,
       id_estudiante_existente,
       contacto_emergencia,
       id_promocion_seleccionada
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     const values = [
       codigo,
@@ -533,24 +560,14 @@ exports.createSolicitud = async (req, res) => {
       banco_comprobante || null,
       convertirFecha(fecha_transferencia),
       recibido_por ? recibido_por.trim().toUpperCase() : null,
-      comprobanteBuffer,
-      comprobanteMime,
-      comprobanteSizeKb,
-      comprobanteNombreOriginal,
       comprobanteCloudinary?.secure_url || null,
       comprobanteCloudinary?.public_id || null,
-      documentoIdentificacionBuffer,
-      documentoIdentificacionMime,
-      documentoIdentificacionSizeKb,
-      documentoIdentificacionNombreOriginal,
       documentoIdentificacionCloudinary?.secure_url || null,
       documentoIdentificacionCloudinary?.public_id || null,
-      documentoEstatusLegalBuffer,
-      documentoEstatusLegalMime,
-      documentoEstatusLegalSizeKb,
-      documentoEstatusLegalNombreOriginal,
       documentoEstatusLegalCloudinary?.secure_url || null,
       documentoEstatusLegalCloudinary?.public_id || null,
+      certificadoCosmetologiaCloudinary?.secure_url || null,
+      certificadoCosmetologiaCloudinary?.public_id || null,
       id_estudiante_existente ? Number(id_estudiante_existente) : null,
       contacto_emergencia || null,
       promocionIdNum
@@ -743,7 +760,21 @@ exports.getSolicitudById = async (req, res) => {
       `
       SELECT 
         s.*, 
-        tc.nombre AS tipo_curso_nombre
+        tc.nombre AS tipo_curso_nombre,
+        COALESCE(s.documento_identificacion_url, (
+          SELECT s2.documento_identificacion_url 
+          FROM solicitudes_matricula s2 
+          WHERE s2.identificacion_solicitante = s.identificacion_solicitante 
+            AND s2.documento_identificacion_url IS NOT NULL 
+          ORDER BY s2.fecha_solicitud DESC LIMIT 1
+        )) as documento_identificacion_url,
+        COALESCE(s.documento_estatus_legal_url, (
+          SELECT s2.documento_estatus_legal_url 
+          FROM solicitudes_matricula s2 
+          WHERE s2.identificacion_solicitante = s.identificacion_solicitante 
+            AND s2.documento_estatus_legal_url IS NOT NULL 
+          ORDER BY s2.fecha_solicitud DESC LIMIT 1
+        )) as documento_estatus_legal_url
       FROM solicitudes_matricula s
       LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = s.id_tipo_curso
       WHERE s.id_solicitud = ?
@@ -759,89 +790,17 @@ exports.getSolicitudById = async (req, res) => {
   }
 };
 
-exports.getComprobante = async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ error: 'ID inválido' });
+// NOTA: Los archivos ahora se sirven directamente desde Cloudinary
+// Las URLs están disponibles en los campos:
+// - comprobante_pago_url
+// - documento_identificacion_url
+// - documento_estatus_legal_url
+// - certificado_cosmetologia_url
+// El frontend puede acceder directamente a estas URLs
 
-    const [rows] = await pool.execute(
-      `
-      SELECT comprobante_pago, comprobante_mime, comprobante_nombre_original
-      FROM solicitudes_matricula
-      WHERE id_solicitud = ?
-      `,
-      [id]
-    );
-    if (!rows.length) return res.status(404).json({ error: 'Solicitud no encontrada' });
-    const row = rows[0];
-    if (!row.comprobante_pago) return res.status(404).json({ error: 'No hay comprobante para esta solicitud' });
 
-    const mime = row.comprobante_mime || 'application/octet-stream';
-    const filename = row.comprobante_nombre_original || `comprobante-${id}`;
-    res.setHeader('Content-Type', mime);
-    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-    return res.send(row.comprobante_pago);
-  } catch (err) {
-    console.error('Error obteniendo comprobante:', err);
-    return res.status(500).json({ error: 'Error al obtener el comprobante' });
-  }
-};
 
-exports.getDocumentoIdentificacion = async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ error: 'ID inválido' });
 
-    const [rows] = await pool.execute(
-      `
-      SELECT documento_identificacion, documento_identificacion_mime, documento_identificacion_nombre_original
-      FROM solicitudes_matricula
-      WHERE id_solicitud = ?
-      `,
-      [id]
-    );
-    if (!rows.length) return res.status(404).json({ error: 'Solicitud no encontrada' });
-    const row = rows[0];
-    if (!row.documento_identificacion) return res.status(404).json({ error: 'No hay documento de identificación para esta solicitud' });
-
-    const mime = row.documento_identificacion_mime || 'application/octet-stream';
-    const filename = row.documento_identificacion_nombre_original || `documento-identificacion-${id}`;
-    res.setHeader('Content-Type', mime);
-    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-    return res.send(row.documento_identificacion);
-  } catch (err) {
-    console.error('Error obteniendo documento de identificación:', err);
-    return res.status(500).json({ error: 'Error al obtener el documento de identificación' });
-  }
-};
-
-exports.getDocumentoEstatusLegal = async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ error: 'ID inválido' });
-
-    const [rows] = await pool.execute(
-      `
-      SELECT documento_estatus_legal, documento_estatus_legal_mime, documento_estatus_legal_nombre_original
-      FROM solicitudes_matricula
-      WHERE id_solicitud = ?
-      `,
-      [id]
-    );
-    if (!rows.length) return res.status(404).json({ error: 'Solicitud no encontrada' });
-    const row = rows[0];
-    if (!row.documento_estatus_legal) return res.status(404).json({ error: 'No hay documento de estatus legal para esta solicitud' });
-
-    const mime = row.documento_estatus_legal_mime || 'application/octet-stream';
-    const filename = row.documento_estatus_legal_nombre_original || `documento-estatus-legal-${id}`;
-    res.setHeader('Content-Type', mime);
-    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-    return res.send(row.documento_estatus_legal);
-  } catch (err) {
-    console.error('Error obteniendo documento de estatus legal:', err);
-    return res.status(500).json({ error: 'Error al obtener el documento de estatus legal' });
-  }
-};
 
 exports.updateDecision = async (req, res) => {
   const connection = await pool.getConnection();

@@ -341,7 +341,8 @@ async function obtenerHistorialDetallado(req, res) {
             c.nombre as curso,
             e.fecha_entrega,
             e.estado,
-            e.archivo_nombre_original,
+            e.archivo_url,
+            e.archivo_public_id,
             e.fecha_entrega as fecha_hora,
             NULL as ip_address
           FROM entregas_tareas e
@@ -406,7 +407,7 @@ async function obtenerHistorialDetallado(req, res) {
             curso: t.curso,
             fecha_entrega: t.fecha_entrega,
             estado: t.estado,
-            archivo: t.archivo_nombre_original
+            archivo_url: t.archivo_url
           }),
           fecha_hora: t.fecha_hora,
           ip_address: t.ip_address

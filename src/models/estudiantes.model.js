@@ -21,24 +21,22 @@ class EstudiantesModel {
         u.estado,
         u.fecha_registro,
         u.fecha_ultima_conexion,
-        CASE 
-          WHEN u.foto_perfil IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(u.foto_perfil))
-          ELSE NULL 
-        END as foto_perfil,
+        u.foto_perfil_url as foto_perfil,
         (SELECT s.contacto_emergencia FROM solicitudes_matricula s 
          WHERE s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado' 
          LIMIT 1) as contacto_emergencia,
         (SELECT s.id_solicitud FROM solicitudes_matricula s 
          WHERE s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado' 
          LIMIT 1) as id_solicitud,
-        (SELECT CASE WHEN s.documento_identificacion IS NOT NULL THEN TRUE ELSE FALSE END 
-         FROM solicitudes_matricula s 
-         WHERE s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado' 
-         LIMIT 1) as tiene_documento_identificacion,
-        (SELECT CASE WHEN s.documento_estatus_legal IS NOT NULL THEN TRUE ELSE FALSE END 
-         FROM solicitudes_matricula s 
-         WHERE s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado' 
-         LIMIT 1) as tiene_documento_estatus_legal,
+        (SELECT s.documento_identificacion_url FROM solicitudes_matricula s 
+         WHERE s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado' AND s.documento_identificacion_url IS NOT NULL
+         ORDER BY s.fecha_solicitud DESC LIMIT 1) as documento_identificacion_url,
+        (SELECT s.documento_estatus_legal_url FROM solicitudes_matricula s 
+         WHERE s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado' AND s.documento_estatus_legal_url IS NOT NULL
+         ORDER BY s.fecha_solicitud DESC LIMIT 1) as documento_estatus_legal_url,
+        (SELECT s.certificado_cosmetologia_url FROM solicitudes_matricula s 
+         WHERE s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado' AND s.certificado_cosmetologia_url IS NOT NULL
+         ORDER BY s.fecha_solicitud DESC LIMIT 1) as certificado_cosmetologia_url,
         CASE
           WHEN LENGTH(u.cedula) > 10 THEN 'extranjero'
           ELSE 'ecuatoriano'
@@ -114,20 +112,18 @@ class EstudiantesModel {
         u.estado,
         u.fecha_registro,
         u.fecha_ultima_conexion,
-        CASE 
-          WHEN u.foto_perfil IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(u.foto_perfil))
-          ELSE NULL 
-        END as foto_perfil,
+        u.foto_perfil_url as foto_perfil,
         s.contacto_emergencia,
         s.id_solicitud,
-        CASE 
-          WHEN s.documento_identificacion IS NOT NULL THEN TRUE
-          ELSE FALSE
-        END as tiene_documento_identificacion,
-        CASE 
-          WHEN s.documento_estatus_legal IS NOT NULL THEN TRUE
-          ELSE FALSE
-        END as tiene_documento_estatus_legal,
+        (SELECT s.documento_identificacion_url FROM solicitudes_matricula s 
+         WHERE s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado' AND s.documento_identificacion_url IS NOT NULL
+         ORDER BY s.fecha_solicitud DESC LIMIT 1) as documento_identificacion_url,
+        (SELECT s.documento_estatus_legal_url FROM solicitudes_matricula s 
+         WHERE s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado' AND s.documento_estatus_legal_url IS NOT NULL
+         ORDER BY s.fecha_solicitud DESC LIMIT 1) as documento_estatus_legal_url,
+        (SELECT s.certificado_cosmetologia_url FROM solicitudes_matricula s 
+         WHERE s.identificacion_solicitante = u.cedula AND s.estado = 'aprobado' AND s.certificado_cosmetologia_url IS NOT NULL
+         ORDER BY s.fecha_solicitud DESC LIMIT 1) as certificado_cosmetologia_url,
         CASE
           WHEN LENGTH(u.cedula) > 10 THEN 'extranjero'
           ELSE 'ecuatoriano'
@@ -158,10 +154,7 @@ class EstudiantesModel {
         u.estado,
         u.fecha_registro,
         u.fecha_ultima_conexion,
-        CASE 
-          WHEN u.foto_perfil IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(u.foto_perfil))
-          ELSE NULL 
-        END as foto_perfil
+        u.foto_perfil_url as foto_perfil
       FROM usuarios u
       INNER JOIN roles r ON u.id_rol = r.id_rol
       WHERE u.cedula = ? AND r.nombre_rol = 'estudiante'
@@ -325,9 +318,9 @@ class EstudiantesModel {
               if (i === 1) {
                 console.log('Obteniendo comprobante de solicitud:', solicitudData.id_solicitud);
 
-                // Obtener el comprobante BLOB de la solicitud
+                // Obtener el comprobante de Cloudinary de la solicitud
                 const [solicitudComprobante] = await connection.execute(`
-                SELECT comprobante_pago, comprobante_mime, comprobante_size_kb, comprobante_nombre_original,
+                SELECT comprobante_pago_url, comprobante_pago_public_id,
                        numero_comprobante, banco_comprobante, fecha_transferencia, recibido_por, metodo_pago
                 FROM solicitudes_matricula
                 WHERE id_solicitud = ?
@@ -336,12 +329,11 @@ class EstudiantesModel {
                 const comprobante = solicitudComprobante[0];
 
                 console.log('Comprobante obtenido:', {
-                  tiene_blob: !!comprobante?.comprobante_pago,
+                  tiene_url: !!comprobante?.comprobante_pago_url,
                   numero: comprobante?.numero_comprobante,
                   banco: comprobante?.banco_comprobante,
                   metodo_pago: comprobante?.metodo_pago,
-                  recibido_por: comprobante?.recibido_por,
-                  mime: comprobante?.comprobante_mime
+                  recibido_por: comprobante?.recibido_por
                 });
 
                 console.log('VALORES QUE SE VAN A INSERTAR:');
@@ -356,9 +348,9 @@ class EstudiantesModel {
                     id_matricula, numero_cuota, monto, fecha_vencimiento, 
                     estado, metodo_pago, fecha_pago,
                     numero_comprobante, banco_comprobante, fecha_transferencia, recibido_por,
-                    comprobante_pago_blob, comprobante_mime, comprobante_size_kb, comprobante_nombre_original,
+                    comprobante_pago_url, comprobante_pago_public_id,
                     observaciones
-                  ) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  ) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?)
                 `, [
                   id_matricula,
                   i,
@@ -370,10 +362,8 @@ class EstudiantesModel {
                   comprobante?.banco_comprobante || null,
                   comprobante?.fecha_transferencia || null,
                   comprobante?.recibido_por || null,
-                  comprobante?.comprobante_pago || null,
-                  comprobante?.comprobante_mime || null,
-                  comprobante?.comprobante_size_kb || null,
-                  comprobante?.comprobante_nombre_original || null,
+                  comprobante?.comprobante_pago_url || null,
+                  comprobante?.comprobante_pago_public_id || null,
                   `Matrícula pagada - Clase ${i} de ${numeroClases}`
                 ]);
 
@@ -434,9 +424,9 @@ class EstudiantesModel {
               if (i === 1) {
                 console.log('Obteniendo comprobante de solicitud:', solicitudData.id_solicitud);
 
-                // Obtener el comprobante BLOB de la solicitud
+                // Obtener el comprobante de Cloudinary de la solicitud
                 const [solicitudComprobante] = await connection.execute(`
-                  SELECT comprobante_pago, comprobante_mime, comprobante_size_kb, comprobante_nombre_original,
+                  SELECT comprobante_pago_url, comprobante_pago_public_id,
                          numero_comprobante, banco_comprobante, fecha_transferencia, recibido_por, metodo_pago
                   FROM solicitudes_matricula
                   WHERE id_solicitud = ?
@@ -445,12 +435,11 @@ class EstudiantesModel {
                 const comprobante = solicitudComprobante[0];
 
                 console.log('Comprobante obtenido:', {
-                  tiene_blob: !!comprobante?.comprobante_pago,
+                  tiene_url: !!comprobante?.comprobante_pago_url,
                   numero: comprobante?.numero_comprobante,
                   banco: comprobante?.banco_comprobante,
                   metodo_pago: comprobante?.metodo_pago,
-                  recibido_por: comprobante?.recibido_por,
-                  mime: comprobante?.comprobante_mime
+                  recibido_por: comprobante?.recibido_por
                 });
 
                 await connection.execute(`
@@ -458,9 +447,9 @@ class EstudiantesModel {
                     id_matricula, numero_cuota, monto, fecha_vencimiento, 
                     estado, metodo_pago, fecha_pago,
                     numero_comprobante, banco_comprobante, fecha_transferencia, recibido_por,
-                    comprobante_pago_blob, comprobante_mime, comprobante_size_kb, comprobante_nombre_original,
+                    comprobante_pago_url, comprobante_pago_public_id,
                     observaciones
-                  ) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  ) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?)
                 `, [
                   id_matricula,
                   i,
@@ -472,10 +461,8 @@ class EstudiantesModel {
                   comprobante?.banco_comprobante || null,
                   comprobante?.fecha_transferencia || null,
                   comprobante?.recibido_por || null,
-                  comprobante?.comprobante_pago || null,
-                  comprobante?.comprobante_mime || null,
-                  comprobante?.comprobante_size_kb || null,
-                  comprobante?.comprobante_nombre_original || null,
+                  comprobante?.comprobante_pago_url || null,
+                  comprobante?.comprobante_pago_public_id || null,
                   'Pago de matrícula verificado por admin'
                 ]);
 

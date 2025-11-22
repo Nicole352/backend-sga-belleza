@@ -85,28 +85,26 @@ async function createEntrega(req, res) {
 
       // Subir archivo a Cloudinary si existe
       let archivoData = null;
-      let archivoCloudinary = null;
 
       if (req.file) {
         try {
           console.log('Subiendo tarea a Cloudinary...');
-          archivoCloudinary = await cloudinaryService.uploadFile(
+          const archivoCloudinary = await cloudinaryService.uploadFile(
             req.file.buffer,
             'tareas',
             `tarea-${id_tarea}-${id_estudiante}-${Date.now()}`
           );
           console.log('Tarea subida a Cloudinary:', archivoCloudinary.secure_url);
+
+          archivoData = {
+            url: archivoCloudinary.secure_url,
+            publicId: archivoCloudinary.public_id
+          };
         } catch (cloudinaryError) {
           console.error('Error subiendo a Cloudinary:', cloudinaryError);
-        }
-
-        archivoData = {
-          buffer: req.file.buffer,
-          mime: req.file.mimetype,
-          sizeKb: Math.round(req.file.size / 1024),
-          nombreOriginal: req.file.originalname,
-          url: archivoCloudinary?.secure_url || null,
-          publicId: archivoCloudinary?.public_id || null
+          return res.status(500).json({
+            error: 'Error subiendo archivo a Cloudinary. Por favor, intenta nuevamente.'
+          });
         };
       }
 
@@ -233,29 +231,27 @@ async function updateEntrega(req, res) {
 
       // Subir archivo a Cloudinary si existe
       let archivoData = null;
-      let archivoCloudinary = null;
 
       if (req.file) {
         try {
           console.log('Subiendo tarea actualizada a Cloudinary');
-          archivoCloudinary = await cloudinaryService.uploadFile(
+          const archivoCloudinary = await cloudinaryService.uploadFile(
             req.file.buffer,
             'tareas',
             `tarea-${id}-${id_estudiante}-${Date.now()}`
           );
           console.log('Tarea actualizada subida a Cloudinary:', archivoCloudinary.secure_url);
+
+          archivoData = {
+            url: archivoCloudinary.secure_url,
+            publicId: archivoCloudinary.public_id
+          };
         } catch (cloudinaryError) {
           console.error('Error subiendo a Cloudinary:', cloudinaryError);
+          return res.status(500).json({
+            error: 'Error subiendo archivo a Cloudinary. Por favor, intenta nuevamente.'
+          });
         }
-
-        archivoData = {
-          buffer: req.file.buffer,
-          mime: req.file.mimetype,
-          sizeKb: Math.round(req.file.size / 1024),
-          nombreOriginal: req.file.originalname,
-          url: archivoCloudinary?.secure_url || null,
-          publicId: archivoCloudinary?.public_id || null
-        };
       }
 
       const updated = await EntregasModel.update(id, {
@@ -340,25 +336,9 @@ async function deleteEntrega(req, res) {
   }
 }
 
-// GET /api/entregas/:id/archivo - Descargar archivo de entrega
-async function getArchivoEntrega(req, res) {
-  try {
-    const { id } = req.params;
-
-    const archivo = await EntregasModel.getArchivo(id);
-
-    if (!archivo) {
-      return res.status(404).json({ error: 'Archivo no encontrado' });
-    }
-
-    res.setHeader('Content-Type', archivo.mime);
-    res.setHeader('Content-Disposition', `attachment; filename="${archivo.filename}"`);
-    return res.send(archivo.buffer);
-  } catch (error) {
-    console.error('Error en getArchivoEntrega:', error);
-    return res.status(500).json({ error: 'Error descargando archivo' });
-  }
-}
+// NOTA: Los archivos ahora se sirven directamente desde Cloudinary
+// Las URLs están disponibles en el campo archivo_url
+// Esta función ya no es necesaria y debe ser eliminada de las rutas
 
 // GET /api/entregas/estudiante/tarea/:id_tarea - Obtener entrega del estudiante en una tarea
 async function getEntregaByTareaEstudiante(req, res) {
@@ -455,7 +435,6 @@ module.exports = {
   createEntrega,
   updateEntrega,
   deleteEntrega,
-  getArchivoEntrega,
   getEntregaByTareaEstudiante,
   calificarEntrega
 };

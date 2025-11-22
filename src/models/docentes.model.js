@@ -23,10 +23,7 @@ class DocentesModel {
         u.email as gmail,
         u.username,
         u.password_temporal,
-        CASE 
-          WHEN u.foto_perfil IS NOT NULL THEN CONCAT('data:image/jpeg;base64,', TO_BASE64(u.foto_perfil))
-          ELSE NULL 
-        END as foto_perfil
+        u.foto_perfil_url as foto_perfil
       FROM docentes d
       LEFT JOIN usuarios u ON u.cedula = d.identificacion AND u.id_rol = (SELECT id_rol FROM roles WHERE nombre_rol = 'docente')
       ORDER BY d.apellidos ASC, d.nombres ASC

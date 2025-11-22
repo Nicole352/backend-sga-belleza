@@ -40,6 +40,8 @@ async function getCursosDisponiblesController(req, res) {
         tc.id_tipo_curso,
         tc.nombre AS tipo_curso_nombre,
         tc.card_key,
+        c.id_curso,
+        c.fecha_inicio,
         c.horario,
         COUNT(DISTINCT c.id_curso) AS cursos_activos,
         COALESCE(SUM(c.cupos_disponibles), 0) AS cupos_totales,
@@ -92,9 +94,9 @@ async function getCursosDisponiblesController(req, res) {
         GROUP BY p.id_curso_promocional
       ) promo_regalo ON promo_regalo.id_curso_promocional = c.id_curso
       WHERE tc.estado = 'activo'
-      GROUP BY tc.id_tipo_curso, tc.nombre, tc.card_key, c.horario
+      GROUP BY tc.id_tipo_curso, tc.nombre, tc.card_key, c.id_curso, c.fecha_inicio, c.horario
       HAVING cursos_activos > 0
-      ORDER BY tc.nombre, c.horario
+      ORDER BY tc.nombre, c.fecha_inicio, c.horario
     `);
 
     // 3. Guardar en caché

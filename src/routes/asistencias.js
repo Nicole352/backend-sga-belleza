@@ -17,7 +17,7 @@ const router = express.Router();
 
 // Configuración de Multer para asistencias
 const storage = multer.memoryStorage();
-const upload = multer({ 
+const upload = multer({
   storage: storage,
   limits: {
     fileSize: 5 * 1024 * 1024 // 5 MB máximo
@@ -45,40 +45,40 @@ router.get('/estudiante/:id_estudiante/curso/:id_curso', authMiddleware, general
 // Obtener reporte completo de asistencia de un curso
 router.get('/reporte/:id_curso', authMiddleware, generalLimiter, getReporteCursoController);
 
-// Descargar documento adjunto de asistencia
+// Obtener URL del documento adjunto de asistencia
 router.get('/documento/:id_asistencia', authMiddleware, generalLimiter, async (req, res) => {
   try {
     const { id_asistencia } = req.params;
-    
+
     if (!id_asistencia) {
       return res.status(400).json({ error: 'ID de asistencia requerido' });
     }
-    
-    // Obtener el documento de la base de datos
+
+    // Obtener la URL del documento desde la base de datos
     const [asistencias] = await pool.execute(
-      'SELECT documento_justificacion, documento_mime, documento_nombre_original FROM asistencias WHERE id_asistencia = ?',
+      'SELECT documento_justificacion_url, documento_justificacion_public_id FROM asistencias WHERE id_asistencia = ?',
       [id_asistencia]
     );
-    
+
     if (asistencias.length === 0) {
       return res.status(404).json({ error: 'Asistencia no encontrada' });
     }
-    
+
     const asistencia = asistencias[0];
-    
-    if (!asistencia.documento_justificacion) {
+
+    if (!asistencia.documento_justificacion_url) {
       return res.status(404).json({ error: 'No hay documento adjunto' });
     }
-    
-    // Configurar headers para descarga
-    res.setHeader('Content-Type', asistencia.documento_mime || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${asistencia.documento_nombre_original || 'documento'}"`);
-    
-    // Enviar el documento
-    res.send(asistencia.documento_justificacion);
+
+    // Retornar JSON con la URL de Cloudinary
+    return res.json({
+      success: true,
+      documento_justificacion_url: asistencia.documento_justificacion_url,
+      documento_justificacion_public_id: asistencia.documento_justificacion_public_id
+    });
   } catch (err) {
-    console.error('Error descargando documento:', err);
-    return res.status(500).json({ error: 'Error al descargar documento' });
+    console.error('Error obteniendo documento:', err);
+    return res.status(500).json({ error: 'Error al obtener documento' });
   }
 });
 

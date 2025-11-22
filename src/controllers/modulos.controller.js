@@ -1,6 +1,7 @@
 const ModulosModel = require("../models/modulos.model");
 const DocentesModel = require("../models/docentes.model");
 const { registrarAuditoria } = require("../utils/auditoria");
+const socketService = require("../services/socket.service");
 
 // GET /api/modulos/curso/:id_curso - Obtener módulos de un curso
 async function getModulosByCurso(req, res) {
@@ -92,7 +93,7 @@ async function createModulo(req, res) {
 
     // Notificar a estudiantes del curso
     const { notificarNuevoModulo } = require('../utils/notificationHelper');
-    
+
     try {
       // Obtener estudiantes matriculados en el curso
       // IMPORTANTE: id_estudiante en matriculas ES id_usuario (FK a usuarios.id_usuario)
@@ -102,29 +103,29 @@ async function createModulo(req, res) {
         FROM matriculas m
         WHERE m.id_curso = ? AND m.estado = 'activa'
       `, [id_curso]);
-      
+
       console.log(`Estudiantes encontrados para el curso ${id_curso}:`, estudiantes);
-      
+
       if (estudiantes.length > 0) {
         const idsUsuarios = estudiantes.map(e => e.id_usuario);
-        
+
         console.log(`IDs de usuarios a notificar:`, idsUsuarios);
-        
+
         // Obtener nombre del curso
         const [cursos] = await pool.execute('SELECT nombre FROM cursos WHERE id_curso = ?', [id_curso]);
         const nombreCurso = cursos[0]?.nombre || 'tu curso';
-        
+
         // Obtener información del docente
         const [docenteInfo] = await pool.execute(`
           SELECT u.nombre, u.apellido 
           FROM usuarios u
           WHERE u.id_usuario = ?
         `, [req.user.id_usuario]);
-        
-        const nombreDocente = docenteInfo[0] 
-          ? `${docenteInfo[0].nombre} ${docenteInfo[0].apellido}` 
+
+        const nombreDocente = docenteInfo[0]
+          ? `${docenteInfo[0].nombre} ${docenteInfo[0].apellido}`
           : 'Docente';
-        
+
         // Enviar notificación a cada estudiante
         notificarNuevoModulo(req, idsUsuarios, {
           id_modulo,
@@ -135,7 +136,7 @@ async function createModulo(req, res) {
           fecha_inicio: fecha_inicio || null,
           docente_nombre: nombreDocente
         });
-        
+
         console.log(` Notificaciones de nuevo módulo enviadas a ${idsUsuarios.length} estudiantes del curso ${id_curso}`);
       } else {
         console.log(` No hay estudiantes matriculados en el curso ${id_curso}`);
@@ -248,6 +249,20 @@ async function cerrarModulo(req, res) {
     const modulo = await ModulosModel.getById(id);
     console.log("Módulo actualizado:", modulo);
 
+    // Emitir evento de WebSocket para notificar a los estudiantes
+    try {
+      socketService.emitToCurso(req, modulo.id_curso, 'modulo_cerrado', {
+        id_modulo: parseInt(id),
+        id_curso: modulo.id_curso,
+        nombre: modulo.nombre,
+        estado: 'finalizado'
+      });
+      console.log(`✅ Evento 'modulo_cerrado' emitido para módulo ${id} en curso ${modulo.id_curso}`);
+    } catch (socketError) {
+      console.error('Error emitiendo evento de socket:', socketError);
+      // No fallar la operación si falla el socket
+    }
+
     return res.json({
       success: true,
       message: "Módulo cerrado exitosamente",
@@ -301,6 +316,20 @@ async function reabrirModulo(req, res) {
 
     const modulo = await ModulosModel.getById(id);
     console.log("Módulo actualizado:", modulo);
+
+    // Emitir evento de WebSocket para notificar a los estudiantes
+    try {
+      socketService.emitToCurso(req, modulo.id_curso, 'modulo_reabierto', {
+        id_modulo: parseInt(id),
+        id_curso: modulo.id_curso,
+        nombre: modulo.nombre,
+        estado: 'activo'
+      });
+      console.log(`✅ Evento 'modulo_reabierto' emitido para módulo ${id} en curso ${modulo.id_curso}`);
+    } catch (socketError) {
+      console.error('Error emitiendo evento de socket:', socketError);
+      // No fallar la operación si falla el socket
+    }
 
     return res.json({
       success: true,
@@ -422,6 +451,19 @@ async function publicarPromedios(req, res) {
       return res.status(404).json({ error: "Módulo no encontrado" });
     }
 
+    const modulo = await ModulosModel.getById(id);
+
+    // Emitir evento de WebSocket
+    try {
+      socketService.emitToCurso(req, modulo.id_curso, 'promedios_visibilidad_actualizada', {
+        id_modulo: parseInt(id),
+        id_curso: modulo.id_curso,
+        promedios_publicados: true
+      });
+    } catch (socketError) {
+      console.error('Error emitiendo evento de socket:', socketError);
+    }
+
     return res.json({
       success: true,
       message: "Promedios publicados exitosamente",
@@ -441,6 +483,19 @@ async function ocultarPromedios(req, res) {
 
     if (!updated) {
       return res.status(404).json({ error: "Módulo no encontrado" });
+    }
+
+    const modulo = await ModulosModel.getById(id);
+
+    // Emitir evento de WebSocket
+    try {
+      socketService.emitToCurso(req, modulo.id_curso, 'promedios_visibilidad_actualizada', {
+        id_modulo: parseInt(id),
+        id_curso: modulo.id_curso,
+        promedios_publicados: false
+      });
+    } catch (socketError) {
+      console.error('Error emitiendo evento de socket:', socketError);
     }
 
     return res.json({
