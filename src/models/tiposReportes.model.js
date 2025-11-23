@@ -22,7 +22,7 @@ const TiposReportesModel = {
         WHERE estado = 'activo'
         ORDER BY nombre
       `;
-      
+
       const [rows] = await pool.query(query);
       return rows;
     } catch (error) {
@@ -47,7 +47,7 @@ const TiposReportesModel = {
         FROM tipos_reportes
         WHERE id_tipo_reporte = ?
       `;
-      
+
       const [rows] = await pool.query(query, [idTipoReporte]);
       return rows[0];
     } catch (error) {
@@ -66,14 +66,14 @@ const TiposReportesModel = {
         (nombre, descripcion, formato_salida, plantilla_query, estado)
         VALUES (?, ?, ?, ?, 'activo')
       `;
-      
+
       const [result] = await pool.query(query, [
         nombre,
         descripcion,
         formatoSalida,
         plantillaQuery
       ]);
-      
+
       return result.insertId;
     } catch (error) {
       console.error('Error en createTipoReporte:', error);
@@ -92,7 +92,7 @@ const TiposReportesModel = {
     parametros = {}
   }) {
     const connection = await pool.getConnection();
-    
+
     try {
       await connection.beginTransaction();
 
@@ -102,7 +102,7 @@ const TiposReportesModel = {
         (id_tipo_reporte, id_generado_por, archivo_generado, formato_generado, estado, fecha_expiracion)
         VALUES (?, ?, ?, ?, 'completado', DATE_ADD(NOW(), INTERVAL 30 DAY))
       `;
-      
+
       const [resultReporte] = await connection.query(queryReporte, [
         idTipoReporte,
         idGeneradoPor,
@@ -118,7 +118,7 @@ const TiposReportesModel = {
           INSERT INTO parametros_reporte (id_reporte, clave, valor)
           VALUES ?
         `;
-        
+
         const valoresParametros = Object.entries(parametros).map(([clave, valor]) => [
           idReporte,
           clave,
@@ -179,6 +179,32 @@ const TiposReportesModel = {
       params.push(limite);
 
       const [rows] = await pool.query(query, params);
+
+      // Obtener parámetros (snapshots) para cada reporte
+      // Esto es más eficiente que un JOIN complejo si paginamos
+      if (rows.length > 0) {
+        const reportIds = rows.map(r => r.id_reporte);
+
+        const queryParams = `
+          SELECT id_reporte, clave, valor
+          FROM parametros_reporte
+          WHERE id_reporte IN (?) AND clave LIKE '_snapshot_%'
+        `;
+
+        const [paramsRows] = await pool.query(queryParams, [reportIds]);
+
+        // Mapear parámetros a sus reportes
+        rows.forEach(reporte => {
+          reporte.snapshot = {};
+          const misParams = paramsRows.filter(p => p.id_reporte === reporte.id_reporte);
+          misParams.forEach(p => {
+            // Remover prefijo _snapshot_ para el frontend
+            const key = p.clave.replace('_snapshot_', '');
+            reporte.snapshot[key] = p.valor;
+          });
+        });
+      }
+
       return rows;
     } catch (error) {
       console.error('Error en getHistorialReportes:', error);
@@ -196,9 +222,9 @@ const TiposReportesModel = {
         FROM parametros_reporte
         WHERE id_reporte = ?
       `;
-      
+
       const [rows] = await pool.query(query, [idReporte]);
-      
+
       // Convertir a objeto
       const parametros = {};
       rows.forEach(row => {
@@ -208,7 +234,7 @@ const TiposReportesModel = {
           parametros[row.clave] = row.valor;
         }
       });
-      
+
       return parametros;
     } catch (error) {
       console.error('Error en getParametrosReporte:', error);
@@ -241,7 +267,7 @@ const TiposReportesModel = {
       // Verificar si alguno tiene los mismos parámetros
       for (const reporte of reportes) {
         const parametrosReporte = await this.getParametrosReporte(reporte.id_reporte);
-        
+
         // Comparar parámetros
         if (JSON.stringify(parametrosReporte) === JSON.stringify(parametros)) {
           return reporte; // Encontrado en caché
@@ -266,7 +292,7 @@ const TiposReportesModel = {
         WHERE fecha_expiracion < NOW()
           AND estado = 'completado'
       `;
-      
+
       const [result] = await pool.query(query);
       return result.affectedRows;
     } catch (error) {

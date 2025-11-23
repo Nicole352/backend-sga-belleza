@@ -226,6 +226,7 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
       { header: 'FECHA PAGO', key: 'fecha_pago', width: 15 },
       { header: 'FECHA VENC.', key: 'fecha_vencimiento', width: 15 },
       { header: 'MÉTODO PAGO', key: 'metodo_pago', width: 15 },
+      { header: 'RECIBIDO POR', key: 'recibido_por', width: 30 },
       { header: 'N° COMPROBANTE', key: 'numero_comprobante', width: 20 },
       { header: 'ESTADO', key: 'estado_pago', width: 14 },
       { header: 'VERIFICADO POR', key: 'verificado_por', width: 30 },
@@ -254,6 +255,7 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
         fecha_pago: pago.fecha_pago ? formatearFecha(pago.fecha_pago) : 'Pendiente',
         fecha_vencimiento: formatearFecha(pago.fecha_vencimiento),
         metodo_pago: pago.metodo_pago?.toUpperCase() || 'N/A',
+        recibido_por: pago.recibido_por || 'N/A',
         numero_comprobante: pago.numero_comprobante || 'N/A',
         estado_pago: pago.estado_pago?.toUpperCase(),
         verificado_por: pago.verificado_por_nombre ? `${pago.verificado_por_nombre} ${pago.verificado_por_apellido || ''}`.trim() : 'N/A',
@@ -285,7 +287,7 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
 
     hojaDatos.autoFilter = {
       from: 'A1',
-      to: 'M1'
+      to: 'N1'
     };
 
 

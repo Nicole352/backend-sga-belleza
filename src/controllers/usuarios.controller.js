@@ -746,12 +746,12 @@ async function subirFotoPerfil(req, res) {
     // Guardar la foto en la base de datos (solo URL de Cloudinary)
     console.log('Actualizando usuario en BD - ID:', parseInt(id));
     console.log('Datos a actualizar:', { foto_perfil_url: fotoPerfilUrl, foto_perfil_public_id: fotoPerfilPublicId });
-    
+
     await usuariosModel.updateAdminUser(parseInt(id), {
       foto_perfil_url: fotoPerfilUrl,
       foto_perfil_public_id: fotoPerfilPublicId
     });
-    
+
     console.log('✓ Foto actualizada en BD exitosamente');
 
     // Registrar auditoría

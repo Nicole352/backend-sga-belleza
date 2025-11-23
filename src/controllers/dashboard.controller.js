@@ -20,9 +20,9 @@ exports.getMatriculasPorMes = async (req, res) => {
     const fechaActual = new Date();
     const mesActual = fechaActual.getMonth(); // 0-11
     const anioActual = fechaActual.getFullYear();
-    
+
     const ultimos6Meses = [];
-    
+
     // Generar los últimos 6 meses con año
     for (let i = 5; i >= 0; i--) {
       const fecha = new Date(anioActual, mesActual - i, 1);

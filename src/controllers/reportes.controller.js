@@ -685,13 +685,20 @@ const ReportesController = {
       // Nombre del archivo
       const nombreArchivo = `Reporte_Estudiantes_${fechaInicio}_${fechaFin}.xlsx`;
 
+      // SNAPSHOT: Calcular resumen para el historial
+      const snapshotData = {
+        ...parametros,
+        _snapshot_total_estudiantes: datos.length,
+        _snapshot_nuevos_inscritos: estadisticas.total_estudiantes || 0
+      };
+
       // Guardar en historial
       await TiposReportesModel.guardarReporteGenerado({
         idTipoReporte: 1, // Reporte de Estudiantes
         idGeneradoPor: idUsuario,
         archivoGenerado: nombreArchivo,
         formatoGenerado: 'xlsx',
-        parametros
+        parametros: snapshotData
       });
 
       // Enviar Excel
@@ -738,22 +745,28 @@ const ReportesController = {
 
       // Obtener datos CON filtros
       const datos = await ReportesModel.getReporteFinanciero(parametros);
+      console.log('DEBUG: Datos Financieros encontrados:', datos.length);
+
+      // Obtener estadísticas financieras
       const estadisticas = await ReportesModel.getEstadisticasFinancieras({
         fechaInicio,
         fechaFin
       });
 
-      // Obtener TODOS los pagos SIN filtro de estado para Estado de Cuenta
-      const datosSinFiltroEstado = await ReportesModel.getReporteFinanciero({
-        ...parametros,
-        estadoPago: 'todos' // SIN filtro de estado
-      });
-
-      // Generar Excel con ambos conjuntos de datos
-      const excelBuffer = await generarExcelFinanciero(datos, datosSinFiltroEstado, parametros, estadisticas);
+      // Generar Excel con datos y estadísticas
+      const excelBuffer = await generarExcelFinanciero(datos, datos, parametros, estadisticas);
 
       // Nombre del archivo
       const nombreArchivo = `Reporte_Financiero_${fechaInicio}_${fechaFin}.xlsx`;
+
+      // SNAPSHOT: Calcular resumen para el historial
+      const totalMonto = datos.reduce((sum, item) => sum + (parseFloat(item.monto) || 0), 0);
+      const snapshotData = {
+        ...parametros,
+        _snapshot_total_transacciones: datos.length,
+        _snapshot_monto_total: totalMonto.toFixed(2),
+        _snapshot_monto_pendiente: estadisticas.ingresos_pendientes || 0
+      };
 
       // Guardar en historial
       await TiposReportesModel.guardarReporteGenerado({
@@ -761,7 +774,7 @@ const ReportesController = {
         idGeneradoPor: idUsuario,
         archivoGenerado: nombreArchivo,
         formatoGenerado: 'xlsx',
-        parametros
+        parametros: snapshotData
       });
 
       // Enviar Excel
@@ -813,13 +826,22 @@ const ReportesController = {
       // Nombre del archivo
       const nombreArchivo = `Reporte_Cursos_${fechaInicio}_${fechaFin}.xlsx`;
 
+      // SNAPSHOT: Calcular resumen para el historial
+      const promedioOcupacion = datos.reduce((sum, c) => sum + (parseFloat(c.porcentaje_ocupacion) || 0), 0) / (datos.length || 1);
+
+      const snapshotData = {
+        ...parametros,
+        _snapshot_total_cursos: datos.length,
+        _snapshot_promedio_ocupacion: promedioOcupacion.toFixed(1)
+      };
+
       // Guardar en historial
       await TiposReportesModel.guardarReporteGenerado({
         idTipoReporte: 3, // Reporte de Cursos
         idGeneradoPor: idUsuario,
         archivoGenerado: nombreArchivo,
         formatoGenerado: 'xlsx',
-        parametros
+        parametros: snapshotData
       });
 
       // Enviar Excel
