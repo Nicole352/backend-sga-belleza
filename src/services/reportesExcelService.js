@@ -254,7 +254,9 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
         monto: pago.monto,
         fecha_pago: pago.fecha_pago ? formatearFecha(pago.fecha_pago) : 'Pendiente',
         fecha_vencimiento: formatearFecha(pago.fecha_vencimiento),
-        metodo_pago: pago.metodo_pago?.toUpperCase() || 'N/A',
+        metodo_pago: (pago.estado_pago === 'verificado' || pago.estado_pago === 'pagado') && pago.metodo_pago
+          ? pago.metodo_pago.toUpperCase()
+          : 'PENDIENTE',
         recibido_por: pago.recibido_por || 'N/A',
         numero_comprobante: pago.numero_comprobante || 'N/A',
         estado_pago: pago.estado_pago?.toUpperCase(),

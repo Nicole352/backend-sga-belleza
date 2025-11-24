@@ -1223,9 +1223,9 @@ exports.generarReporteExcel = async (req, res) => {
         s.nombre_solicitante,
         s.apellido_solicitante,
         s.email_solicitante,
-        s.telefono_solicitante,
-        s.fecha_nacimiento_solicitante,
-        s.genero_solicitante,
+        COALESCE(u.telefono, s.telefono_solicitante) AS telefono_solicitante,
+        COALESCE(u.fecha_nacimiento, s.fecha_nacimiento_solicitante) AS fecha_nacimiento_solicitante,
+        COALESCE(u.genero, s.genero_solicitante) AS genero_solicitante,
         s.horario_preferido,
         tc.nombre AS tipo_curso,
         c.nombre AS curso_nombre,
@@ -1238,6 +1238,7 @@ exports.generarReporteExcel = async (req, res) => {
       FROM solicitudes_matricula s
       LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = s.id_tipo_curso
       LEFT JOIN cursos c ON c.id_curso = s.id_curso
+      LEFT JOIN usuarios u ON u.id_usuario = s.id_estudiante_existente
       WHERE s.estado = 'aprobado'
       ORDER BY s.fecha_solicitud DESC
     `);

@@ -214,6 +214,7 @@ module.exports = {
           u.id_usuario AS id_estudiante,
           u.nombre,
           u.apellido,
+          u.cedula,
           u.email
         FROM matriculas m
         INNER JOIN usuarios u ON m.id_estudiante = u.id_usuario

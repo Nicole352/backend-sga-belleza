@@ -135,9 +135,13 @@ class SolicitudesModel {
         s.comprobante_pago_url,
         s.documento_identificacion_url,
         s.documento_estatus_legal_url,
-        s.certificado_cosmetologia_url
+        s.certificado_cosmetologia_url,
+        s.verificado_por,
+        s.fecha_verificacion,
+        CONCAT(u.nombre, ' ', u.apellido) AS verificado_por_nombre
       FROM solicitudes_matricula s
       LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = s.id_tipo_curso
+      LEFT JOIN usuarios u ON u.id_usuario = s.verificado_por
       WHERE 1=1
     `;
     const params = [];

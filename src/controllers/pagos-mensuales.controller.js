@@ -506,13 +506,10 @@ exports.generarReporteExcel = async (req, res) => {
       const metodoPago = pago.metodo_pago === 'efectivo' ? 'Efectivo' :
         (!pago.numero_comprobante ? 'En Espera' : 'Transferencia');
 
-      // Mostrar verificado por: solo nombre si es admin o administrativo
+      // Mostrar verificado por: nombre completo del verificador
       let verificadoPor = 'N/A';
-      if (pago.verificado_por_nombre && pago.verificado_por_rol) {
-        const rol = pago.verificado_por_rol.toLowerCase();
-        if (rol === 'admin' || rol === 'administrativo') {
-          verificadoPor = `${pago.verificado_por_nombre} ${pago.verificado_por_apellido}`;
-        }
+      if (pago.verificado_por_nombre && pago.verificado_por_apellido) {
+        verificadoPor = `${pago.verificado_por_nombre} ${pago.verificado_por_apellido}`;
       }
 
       sheet1.addRow({

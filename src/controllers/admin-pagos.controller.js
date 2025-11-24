@@ -35,12 +35,15 @@ exports.getAllPagos = async (req, res) => {
         m.codigo_matricula,
         tc.modalidad_pago,
         tc.numero_clases,
-        tc.precio_por_clase
+        tc.precio_por_clase,
+        verificador.nombre as verificado_por_nombre,
+        verificador.apellido as verificado_por_apellido
       FROM pagos_mensuales pm
       INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
       INNER JOIN usuarios u ON m.id_estudiante = u.id_usuario
       INNER JOIN cursos c ON m.id_curso = c.id_curso
       INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
+      LEFT JOIN usuarios verificador ON pm.verificado_por = verificador.id_usuario
       WHERE 1=1
     `;
 
