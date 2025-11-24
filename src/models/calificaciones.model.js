@@ -188,10 +188,10 @@ class CalificacionesModel {
         MAX(promedio_modulo) as promedio_maximo,
         (10.0 / COUNT(id_modulo)) as peso_por_modulo
       FROM (
-        SELECT
+               SELECT
           m.id_modulo,
-          AVG(c.nota) as promedio_modulo,
-          (AVG(c.nota) / 10.0) * (10.0 / (
+          COALESCE(SUM(COALESCE(c.nota, 0)) / NULLIF(COUNT(t.id_tarea), 0), 0) as promedio_modulo,
+          (COALESCE(SUM(COALESCE(c.nota, 0)) / NULLIF(COUNT(t.id_tarea), 0), 0) / 10.0) * (10.0 / (
             SELECT COUNT(*)
             FROM modulos_curso
             WHERE id_curso = ?
@@ -202,7 +202,6 @@ class CalificacionesModel {
         LEFT JOIN calificaciones_tareas c ON e.id_entrega = c.id_entrega
         WHERE m.id_curso = ?
         GROUP BY m.id_modulo
-        HAVING COUNT(c.id_calificacion) > 0
       ) as promedios_por_modulo
     `,
       [id_curso, id_estudiante, id_curso],
@@ -219,8 +218,8 @@ class CalificacionesModel {
         m.id_modulo,
         m.nombre as nombre_modulo,
         m.descripcion as descripcion_modulo,
-        AVG(c.nota) as promedio_modulo_sobre_10,
-        (AVG(c.nota) / 10.0) * (10.0 / (
+        COALESCE(SUM(COALESCE(c.nota, 0)) / NULLIF(COUNT(t.id_tarea), 0), 0) as promedio_modulo_sobre_10,
+        (COALESCE(SUM(COALESCE(c.nota, 0)) / NULLIF(COUNT(t.id_tarea), 0), 0) / 10.0) * (10.0 / (
           SELECT COUNT(*)
           FROM modulos_curso
           WHERE id_curso = ?
@@ -237,7 +236,7 @@ class CalificacionesModel {
         MIN(c.nota) as nota_minima,
         MAX(c.nota) as nota_maxima,
         CASE
-          WHEN AVG(c.nota) >= 7 THEN 'aprobado'
+          WHEN COALESCE(SUM(COALESCE(c.nota, 0)) / NULLIF(COUNT(t.id_tarea), 0), 0) >= 7 THEN 'aprobado'
           ELSE 'reprobado'
         END as estado_modulo
       FROM modulos_curso m

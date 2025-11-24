@@ -47,6 +47,7 @@ const ReportesModel = {
             JOIN modulos_curso mc ON tm.id_modulo = mc.id_modulo
             GROUP BY et.id_estudiante, mc.id_curso
         ) as notas ON notas.id_estudiante = u.id_usuario AND notas.id_curso = c.id_curso
+        WHERE 1=1
       `;
 
       const params = [];
@@ -175,6 +176,7 @@ const ReportesModel = {
         INNER JOIN cursos c ON m.id_curso = c.id_curso
         INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
         LEFT JOIN usuarios verificador ON pm.verificado_por = verificador.id_usuario
+        WHERE 1=1
         `;
 
       const params = [];
