@@ -52,6 +52,9 @@ router.get('/cursos/excel', reportesController.descargarExcelCursos);
 // Obtener lista de cursos para filtros
 router.get('/cursos-filtro', reportesController.getCursosParaFiltro);
 
+// Obtener rango de fechas dinámico basado en datos reales
+router.get('/rango-fechas', reportesController.getRangoFechasDinamico);
+
 // ========================================
 // SISTEMA DE REPORTES CON TABLAS
 // ========================================

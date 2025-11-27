@@ -17,6 +17,8 @@ const ReportesModel = {
           u.email,
           u.telefono,
           u.genero,
+          u.fecha_nacimiento,
+          u.direccion,
           u.fecha_registro,
           ec.fecha_inscripcion,
           ec.estado as estado_academico,
@@ -399,6 +401,40 @@ c.id_curso,
       return rows;
     } catch (error) {
       console.error('Error en getCursosParaFiltro:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Obtener rango de fechas dinámico basado en los datos reales
+   * Retorna la fecha del primer y último curso creado
+   */
+  async getRangoFechasDinamico() {
+    try {
+      const query = `
+        SELECT 
+          DATE_FORMAT(MIN(fecha_inicio), '%Y-%m-%d') as fecha_minima,
+          DATE_FORMAT(MAX(fecha_fin), '%Y-%m-%d') as fecha_maxima
+        FROM cursos
+        WHERE fecha_inicio IS NOT NULL
+      `;
+
+      const [rows] = await pool.query(query);
+
+      if (rows.length > 0 && rows[0].fecha_minima && rows[0].fecha_maxima) {
+        return {
+          fechaInicio: rows[0].fecha_minima,
+          fechaFin: rows[0].fecha_maxima
+        };
+      }
+
+      // Si no hay cursos, retornar rango por defecto
+      return {
+        fechaInicio: '2020-01-01',
+        fechaFin: '2050-12-31'
+      };
+    } catch (error) {
+      console.error('Error en getRangoFechasDinamico:', error);
       throw error;
     }
   }

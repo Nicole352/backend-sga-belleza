@@ -177,7 +177,13 @@ const ReportesController = {
       }, estadisticas);
 
       // Nombre del archivo
-      const nombreArchivo = `Reporte_Estudiantes_${fechaInicio}_${fechaFin}.xlsx`;
+      let nombreArchivo = `Reporte_Estudiantes_${fechaInicio}_${fechaFin}.xlsx`;
+
+      // Si es el rango por defecto (2020-2030), usar un nombre más amigable
+      if (fechaInicio === '2020-01-01' && fechaFin === '2030-12-31') {
+        const hoy = new Date().toISOString().split('T')[0];
+        nombreArchivo = `Reporte_Estudiantes_General_${hoy}.xlsx`;
+      }
 
       // Enviar Excel
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -888,6 +894,28 @@ const ReportesController = {
       res.status(500).json({
         success: false,
         message: 'Error al obtener estadísticas de reportes',
+        error: error.message
+      });
+    }
+  },
+
+  /**
+   * OBTENER RANGO DE FECHAS DINÁMICO
+   * GET /api/reportes/rango-fechas
+   */
+  async getRangoFechasDinamico(req, res) {
+    try {
+      const rango = await ReportesModel.getRangoFechasDinamico();
+
+      res.json({
+        success: true,
+        data: rango
+      });
+    } catch (error) {
+      console.error('Error al obtener rango de fechas:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener rango de fechas dinámico',
         error: error.message
       });
     }

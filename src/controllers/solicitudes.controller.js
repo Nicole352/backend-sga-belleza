@@ -1234,13 +1234,20 @@ exports.generarReporteExcel = async (req, res) => {
         s.monto_matricula,
         s.metodo_pago,
         s.fecha_solicitud,
-        s.contacto_emergencia
+        (
+          SELECT s2.contacto_emergencia 
+          FROM solicitudes_matricula s2 
+          WHERE s2.identificacion_solicitante = s.identificacion_solicitante 
+            AND s2.contacto_emergencia IS NOT NULL 
+            AND s2.contacto_emergencia != ''
+          ORDER BY s2.fecha_solicitud DESC LIMIT 1
+        ) as contacto_emergencia_efectivo
       FROM solicitudes_matricula s
       LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = s.id_tipo_curso
       LEFT JOIN cursos c ON c.id_curso = s.id_curso
       LEFT JOIN usuarios u ON u.id_usuario = s.id_estudiante_existente
       WHERE s.estado = 'aprobado'
-      ORDER BY s.fecha_solicitud DESC
+      ORDER BY s.identificacion_solicitante, s.fecha_solicitud DESC
     `);
 
     // 1.5 Obtener todas las solicitudes rechazadas
@@ -1299,28 +1306,29 @@ exports.generarReporteExcel = async (req, res) => {
 
     // ========== HOJA 1: SOLICITUDES APROBADAS ==========
     const sheet1 = workbook.addWorksheet('Solicitudes Aprobadas', {
-      properties: { tabColor: { argb: 'FFDC2626' } }
+      properties: { tabColor: { argb: 'FFDC2626' } },
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 } // A4 horizontal
     });
 
-    // Encabezados Hoja 1
+    // Encabezados Hoja 1 - REORDENADOS: #, Código, Cédula, Apellidos, Nombres, Email...
     sheet1.columns = [
-      { header: 'Código', key: 'codigo', width: 18 },
-      { header: 'Cédula', key: 'cedula', width: 12 },
-      { header: 'Nombres', key: 'nombres', width: 20 },
-      { header: 'Apellidos', key: 'apellidos', width: 20 },
-      { header: 'Email', key: 'email', width: 30 },
-      { header: 'Teléfono', key: 'telefono', width: 12 },
-      { header: 'Fecha Nacimiento', key: 'fecha_nac', width: 15 },
-      { header: 'Género', key: 'genero', width: 12 },
-      { header: 'Tipo Curso', key: 'tipo_curso', width: 20 },
-      { header: 'Curso', key: 'curso', width: 25 },
-      { header: 'Código Curso', key: 'codigo_curso', width: 15 },
-      { header: 'Horario Preferido', key: 'horario_pref', width: 15 },
-      { header: 'Horario Curso', key: 'horario_curso', width: 15 },
-      { header: 'Monto', key: 'monto', width: 12 },
-      { header: 'Método Pago', key: 'metodo_pago', width: 15 },
-      { header: 'Contacto Emergencia', key: 'contacto_emerg', width: 15 },
-      { header: 'Fecha Solicitud', key: 'fecha_sol', width: 18 }
+      { header: '#', key: 'numero', width: 6, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Código', key: 'codigo', width: 20, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Cédula', key: 'cedula', width: 14, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Apellidos', key: 'apellidos', width: 20, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Nombres', key: 'nombres', width: 20, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Email', key: 'email', width: 28, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Teléfono', key: 'telefono', width: 13, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Fecha Nacimiento', key: 'fecha_nac', width: 14, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Género', key: 'genero', width: 11, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Contacto Emergencia', key: 'contacto_emerg', width: 16, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Curso', key: 'curso', width: 25, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Código Curso', key: 'codigo_curso', width: 13, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Horario Preferido', key: 'horario_pref', width: 14, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Horario Curso', key: 'horario_curso', width: 14, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Monto', key: 'monto', width: 12, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'right' } } },
+      { header: 'Método Pago', key: 'metodo_pago', width: 13, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Fecha Solicitud', key: 'fecha_sol', width: 17, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } }
     ];
 
     // Estilo del encabezado
@@ -1330,30 +1338,92 @@ exports.generarReporteExcel = async (req, res) => {
       pattern: 'solid',
       fgColor: { argb: 'FFDC2626' }
     };
-    sheet1.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
-    sheet1.getRow(1).height = 25;
+    sheet1.getRow(1).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    sheet1.getRow(1).height = 45;
 
-    // Agregar datos
-    solicitudesAprobadas.forEach(sol => {
-      sheet1.addRow({
+    // Agregar datos con numeración, agrupación y MERGE de celdas por estudiante
+    let estudianteAnterior = null;
+    let numeroEstudiante = 0;
+    let filaInicioEstudiante = 2; // Fila donde inicia el estudiante actual (después del encabezado)
+    let currentRow = 2;
+
+    solicitudesAprobadas.forEach((sol, index) => {
+      const esNuevoEstudiante = estudianteAnterior !== sol.identificacion_solicitante;
+      const esUltimoRegistro = index === solicitudesAprobadas.length - 1;
+      const siguienteEsDiferente = esUltimoRegistro || solicitudesAprobadas[index + 1].identificacion_solicitante !== sol.identificacion_solicitante;
+
+      if (esNuevoEstudiante) {
+        numeroEstudiante++;
+        filaInicioEstudiante = currentRow;
+      }
+
+      const row = sheet1.addRow({
+        numero: esNuevoEstudiante ? numeroEstudiante : '',
         codigo: sol.codigo_solicitud,
-        cedula: sol.identificacion_solicitante,
-        nombres: sol.nombre_solicitante,
-        apellidos: sol.apellido_solicitante,
-        email: sol.email_solicitante,
-        telefono: sol.telefono_solicitante || 'N/A',
-        fecha_nac: sol.fecha_nacimiento_solicitante ? new Date(sol.fecha_nacimiento_solicitante).toLocaleDateString('es-EC') : 'N/A',
-        genero: sol.genero_solicitante || 'N/A',
-        tipo_curso: sol.tipo_curso || 'N/A',
+        cedula: esNuevoEstudiante ? sol.identificacion_solicitante : '',
+        apellidos: esNuevoEstudiante ? sol.apellido_solicitante : '',
+        nombres: esNuevoEstudiante ? sol.nombre_solicitante : '',
+        email: esNuevoEstudiante ? sol.email_solicitante : '',
+        telefono: esNuevoEstudiante ? (sol.telefono_solicitante || 'N/A') : '',
+        fecha_nac: esNuevoEstudiante ? (sol.fecha_nacimiento_solicitante ? new Date(sol.fecha_nacimiento_solicitante) : 'N/A') : '',
+        genero: esNuevoEstudiante ? (sol.genero_solicitante || 'N/A') : '',
+        contacto_emerg: esNuevoEstudiante ? (sol.contacto_emergencia_efectivo || 'N/A') : '',
         curso: sol.curso_nombre || 'N/A',
         codigo_curso: sol.codigo_curso || 'N/A',
         horario_pref: sol.horario_preferido,
         horario_curso: sol.horario_curso || 'N/A',
-        monto: `$${parseFloat(sol.monto_matricula).toFixed(2)}`,
+        monto: parseFloat(sol.monto_matricula),
         metodo_pago: sol.metodo_pago,
-        contacto_emerg: sol.contacto_emergencia || 'N/A',
-        fecha_sol: new Date(sol.fecha_solicitud).toLocaleString('es-EC')
+        fecha_sol: new Date(sol.fecha_solicitud)
       });
+
+      // Aplicar formatos
+      if (esNuevoEstudiante) {
+        row.getCell('numero').alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('numero').numFmt = '0';
+        row.getCell('cedula').alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('genero').alignment = { horizontal: 'center', vertical: 'middle' };
+
+        if (sol.fecha_nacimiento_solicitante) {
+          row.getCell('fecha_nac').numFmt = 'dd/mm/yyyy';
+          row.getCell('fecha_nac').alignment = { horizontal: 'center', vertical: 'middle' };
+        }
+      }
+
+      row.getCell('codigo').alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell('codigo_curso').alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell('horario_pref').alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell('horario_curso').alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell('metodo_pago').alignment = { horizontal: 'center', vertical: 'middle' };
+
+      row.getCell('monto').numFmt = '$#,##0.00';
+      row.getCell('monto').alignment = { horizontal: 'right', vertical: 'middle' };
+
+      row.getCell('fecha_sol').numFmt = 'dd/mm/yyyy hh:mm';
+      row.getCell('fecha_sol').alignment = { horizontal: 'center', vertical: 'middle' };
+
+      // Si el siguiente estudiante es diferente o es el último, hacer MERGE de celdas
+      if (siguienteEsDiferente && currentRow > filaInicioEstudiante) {
+        // Columnas a combinar: A(#), C(Cédula), D(Apellidos), E(Nombres), F(Email), G(Teléfono), H(Fecha Nac), I(Género), J(Contacto Emerg)
+        // NO se combinan: B(Código), K-Q (datos del curso/solicitud que varían)
+        const columnasMerge = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+        columnasMerge.forEach(col => {
+          try {
+            sheet1.mergeCells(`${col}${filaInicioEstudiante}:${col}${currentRow}`);
+            // Asegurar que el contenido esté centrado verticalmente
+            const cell = sheet1.getCell(`${col}${filaInicioEstudiante}`);
+            cell.alignment = {
+              horizontal: cell.alignment?.horizontal || 'left',
+              vertical: 'middle'
+            };
+          } catch (e) {
+            // Ignorar errores de merge (por si ya está merged)
+          }
+        });
+      }
+
+      estudianteAnterior = sol.identificacion_solicitante;
+      currentRow++;
     });
 
     // Aplicar bordes y estilos alternados
@@ -1378,23 +1448,24 @@ exports.generarReporteExcel = async (req, res) => {
 
     // ========== HOJA 2: SOLICITUDES RECHAZADAS ==========
     const sheet2 = workbook.addWorksheet('Solicitudes Rechazadas', {
-      properties: { tabColor: { argb: 'FFEF4444' } }
+      properties: { tabColor: { argb: 'FFEF4444' } },
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 } // A4 horizontal
     });
 
-    // Encabezados Hoja 2
+    // Encabezados Hoja 2 - REORDENADOS
     sheet2.columns = [
-      { header: 'Código', key: 'codigo', width: 18 },
-      { header: 'Cédula', key: 'cedula', width: 12 },
-      { header: 'Nombres', key: 'nombres', width: 20 },
-      { header: 'Apellidos', key: 'apellidos', width: 20 },
-      { header: 'Email', key: 'email', width: 30 },
-      { header: 'Teléfono', key: 'telefono', width: 12 },
-      { header: 'Tipo Curso', key: 'tipo_curso', width: 20 },
-      { header: 'Curso', key: 'curso', width: 25 },
-      { header: 'Horario', key: 'horario', width: 15 },
-      { header: 'Monto', key: 'monto', width: 12 },
-      { header: 'Fecha Solicitud', key: 'fecha_sol', width: 18 },
-      { header: 'Observaciones', key: 'observaciones', width: 40 }
+      { header: '#', key: 'numero', width: 6, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Código', key: 'codigo', width: 20, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Cédula', key: 'cedula', width: 14, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Apellidos', key: 'apellidos', width: 20, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Nombres', key: 'nombres', width: 20, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Email', key: 'email', width: 28, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Teléfono', key: 'telefono', width: 13, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Curso', key: 'curso', width: 25, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Horario', key: 'horario', width: 14, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Monto', key: 'monto', width: 12, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'right' } } },
+      { header: 'Fecha Solicitud', key: 'fecha_sol', width: 17, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Observaciones', key: 'observaciones', width: 35, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } }
     ];
 
     // Estilo del encabezado
@@ -1404,25 +1475,39 @@ exports.generarReporteExcel = async (req, res) => {
       pattern: 'solid',
       fgColor: { argb: 'FFEF4444' }
     };
-    sheet2.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
-    sheet2.getRow(1).height = 25;
+    sheet2.getRow(1).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    sheet2.getRow(1).height = 45;
 
-    // Agregar datos rechazados
-    solicitudesRechazadas.forEach(sol => {
-      sheet2.addRow({
+    // Agregar datos rechazados con formatos correctos
+    solicitudesRechazadas.forEach((sol, index) => {
+      const row = sheet2.addRow({
+        numero: index + 1,
         codigo: sol.codigo_solicitud,
         cedula: sol.identificacion_solicitante,
-        nombres: sol.nombre_solicitante,
         apellidos: sol.apellido_solicitante,
+        nombres: sol.nombre_solicitante,
         email: sol.email_solicitante,
         telefono: sol.telefono_solicitante || 'N/A',
-        tipo_curso: sol.tipo_curso || 'N/A',
         curso: sol.curso_nombre || 'N/A',
         horario: sol.horario_preferido,
-        monto: `$${parseFloat(sol.monto_matricula).toFixed(2)}`,
-        fecha_sol: new Date(sol.fecha_solicitud).toLocaleString('es-EC'),
+        monto: parseFloat(sol.monto_matricula),
+        fecha_sol: new Date(sol.fecha_solicitud),
         observaciones: sol.observaciones || 'Sin observaciones'
       });
+
+      // Aplicar formatos
+      row.getCell('numero').alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell('numero').numFmt = '0';
+
+      row.getCell('cedula').alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell('codigo').alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell('horario').alignment = { horizontal: 'center', vertical: 'middle' };
+
+      row.getCell('monto').numFmt = '$#,##0.00';
+      row.getCell('monto').alignment = { horizontal: 'right', vertical: 'middle' };
+
+      row.getCell('fecha_sol').numFmt = 'dd/mm/yyyy hh:mm';
+      row.getCell('fecha_sol').alignment = { horizontal: 'center', vertical: 'middle' };
     });
 
     // Aplicar bordes y estilos alternados
@@ -1447,7 +1532,8 @@ exports.generarReporteExcel = async (req, res) => {
 
     // ========== HOJA 3: RESUMEN ESTADÍSTICO ==========
     const sheet3 = workbook.addWorksheet('Resumen Estadístico', {
-      properties: { tabColor: { argb: 'FF10B981' } }
+      properties: { tabColor: { argb: 'FF10B981' } },
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 } // A4 horizontal
     });
 
     // Título principal con diseño profesional
@@ -1510,12 +1596,18 @@ exports.generarReporteExcel = async (req, res) => {
 
     let row = 7;
     datosEstadisticos.forEach(dato => {
-      const porcentaje = total > 0 ? ((dato.cantidad / total) * 100).toFixed(1) : '0.0';
-      sheet3.getCell(`A${row}`).value = dato.estado;
-      sheet3.getCell(`B${row}`).value = dato.cantidad;
-      sheet3.getCell(`C${row}`).value = `${porcentaje}%`;
+      const cantidad = Number(dato.cantidad);
+      const porcentaje = total > 0 ? (cantidad / total) : 0;
 
+      sheet3.getCell(`A${row}`).value = dato.estado;
+      sheet3.getCell(`B${row}`).value = cantidad;
+      sheet3.getCell(`C${row}`).value = porcentaje;
+
+      // Aplicar formato numérico
+      sheet3.getCell(`B${row}`).numFmt = '0';
       sheet3.getCell(`B${row}`).alignment = { horizontal: 'center' };
+
+      sheet3.getCell(`C${row}`).numFmt = '0.0%';
       sheet3.getCell(`C${row}`).alignment = { horizontal: 'center' };
       sheet3.getCell(`C${row}`).font = { bold: true, color: { argb: dato.color } };
 
@@ -1534,6 +1626,7 @@ exports.generarReporteExcel = async (req, res) => {
         fgColor: { argb: 'FFE5E7EB' }
       };
     });
+    sheet3.getCell(`B${row}`).numFmt = '0';
     sheet3.getCell(`B${row}`).alignment = { horizontal: 'center' };
     sheet3.getCell(`C${row}`).alignment = { horizontal: 'center' };
 
@@ -1573,6 +1666,8 @@ exports.generarReporteExcel = async (req, res) => {
       sheet3.getCell(`D${cursoRow}`).value = curso.horario;
       sheet3.getCell(`E${cursoRow}`).value = curso.total_estudiantes;
 
+      // Aplicar formato numérico
+      sheet3.getCell(`E${cursoRow}`).numFmt = '0';
       sheet3.getCell(`E${cursoRow}`).alignment = { horizontal: 'center' };
       sheet3.getCell(`E${cursoRow}`).font = { bold: true, color: { argb: 'FF10B981' } };
 

@@ -370,6 +370,7 @@ exports.actualizarDecisionPromocion = async (req, res) => {
 exports.generarReporteExcel = async (req, res) => {
   try {
     // 1. Obtener todos los pagos con información completa
+    // IMPORTANTE: Ordenar por Estudiante -> Curso -> Cuota para poder agrupar (merge) en Excel
     const [pagos] = await pool.execute(`
       SELECT 
         pm.id_pago,
@@ -401,7 +402,7 @@ exports.generarReporteExcel = async (req, res) => {
       INNER JOIN cursos c ON c.id_curso = m.id_curso
       LEFT JOIN usuarios verificador ON pm.verificado_por = verificador.id_usuario
       LEFT JOIN roles r ON r.id_rol = verificador.id_rol
-      ORDER BY pm.fecha_vencimiento DESC, u_est.apellido, u_est.nombre
+      ORDER BY u_est.apellido, u_est.nombre, c.nombre, pm.numero_cuota ASC
     `);
 
     // 2. Obtener estadísticas generales
@@ -466,29 +467,31 @@ exports.generarReporteExcel = async (req, res) => {
 
     // ========== HOJA 1: REPORTE FINANCIERO COMPLETO ==========
     const sheet1 = workbook.addWorksheet('Reporte Financiero', {
-      properties: { tabColor: { argb: 'FFDC2626' } }
+      properties: { tabColor: { argb: 'FFDC2626' } },
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 } // 9 = A4
     });
 
-    // Encabezados
+    // Encabezados - REORDENADOS: #, Identificación, Estudiante, Email, Curso...
     sheet1.columns = [
-      { header: 'Código Matrícula', key: 'codigo_mat', width: 18 },
-      { header: 'Estudiante', key: 'estudiante', width: 30 },
-      { header: 'Identificación', key: 'cedula', width: 15 },
-      { header: 'Email', key: 'email', width: 30 },
-      { header: 'Curso', key: 'curso', width: 25 },
-      { header: 'Código Curso', key: 'codigo_curso', width: 15 },
-      { header: 'Cuota #', key: 'numero_cuota', width: 10 },
-      { header: 'Monto', key: 'monto', width: 12 },
-      { header: 'Fecha Vencimiento', key: 'fecha_venc', width: 16 },
-      { header: 'Fecha Pago', key: 'fecha_pago', width: 16 },
-      { header: 'Método Pago', key: 'metodo', width: 15 },
-      { header: 'Recibido Por', key: 'recibido_por', width: 25 },
-      { header: 'Nro. Comprobante', key: 'comprobante', width: 18 },
-      { header: 'Banco', key: 'banco', width: 15 },
-      { header: 'Estado', key: 'estado', width: 12 },
-      { header: 'Verificado Por', key: 'verificado', width: 25 },
-      { header: 'Fecha Verificación', key: 'fecha_verif', width: 16 },
-      { header: 'Observaciones', key: 'observaciones', width: 30 }
+      { header: '#', key: 'numero', width: 5, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Identificación', key: 'cedula', width: 13, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Estudiante', key: 'estudiante', width: 22, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Email', key: 'email', width: 22, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Curso', key: 'curso', width: 16, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Código Curso', key: 'codigo_curso', width: 10, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Código Matrícula', key: 'codigo_mat', width: 14, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Cuota #', key: 'numero_cuota', width: 8, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Monto', key: 'monto', width: 11, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'right' } } },
+      { header: 'Fecha Vencimiento', key: 'fecha_venc', width: 13, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Fecha Pago', key: 'fecha_pago', width: 13, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Método Pago', key: 'metodo', width: 12, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Recibido Por', key: 'recibido_por', width: 16, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Nro. Comprobante', key: 'comprobante', width: 14, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Banco', key: 'banco', width: 12, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Estado', key: 'estado', width: 11, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Verificado Por', key: 'verificado', width: 18, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Fecha Verificación', key: 'fecha_verif', width: 13, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Observaciones', key: 'observaciones', width: 22, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } }
     ];
 
     // Estilo del encabezado
@@ -498,40 +501,123 @@ exports.generarReporteExcel = async (req, res) => {
       pattern: 'solid',
       fgColor: { argb: 'FFDC2626' }
     };
-    sheet1.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
-    sheet1.getRow(1).height = 25;
+    sheet1.getRow(1).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    sheet1.getRow(1).height = 45;
 
-    // Agregar datos
-    pagos.forEach(pago => {
+    // Agregar datos con agrupación y MERGE
+    let estudianteCursoAnterior = null; // Clave única: cedula + codigo_curso
+    let numeroEstudiante = 0;
+    let filaInicioEstudiante = 2;
+    let currentRow = 2;
+
+    pagos.forEach((pago, index) => {
+      // Clave para identificar si es el mismo grupo (Estudiante en un Curso específico)
+      const claveActual = `${pago.estudiante_cedula}-${pago.codigo_curso}`;
+      const esNuevoGrupo = estudianteCursoAnterior !== claveActual;
+      const esUltimoRegistro = index === pagos.length - 1;
+
+      // Verificar si el siguiente registro es diferente para saber cuándo cerrar el merge
+      let siguienteEsDiferente = esUltimoRegistro;
+      if (!esUltimoRegistro) {
+        const siguientePago = pagos[index + 1];
+        const claveSiguiente = `${siguientePago.estudiante_cedula}-${siguientePago.codigo_curso}`;
+        siguienteEsDiferente = claveActual !== claveSiguiente;
+      }
+
+      if (esNuevoGrupo) {
+        numeroEstudiante++;
+        filaInicioEstudiante = currentRow;
+      }
+
       const metodoPago = pago.metodo_pago === 'efectivo' ? 'Efectivo' :
         (!pago.numero_comprobante ? 'En Espera' : 'Transferencia');
 
-      // Mostrar verificado por: nombre completo del verificador
       let verificadoPor = 'N/A';
       if (pago.verificado_por_nombre && pago.verificado_por_apellido) {
-        verificadoPor = `${pago.verificado_por_nombre} ${pago.verificado_por_apellido}`;
+        verificadoPor = `${pago.verificado_por_apellido} ${pago.verificado_por_nombre}`;
       }
 
-      sheet1.addRow({
-        codigo_mat: pago.codigo_matricula,
-        estudiante: `${pago.estudiante_nombre} ${pago.estudiante_apellido}`,
-        cedula: pago.estudiante_cedula,
-        email: pago.estudiante_email,
-        curso: pago.curso_nombre,
-        codigo_curso: pago.codigo_curso,
-        numero_cuota: pago.numero_cuota,
-        monto: `$${parseFloat(pago.monto).toFixed(2)}`,
-        fecha_venc: new Date(pago.fecha_vencimiento).toLocaleDateString('es-EC'),
-        fecha_pago: pago.fecha_pago ? new Date(pago.fecha_pago).toLocaleDateString('es-EC') : 'Sin pagar',
+      // Agregar fila
+      const row = sheet1.addRow({
+        numero: esNuevoGrupo ? numeroEstudiante : '',
+        cedula: esNuevoGrupo ? pago.estudiante_cedula : '',
+        estudiante: esNuevoGrupo ? `${pago.estudiante_apellido} ${pago.estudiante_nombre}` : '', // Apellidos primero
+        email: esNuevoGrupo ? pago.estudiante_email : '',
+        curso: esNuevoGrupo ? pago.curso_nombre : '',
+        codigo_curso: esNuevoGrupo ? pago.codigo_curso : '',
+        codigo_mat: esNuevoGrupo ? pago.codigo_matricula : '',
+        numero_cuota: Number(pago.numero_cuota),
+        monto: parseFloat(pago.monto), // Convertir a número para formato moneda
+        fecha_venc: new Date(pago.fecha_vencimiento),
+        fecha_pago: pago.fecha_pago ? new Date(pago.fecha_pago) : 'Sin pagar',
         metodo: metodoPago,
         recibido_por: pago.recibido_por || 'N/A',
         comprobante: pago.numero_comprobante || 'N/A',
         banco: pago.banco_comprobante || 'N/A',
         estado: pago.estado.charAt(0).toUpperCase() + pago.estado.slice(1),
         verificado: verificadoPor,
-        fecha_verif: pago.fecha_verificacion ? new Date(pago.fecha_verificacion).toLocaleDateString('es-EC') : 'N/A',
+        fecha_verif: pago.fecha_verificacion ? new Date(pago.fecha_verificacion) : 'N/A',
         observaciones: pago.observaciones || 'N/A'
       });
+
+      // --- APLICAR FORMATOS ---
+
+      // Formatos de columnas de estudiante (solo si es nuevo grupo, aunque el merge lo cubrirá)
+      if (esNuevoGrupo) {
+        row.getCell('numero').numFmt = '0';
+        row.getCell('numero').alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('cedula').alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('codigo_curso').alignment = { horizontal: 'center', vertical: 'middle' };
+      }
+
+      // Formatos de columnas de pago (siempre)
+      row.getCell('numero_cuota').numFmt = '0';
+      row.getCell('numero_cuota').alignment = { horizontal: 'center', vertical: 'middle' };
+
+      row.getCell('monto').numFmt = '$#,##0.00';
+      row.getCell('monto').alignment = { horizontal: 'right', vertical: 'middle' };
+
+      row.getCell('fecha_venc').numFmt = 'dd/mm/yyyy';
+      row.getCell('fecha_venc').alignment = { horizontal: 'center', vertical: 'middle' };
+
+      // Fecha Pago puede ser texto 'Sin pagar' o Fecha
+      if (pago.fecha_pago) {
+        row.getCell('fecha_pago').numFmt = 'dd/mm/yyyy';
+        row.getCell('fecha_pago').alignment = { horizontal: 'center', vertical: 'middle' };
+      } else {
+        row.getCell('fecha_pago').alignment = { horizontal: 'center', vertical: 'middle' };
+      }
+
+      if (pago.fecha_verificacion) {
+        row.getCell('fecha_verif').numFmt = 'dd/mm/yyyy';
+      }
+      row.getCell('fecha_verif').alignment = { horizontal: 'center', vertical: 'middle' };
+
+      row.getCell('metodo').alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell('estado').alignment = { horizontal: 'center', vertical: 'middle' };
+
+      // --- MERGE LOGIC ---
+      if (siguienteEsDiferente && currentRow > filaInicioEstudiante) {
+        // Columnas a combinar: A(#), B(Cédula), C(Estudiante), D(Email), E(Curso), F(Cod Curso), G(Cod Matrícula)
+        const columnasMerge = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+        columnasMerge.forEach(col => {
+          try {
+            sheet1.mergeCells(`${col}${filaInicioEstudiante}:${col}${currentRow}`);
+            // Alinear verticalmente al medio después del merge
+            const cell = sheet1.getCell(`${col}${filaInicioEstudiante}`);
+            cell.alignment = {
+              horizontal: cell.alignment?.horizontal || 'left',
+              vertical: 'middle',
+              wrapText: true
+            };
+          } catch (e) {
+            // Ignorar si ya está mergeado
+          }
+        });
+      }
+
+      estudianteCursoAnterior = claveActual;
+      currentRow++;
     });
 
     // Aplicar bordes y estilos alternados
@@ -556,8 +642,18 @@ exports.generarReporteExcel = async (req, res) => {
 
     // ========== HOJA 2: RESUMEN ESTADÍSTICO ==========
     const sheet2 = workbook.addWorksheet('Resumen Estadístico', {
-      properties: { tabColor: { argb: 'FF10B981' } }
+      properties: { tabColor: { argb: 'FF10B981' } },
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 }
     });
+
+    // Configurar anchos de columna para evitar que el texto se corte
+    sheet2.getColumn('A').width = 16; // Código
+    sheet2.getColumn('B').width = 40; // Curso (más ancho para nombres completos como "Maquillaje Profesional")
+    sheet2.getColumn('C').width = 14; // Estudiantes
+    sheet2.getColumn('D').width = 14; // Total Cuotas
+    sheet2.getColumn('E').width = 15; // Monto Total
+    sheet2.getColumn('F').width = 15; // Recaudado
+    sheet2.getColumn('G').width = 15; // Pendiente
 
     // Título principal
     sheet2.mergeCells('A1:F1');
@@ -621,16 +717,23 @@ exports.generarReporteExcel = async (req, res) => {
 
     let row = 7;
     datosGenerales.forEach(dato => {
-      const porcentaje = total > 0 ? ((dato.cantidad / total) * 100).toFixed(1) : '0.0';
+      const cantidad = Number(dato.cantidad);
+      const porcentaje = total > 0 ? (cantidad / total) : 0;
+
       sheet2.getCell(`A${row}`).value = dato.estado;
-      sheet2.getCell(`B${row}`).value = dato.cantidad;
-      sheet2.getCell(`C${row}`).value = `${porcentaje}%`;
-      sheet2.getCell(`D${row}`).value = `$${parseFloat(dato.monto || 0).toFixed(2)}`;
+      sheet2.getCell(`B${row}`).value = cantidad;
+      sheet2.getCell(`C${row}`).value = porcentaje;
+      sheet2.getCell(`D${row}`).value = parseFloat(dato.monto || 0);
 
       sheet2.getCell(`B${row}`).alignment = { horizontal: 'center' };
+      sheet2.getCell(`B${row}`).numFmt = '#,##0';
+
       sheet2.getCell(`C${row}`).alignment = { horizontal: 'center' };
-      sheet2.getCell(`D${row}`).alignment = { horizontal: 'right' };
+      sheet2.getCell(`C${row}`).numFmt = '0.0%';
       sheet2.getCell(`C${row}`).font = { bold: true, color: { argb: dato.color } };
+
+      sheet2.getCell(`D${row}`).alignment = { horizontal: 'right' };
+      sheet2.getCell(`D${row}`).numFmt = '$#,##0.00';
       sheet2.getCell(`D${row}`).font = { bold: true, color: { argb: 'FF10B981' } };
 
       row++;
@@ -652,15 +755,18 @@ exports.generarReporteExcel = async (req, res) => {
     const metodoRow = startRow2 + 2;
     sheet2.getCell(`A${metodoRow}`).value = '💵 Efectivo';
     sheet2.getCell(`B${metodoRow}`).value = stats.pagos_efectivo;
-    sheet2.getCell(`C${metodoRow}`).value = `${total > 0 ? ((stats.pagos_efectivo / total) * 100).toFixed(1) : '0.0'}%`;
+    sheet2.getCell(`C${metodoRow}`).value = total > 0 ? (stats.pagos_efectivo / total) : 0;
+    sheet2.getCell(`C${metodoRow}`).numFmt = '0.0%';
 
     sheet2.getCell(`A${metodoRow + 1}`).value = '🏦 Transferencia';
     sheet2.getCell(`B${metodoRow + 1}`).value = stats.pagos_transferencia;
-    sheet2.getCell(`C${metodoRow + 1}`).value = `${total > 0 ? ((stats.pagos_transferencia / total) * 100).toFixed(1) : '0.0'}%`;
+    sheet2.getCell(`C${metodoRow + 1}`).value = total > 0 ? (stats.pagos_transferencia / total) : 0;
+    sheet2.getCell(`C${metodoRow + 1}`).numFmt = '0.0%';
 
     sheet2.getCell(`A${metodoRow + 2}`).value = '⏳ En Espera';
     sheet2.getCell(`B${metodoRow + 2}`).value = stats.pagos_en_espera;
-    sheet2.getCell(`C${metodoRow + 2}`).value = `${total > 0 ? ((stats.pagos_en_espera / total) * 100).toFixed(1) : '0.0'}%`;
+    sheet2.getCell(`C${metodoRow + 2}`).value = total > 0 ? (stats.pagos_en_espera / total) : 0;
+    sheet2.getCell(`C${metodoRow + 2}`).numFmt = '0.0%';
     sheet2.getCell(`B${metodoRow + 2}`).font = { bold: true, color: { argb: 'FFF59E0B' } };
     sheet2.getCell(`C${metodoRow + 2}`).font = { bold: true, color: { argb: 'FFF59E0B' } };
 
@@ -690,8 +796,9 @@ exports.generarReporteExcel = async (req, res) => {
     ['A', 'B', 'C', 'D', 'E', 'F', 'G'].forEach(col => {
       sheet2.getCell(`${col}${headerRow}`).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
       sheet2.getCell(`${col}${headerRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF10B981' } };
-      sheet2.getCell(`${col}${headerRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
+      sheet2.getCell(`${col}${headerRow}`).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     });
+    sheet2.getRow(headerRow).height = 30; // Altura del encabezado
 
     // Datos por curso
     let cursoRow = headerRow + 1;
@@ -700,19 +807,28 @@ exports.generarReporteExcel = async (req, res) => {
       sheet2.getCell(`B${cursoRow}`).value = curso.curso_nombre;
       sheet2.getCell(`C${cursoRow}`).value = curso.total_estudiantes;
       sheet2.getCell(`D${cursoRow}`).value = curso.total_cuotas;
-      sheet2.getCell(`E${cursoRow}`).value = `$${parseFloat(curso.monto_total).toFixed(2)}`;
-      sheet2.getCell(`F${cursoRow}`).value = `$${parseFloat(curso.monto_recaudado).toFixed(2)}`;
-      sheet2.getCell(`G${cursoRow}`).value = `$${parseFloat(curso.monto_pendiente).toFixed(2)}`;
+      sheet2.getCell(`E${cursoRow}`).value = parseFloat(curso.monto_total);
+      sheet2.getCell(`F${cursoRow}`).value = parseFloat(curso.monto_recaudado);
+      sheet2.getCell(`G${cursoRow}`).value = parseFloat(curso.monto_pendiente);
+
+      // Alineación y formato para columna Curso con wrapText
+      sheet2.getCell(`A${cursoRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
+      sheet2.getCell(`B${cursoRow}`).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
 
       ['C', 'D'].forEach(col => {
-        sheet2.getCell(`${col}${cursoRow}`).alignment = { horizontal: 'center' };
+        sheet2.getCell(`${col}${cursoRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
+        sheet2.getCell(`${col}${cursoRow}`).numFmt = '#,##0';
       });
       ['E', 'F', 'G'].forEach(col => {
-        sheet2.getCell(`${col}${cursoRow}`).alignment = { horizontal: 'right' };
+        sheet2.getCell(`${col}${cursoRow}`).alignment = { horizontal: 'right', vertical: 'middle' };
+        sheet2.getCell(`${col}${cursoRow}`).numFmt = '$#,##0.00';
         sheet2.getCell(`${col}${cursoRow}`).font = { bold: true };
       });
       sheet2.getCell(`F${cursoRow}`).font.color = { argb: 'FF10B981' };
       sheet2.getCell(`G${cursoRow}`).font.color = { argb: 'FFEF4444' };
+
+      // Aumentar altura de fila para que el texto envuelto se vea bien
+      sheet2.getRow(cursoRow).height = 30;
 
       // Filas alternadas
       if (index % 2 === 0) {
@@ -758,15 +874,18 @@ exports.generarReporteExcel = async (req, res) => {
     // Datos estudiantes pendientes
     let pendRow = headerRow3 + 1;
     estudiantesPendientes.forEach((est, index) => {
-      sheet2.getCell(`A${pendRow}`).value = `${est.estudiante_nombre} ${est.estudiante_apellido}`;
+      sheet2.getCell(`A${pendRow}`).value = `${est.estudiante_apellido} ${est.estudiante_nombre}`;
       sheet2.getCell(`B${pendRow}`).value = est.estudiante_cedula;
       sheet2.getCell(`C${pendRow}`).value = `${est.codigo_curso} - ${est.curso_nombre}`;
-      sheet2.getCell(`D${pendRow}`).value = est.cuotas_pendientes;
-      sheet2.getCell(`E${pendRow}`).value = `$${parseFloat(est.monto_pendiente).toFixed(2)}`;
+      sheet2.getCell(`D${pendRow}`).value = Number(est.cuotas_pendientes);
+      sheet2.getCell(`E${pendRow}`).value = parseFloat(est.monto_pendiente);
 
       sheet2.getCell(`D${pendRow}`).alignment = { horizontal: 'center' };
+      sheet2.getCell(`D${pendRow}`).numFmt = '#,##0';
       sheet2.getCell(`D${pendRow}`).font = { bold: true, color: { argb: 'FFF59E0B' } };
+
       sheet2.getCell(`E${pendRow}`).alignment = { horizontal: 'right' };
+      sheet2.getCell(`E${pendRow}`).numFmt = '$#,##0.00';
       sheet2.getCell(`E${pendRow}`).font = { bold: true, color: { argb: 'FFEF4444' } };
 
       // Filas alternadas
