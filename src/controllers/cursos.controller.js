@@ -3,6 +3,7 @@ const { pool } = require('../config/database');
 const { registrarAuditoria } = require('../utils/auditoria');
 const ExcelJS = require('exceljs');
 const cacheService = require('../services/cache.service');
+const { deleteFile } = require('../services/cloudinary.service');
 
 
 // GET /api/cursos
@@ -165,6 +166,52 @@ async function updateCursoController(req, res) {
       try {
         const resultado = await finalizarCalificacionesCurso(id);
         console.log(`✓ ${resultado.mensaje}`);
+
+        // --- LIMPIEZA DE ARCHIVOS CLOUDINARY (Tareas y Pagos) ---
+        console.log(`Limpiando archivos de Cloudinary para curso ${id}...`);
+
+        // 1. Eliminar archivos de tareas entregadas
+        const [entregas] = await pool.execute(`
+            SELECT et.id_entrega, et.archivo_public_id
+            FROM entregas_tareas et
+            INNER JOIN tareas_modulo tm ON et.id_tarea = tm.id_tarea
+            INNER JOIN modulos_curso mc ON tm.id_modulo = mc.id_modulo
+            WHERE mc.id_curso = ? AND et.archivo_public_id IS NOT NULL
+        `, [id]);
+
+        if (entregas.length > 0) {
+          for (const entrega of entregas) {
+            try {
+              await deleteFile(entrega.archivo_public_id);
+              await pool.execute('UPDATE entregas_tareas SET archivo_url = NULL, archivo_public_id = NULL WHERE id_entrega = ?', [entrega.id_entrega]);
+            } catch (e) {
+              console.error(`    Error borrando tarea ${entrega.id_entrega}:`, e.message);
+            }
+          }
+          console.log(`    ✓ ${entregas.length} archivos de tareas eliminados`);
+        }
+
+        // 2. Eliminar comprobantes de pago
+        const [pagos] = await pool.execute(`
+            SELECT pm.id_pago, pm.comprobante_pago_public_id
+            FROM pagos_mensuales pm
+            INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
+            WHERE m.id_curso = ? AND pm.comprobante_pago_public_id IS NOT NULL
+        `, [id]);
+
+        if (pagos.length > 0) {
+          for (const pago of pagos) {
+            try {
+              await deleteFile(pago.comprobante_pago_public_id);
+              await pool.execute('UPDATE pagos_mensuales SET comprobante_pago_url = NULL, comprobante_pago_public_id = NULL WHERE id_pago = ?', [pago.id_pago]);
+            } catch (e) {
+              console.error(`    Error borrando pago ${pago.id_pago}:`, e.message);
+            }
+          }
+          console.log(`    ✓ ${pagos.length} comprobantes de pago eliminados`);
+        }
+        // -------------------------------------------------------
+
       } catch (error) {
         console.error('Error finalizando calificaciones:', error);
         return res.status(500).json({
