@@ -20,6 +20,14 @@ const startServer = async () => {
     require('./src/jobs/cron-payment-checker');
     console.log('✓ Cron job de verificación de pagos inicializado');
 
+    // Inicializar cron job para finalización automática de cursos
+    require('./src/jobs/cron-course-finalizer');
+    console.log('✓ Cron job de finalización de cursos inicializado');
+
+    // Inicializar cron job para verificación de desbloqueos temporales
+    require('./src/jobs/cron-temporary-unblock-checker');
+    console.log('✓ Cron job de desbloqueos temporales inicializado');
+
     if (process.env.ENABLE_UPLOADS_DIR === 'true') {
       const fs = require('fs');
       const path = require('path');

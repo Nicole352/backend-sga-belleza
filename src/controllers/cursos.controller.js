@@ -158,6 +158,22 @@ async function updateCursoController(req, res) {
     // Obtener datos anteriores
     const cursoAnterior = await getCursoById(id);
 
+    // Si se está finalizando el curso, guardar las calificaciones primero
+    if (req.body.estado === 'finalizado' && cursoAnterior.estado !== 'finalizado') {
+      const { finalizarCalificacionesCurso } = require('../models/cursos.model');
+
+      try {
+        const resultado = await finalizarCalificacionesCurso(id);
+        console.log(`✓ ${resultado.mensaje}`);
+      } catch (error) {
+        console.error('Error finalizando calificaciones:', error);
+        return res.status(500).json({
+          error: 'Error al finalizar las calificaciones del curso',
+          detalle: error.message
+        });
+      }
+    }
+
     const affected = await updateCurso(id, req.body || {});
     if (affected === 0) return res.status(404).json({ error: 'Curso no encontrado o sin cambios' });
 

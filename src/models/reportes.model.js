@@ -7,7 +7,9 @@ const ReportesModel = {
    */
   async getReporteEstudiantes({ fechaInicio, fechaFin, estado, idCurso, horario }) {
     try {
-      // Subconsulta para calcular promedio dinámico si nota_final es null
+      const CalificacionesModel = require('./calificaciones.model');
+
+      // Query simplificado SIN el cálculo de promedio
       let query = `
         SELECT 
           u.id_usuario,
@@ -22,8 +24,9 @@ const ReportesModel = {
           u.fecha_registro,
           ec.fecha_inscripcion,
           ec.estado as estado_academico,
-          COALESCE(ec.nota_final, notas.promedio_calculado, 0) as nota_final,
+          ec.nota_final as nota_final_almacenada,
           ec.fecha_graduacion,
+          c.id_curso,
           c.codigo_curso,
           c.nombre as nombre_curso,
           c.horario as horario_curso,
@@ -38,38 +41,21 @@ const ReportesModel = {
         INNER JOIN cursos c ON ec.id_curso = c.id_curso
         INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
         INNER JOIN matriculas m ON m.id_estudiante = u.id_usuario AND m.id_curso = c.id_curso
-        LEFT JOIN (
-            SELECT 
-                et.id_estudiante, 
-                mc.id_curso, 
-                AVG(ct.nota) as promedio_calculado
-            FROM calificaciones_tareas ct
-            JOIN entregas_tareas et ON ct.id_entrega = et.id_entrega
-            JOIN tareas_modulo tm ON et.id_tarea = tm.id_tarea
-            JOIN modulos_curso mc ON tm.id_modulo = mc.id_modulo
-            GROUP BY et.id_estudiante, mc.id_curso
-        ) as notas ON notas.id_estudiante = u.id_usuario AND notas.id_curso = c.id_curso
         WHERE 1=1
       `;
 
       const params = [];
 
-      // Filtro por fecha de inscripción
+      // Filtros (igual que antes)
       if (fechaInicio && fechaFin) {
         query += ` AND DATE(ec.fecha_inscripcion) BETWEEN ? AND ?`;
         params.push(fechaInicio, fechaFin);
       }
 
-      // Filtro por estado académico y de usuario
       if (estado && estado !== 'todos') {
         if (estado === 'inactivo') {
-          // Usuarios desactivados o retirados del curso
           query += ` AND(u.estado = 'inactivo' OR ec.estado IN('inactivo', 'retirado'))`;
-        } else if (estado === 'graduado') {
-          // Graduados o con nota mayor a 7 (usando promedio calculado)
-          query += ` AND(ec.estado = 'graduado' OR COALESCE(ec.nota_final, notas.promedio_calculado, 0) >= 7)`;
         } else if (estado === 'activo') {
-          // Activos en sistema y curso
           query += ` AND(u.estado = 'activo' AND ec.estado IN('activo', 'inscrito'))`;
         } else {
           query += ` AND ec.estado = ? `;
@@ -77,13 +63,11 @@ const ReportesModel = {
         }
       }
 
-      // Filtro por curso específico
       if (idCurso) {
         query += ` AND c.id_curso = ? `;
         params.push(idCurso);
       }
 
-      // Filtro por horario del curso
       if (horario && horario !== 'todos') {
         query += ` AND c.horario = ? `;
         params.push(horario);
@@ -92,7 +76,27 @@ const ReportesModel = {
       query += ` ORDER BY ec.fecha_inscripcion DESC`;
 
       const [rows] = await pool.query(query, params);
-      return rows;
+
+      // Calcular promedio para cada estudiante usando el método de la UI
+      const rowsWithGrades = await Promise.all(
+        rows.map(async (row) => {
+          try {
+            const promedioData = await CalificacionesModel.getPromedioGlobalBalanceado(
+              row.id_usuario,
+              row.id_curso
+            );
+
+            // Usar promedio calculado o nota almacenada
+            row.nota_final = promedioData.promedio_global || row.nota_final_almacenada || null;
+          } catch (error) {
+            console.error(`Error calculando promedio para estudiante ${row.id_usuario}:`, error);
+            row.nota_final = row.nota_final_almacenada || null;
+          }
+          return row;
+        })
+      );
+
+      return rowsWithGrades;
     } catch (error) {
       console.error('Error en getReporteEstudiantes:', error);
       throw error;
@@ -108,23 +112,35 @@ const ReportesModel = {
       SELECT
       COUNT(DISTINCT ec.id_estudiante) as total_estudiantes,
         COUNT(DISTINCT CASE WHEN u.estado = 'activo' AND ec.estado IN('activo', 'inscrito') THEN ec.id_estudiante END) as activos,
-        COUNT(DISTINCT CASE WHEN ec.estado = 'aprobado' OR COALESCE(ec.nota_final, notas.promedio_calculado, 0) >= 7 THEN ec.id_estudiante END) as aprobados,
-        COUNT(DISTINCT CASE WHEN ec.estado = 'reprobado' AND COALESCE(ec.nota_final, notas.promedio_calculado, 0) < 7 THEN ec.id_estudiante END) as reprobados,
+        COUNT(DISTINCT CASE WHEN ec.estado = 'aprobado' OR COALESCE(notas.promedio_calculado, ec.nota_final, 0) >= 7 THEN ec.id_estudiante END) as aprobados,
+        COUNT(DISTINCT CASE WHEN ec.estado = 'reprobado' AND COALESCE(notas.promedio_calculado, ec.nota_final, 0) < 7 THEN ec.id_estudiante END) as reprobados,
         COUNT(DISTINCT CASE WHEN u.estado = 'inactivo' OR ec.estado IN('retirado', 'inactivo') THEN ec.id_estudiante END) as retirados,
-        COUNT(DISTINCT CASE WHEN ec.estado = 'graduado' OR COALESCE(ec.nota_final, notas.promedio_calculado, 0) >= 7 THEN ec.id_estudiante END) as graduados,
-        AVG(COALESCE(ec.nota_final, notas.promedio_calculado, 0)) as promedio_notas
+        COUNT(DISTINCT CASE WHEN ec.estado = 'graduado' OR COALESCE(notas.promedio_calculado, ec.nota_final, 0) >= 7 THEN ec.id_estudiante END) as graduados,
+        AVG(COALESCE(notas.promedio_calculado, ec.nota_final, 0)) as promedio_notas
         FROM estudiante_curso ec
         INNER JOIN usuarios u ON ec.id_estudiante = u.id_usuario
-        LEFT JOIN(
-          SELECT 
-                et.id_estudiante,
-          mc.id_curso,
-          AVG(ct.nota) as promedio_calculado
-            FROM calificaciones_tareas ct
-            JOIN entregas_tareas et ON ct.id_entrega = et.id_entrega
-            JOIN tareas_modulo tm ON et.id_tarea = tm.id_tarea
-            JOIN modulos_curso mc ON tm.id_modulo = mc.id_modulo
-            GROUP BY et.id_estudiante, mc.id_curso
+        LEFT JOIN (
+            SELECT 
+                promedios.id_estudiante,
+                promedios.id_curso,
+                SUM(promedios.aporte_modulo) as promedio_calculado
+            FROM (
+                SELECT 
+                    e.id_estudiante,
+                    m.id_curso,
+                    m.id_modulo,
+                    COALESCE(SUM(COALESCE(c.nota, 0)) / NULLIF(COUNT(t.id_tarea), 0), 0) as promedio_modulo,
+                    (COALESCE(SUM(COALESCE(c.nota, 0)) / NULLIF(COUNT(t.id_tarea), 0), 0) / 10.0) * (10.0 / (
+                        SELECT COUNT(*) FROM modulos_curso WHERE id_curso = m.id_curso
+                    )) as aporte_modulo
+                FROM modulos_curso m
+                LEFT JOIN tareas_modulo t ON m.id_modulo = t.id_modulo
+                LEFT JOIN entregas_tareas e ON t.id_tarea = e.id_tarea
+                LEFT JOIN calificaciones_tareas c ON e.id_entrega = c.id_entrega
+                GROUP BY e.id_estudiante, m.id_curso, m.id_modulo
+                HAVING e.id_estudiante IS NOT NULL
+            ) as promedios
+            GROUP BY promedios.id_estudiante, promedios.id_curso
         ) as notas ON notas.id_estudiante = ec.id_estudiante AND notas.id_curso = ec.id_curso
         WHERE DATE(ec.fecha_inscripcion) BETWEEN ? AND ?
         `;

@@ -184,10 +184,64 @@ async function deleteCurso(id) {
   return result.affectedRows;
 }
 
+/**
+ * Finalizar calificaciones de un curso
+ * Guarda las notas calculadas en nota_final y actualiza el estado de los estudiantes
+ */
+async function finalizarCalificacionesCurso(id_curso) {
+  const CalificacionesModel = require('./calificaciones.model');
+
+  try {
+    // 1. Obtener todos los estudiantes activos del curso
+    const [students] = await pool.execute(`
+      SELECT id_estudiante 
+      FROM estudiante_curso 
+      WHERE id_curso = ? AND estado IN ('activo', 'inscrito')
+    `, [id_curso]);
+
+    console.log(`Finalizando calificaciones para ${students.length} estudiantes del curso ${id_curso}`);
+
+    // 2. Calcular y guardar nota final para cada estudiante
+    for (const student of students) {
+      try {
+        const promedio = await CalificacionesModel.getPromedioGlobalBalanceado(
+          student.id_estudiante,
+          id_curso
+        );
+
+        const nota_final = promedio.promedio_global || 0;
+        const nuevo_estado = nota_final >= 7 ? 'aprobado' : 'reprobado';
+
+        await pool.execute(`
+          UPDATE estudiante_curso 
+          SET nota_final = ?,
+              estado = ?,
+              fecha_graduacion = CASE WHEN ? >= 7 THEN NOW() ELSE NULL END
+          WHERE id_estudiante = ? AND id_curso = ?
+        `, [nota_final, nuevo_estado, nota_final, student.id_estudiante, id_curso]);
+
+        console.log(`  ✓ Estudiante ${student.id_estudiante}: ${nota_final.toFixed(2)} - ${nuevo_estado.toUpperCase()}`);
+      } catch (error) {
+        console.error(`  ✗ Error procesando estudiante ${student.id_estudiante}:`, error.message);
+      }
+    }
+
+    return {
+      success: true,
+      estudiantes_procesados: students.length,
+      mensaje: `Se finalizaron las calificaciones de ${students.length} estudiantes`
+    };
+  } catch (error) {
+    console.error('Error en finalizarCalificacionesCurso:', error);
+    throw error;
+  }
+}
+
 module.exports = {
   listCursos,
   getCursoById,
   createCurso,
   updateCurso,
   deleteCurso,
+  finalizarCalificacionesCurso,
 };

@@ -75,7 +75,7 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
       { header: 'HORARIO', key: 'horario_curso', width: 10 },
       { header: 'FECHA INS.', key: 'fecha_inscripcion', width: 12 },
       { header: 'ESTADO', key: 'estado_academico', width: 12 },
-      { header: 'NOTA', key: 'nota_final', width: 8 },
+      { header: 'ESTADO FINAL', key: 'nota_final', width: 15 },
       { header: 'MATRÍCULA', key: 'monto_matricula', width: 12 }
     ];
 
@@ -114,6 +114,21 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
       const startRow = currentRowIndex;
 
       cursosEstudiante.forEach((estudiante, idx) => {
+        // Determinar estado final basado en la nota
+        let estadoFinal = 'N/A';
+        let colorEstado = 'FF000000'; // Negro por defecto
+
+        const nota = parseFloat(estudiante.nota_final);
+        if (!isNaN(nota) && estudiante.nota_final !== null) {
+          if (nota >= 7) {
+            estadoFinal = 'APROBADO';
+            colorEstado = 'FF10B981'; // Verde
+          } else {
+            estadoFinal = 'REPROBADO';
+            colorEstado = 'FFEF4444'; // Rojo
+          }
+        }
+
         const row = hojaDatos.addRow({
           indice: indiceEstudiante,
           apellido: estudiante.apellido,
@@ -128,7 +143,7 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
           horario_curso: estudiante.horario_curso,
           fecha_inscripcion: estudiante.fecha_inscripcion ? new Date(estudiante.fecha_inscripcion) : null,
           estado_academico: estudiante.estado_academico?.toUpperCase(),
-          nota_final: (estudiante.nota_final !== null && estudiante.nota_final !== undefined && estudiante.nota_final !== '') ? parseFloat(estudiante.nota_final) : 'N/A',
+          nota_final: estadoFinal,
           monto_matricula: estudiante.monto_matricula ? parseFloat(estudiante.monto_matricula) : 0
         });
 
@@ -138,9 +153,8 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
         row.getCell('fecha_inscripcion').numFmt = 'dd/mm/yyyy';
         row.getCell('monto_matricula').numFmt = '$#,##0.00';
 
-        if (typeof row.getCell('nota_final').value === 'number') {
-          row.getCell('nota_final').numFmt = '0.00';
-        }
+        // Aplicar color al estado final
+        row.getCell('nota_final').font = { color: { argb: colorEstado }, bold: true };
 
         // Color según estado
         const estadoCell = row.getCell('estado_academico');

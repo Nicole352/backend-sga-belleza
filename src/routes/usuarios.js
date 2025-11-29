@@ -65,4 +65,7 @@ router.post('/:id/bloquear', usuariosController.bloquearCuenta);
 // POST /api/usuarios/:id/desbloquear - Desbloquear cuenta de usuario
 router.post('/:id/desbloquear', usuariosController.desbloquearCuenta);
 
+// POST /api/usuarios/:id/desbloqueo-temporal - Desbloqueo temporal (24h)
+router.post('/:id/desbloqueo-temporal', usuariosController.desbloquearTemporalmente);
+
 module.exports = router;

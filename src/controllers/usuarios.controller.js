@@ -1224,6 +1224,58 @@ async function desbloquearCuenta(req, res) {
   }
 }
 
+// ========================================
+// POST /api/usuarios/:id/desbloqueo-temporal - Desbloqueo temporal (24h)
+// ========================================
+async function desbloquearTemporalmente(req, res) {
+  try {
+    const { id } = req.params;
+    const id_admin = req.user?.id_usuario;
+
+    // Verificar que el usuario existe
+    const usuario = await usuariosModel.getUserById(id);
+    if (!usuario) {
+      return res.status(404).json({
+        success: false,
+        message: 'Usuario no encontrado'
+      });
+    }
+
+    // Verificar que esté bloqueado
+    if (!usuario.cuenta_bloqueada && usuario.cuenta_bloqueada !== 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'La cuenta no está bloqueada'
+      });
+    }
+
+    // Conceder desbloqueo temporal
+    const TemporaryUnblockService = require('../services/temporary-unblock.service');
+    const resultado = await TemporaryUnblockService.grantTemporaryUnblock(
+      parseInt(id),
+      id_admin,
+      req  // Pasar req para habilitar notificaciones WebSocket
+    );
+
+    res.json({
+      success: true,
+      message: resultado.mensaje,
+      data: {
+        id_usuario: parseInt(id),
+        expira: resultado.expira,
+        horas_restantes: 24
+      }
+    });
+  } catch (error) {
+    console.error('Error al conceder desbloqueo temporal:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al conceder desbloqueo temporal',
+      error: error.message
+    });
+  }
+}
+
 
 module.exports = {
   getUsuarios,
@@ -1242,5 +1294,7 @@ module.exports = {
   cambiarMiPassword,
   // Funciones para bloqueo de cuentas
   bloquearCuenta,
-  desbloquearCuenta
+  desbloquearCuenta,
+  desbloquearTemporalmente
 };
+

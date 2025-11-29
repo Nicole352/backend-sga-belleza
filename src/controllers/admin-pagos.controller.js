@@ -32,6 +32,7 @@ exports.getAllPagos = async (req, res) => {
         u.cedula as estudiante_cedula,
         c.id_curso,
         c.nombre as curso_nombre,
+        c.horario as curso_horario,
         m.codigo_matricula,
         tc.modalidad_pago,
         tc.numero_clases,
@@ -44,7 +45,7 @@ exports.getAllPagos = async (req, res) => {
       INNER JOIN cursos c ON m.id_curso = c.id_curso
       INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
       LEFT JOIN usuarios verificador ON pm.verificado_por = verificador.id_usuario
-      WHERE 1=1
+      WHERE m.estado = 'activa' AND c.estado = 'activo'
     `;
 
     const params = [];
@@ -240,6 +241,52 @@ exports.verificarPago = async (req, res) => {
 
     const id_estudiante = estudianteInfo[0]?.id_estudiante;
     console.log(`ID Estudiante obtenido: ${id_estudiante}`);
+
+    // VERIFICAR SI EL ESTUDIANTE DEBE SER DESBLOQUEADO PERMANENTEMENTE
+    // Esto ocurre cuando:
+    // 1. El estudiante tiene desbloqueo temporal activo
+    // 2. Ya no tiene cuotas vencidas pendientes
+    try {
+      const [estudianteData] = await pool.execute(`
+        SELECT 
+          desbloqueo_temporal,
+          cuenta_bloqueada
+        FROM usuarios
+        WHERE id_usuario = ?
+      `, [id_estudiante]);
+
+      if (estudianteData[0]?.desbloqueo_temporal) {
+        console.log(`Estudiante ${id_estudiante} tiene desbloqueo temporal activo, verificando cuotas pendientes...`);
+
+        // Contar cuotas vencidas pendientes
+        const [cuotasVencidas] = await pool.execute(`
+          SELECT COUNT(*) as total
+          FROM pagos_mensuales pm
+          INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
+          WHERE m.id_estudiante = ?
+            AND pm.estado = 'pendiente'
+            AND pm.fecha_vencimiento < CURDATE()
+        `, [id_estudiante]);
+
+        const totalVencidas = cuotasVencidas[0].total;
+        console.log(`Cuotas vencidas restantes: ${totalVencidas}`);
+
+        if (totalVencidas === 0) {
+          // Ya no tiene cuotas vencidas, hacer desbloqueo permanente
+          console.log(`Haciendo desbloqueo permanente para estudiante ${id_estudiante}...`);
+
+          const TemporaryUnblockService = require('../services/temporary-unblock.service');
+          await TemporaryUnblockService.makePermanentUnblock(id_estudiante);
+
+          console.log(`Desbloqueo permanente completado para estudiante ${id_estudiante}`);
+        } else {
+          console.log(`Estudiante aún tiene ${totalVencidas} cuota(s) vencida(s), desbloqueo temporal continúa`);
+        }
+      }
+    } catch (unlockError) {
+      console.error('Error verificando desbloqueo permanente:', unlockError);
+      // No lanzar error, la verificación del pago ya se completó
+    }
 
     // ENVIAR EMAIL CON PDF DEL COMPROBANTE AL ESTUDIANTE (asíncrono)
     // IMPORTANTE: NO enviar email para cuota #1 (ya se envió con email de bienvenida)
