@@ -671,7 +671,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         'INSERT',
         id_estudiante,
         aprobado_por,
-        null,
+        'usuarios',
         {
           cedula: solicitud.identificacion_solicitante,
           nombre: solicitud.nombre_solicitante,

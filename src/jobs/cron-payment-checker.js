@@ -48,6 +48,8 @@ if (process.env.NODE_ENV === 'development') {
     setTimeout(async () => {
         try {
             await PaymentReminderService.checkOverduePayments();
+            await PaymentReminderService.sendPaymentReminders();
+            await PaymentReminderService.blockAccountsWithOverduePayments();
             console.log('\n✓ Verificación inicial completada\n');
         } catch (error) {
             console.error('\n✗ Error en verificación inicial:', error, '\n');

@@ -129,6 +129,9 @@ const startServer = async () => {
     // Exponer io y userSockets a la app para que otros módulos puedan enviar eventos a usuarios específicos
     app.set('io', io);
     app.set('userSockets', userSockets);
+    // Inicializar servicio de sockets con instancia global (para cron jobs)
+    const { initSocket } = require('./src/services/socket.service');
+    initSocket(io, userSockets);
 
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`Servidor SGA Belleza corriendo en puerto ${PORT}`);

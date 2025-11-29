@@ -832,9 +832,175 @@ async function enviarNotificacionPagoEstudiante(datosPago) {
   }
 }
 
+/**
+ * Enviar notificación de bloqueo de cuenta por pagos vencidos
+ */
+async function enviarNotificacionBloqueoCuenta(email, nombre, motivo) {
+  try {
+    const mailOptions = {
+      from: `"${process.env.EMAIL_FROM_NAME || 'Escuela Jessica Vélez'}" <${process.env.EMAIL_USER}>`,
+      to: email,
+      replyTo: process.env.EMAIL_USER,
+      subject: '⚠️ Aviso Importante: Suspensión Temporal de Cuenta',
+      headers: {
+        'X-Priority': '1',
+        'X-MSMail-Priority': 'High',
+        'Importance': 'high',
+        'X-Mailer': 'Escuela Jessica Vélez - SGA'
+      },
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 30px; text-align: center; color: white; }
+            .header h1 { margin: 0; font-size: 24px; font-weight: 700; }
+            .content { padding: 30px; }
+            .alert { background: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px; }
+            .button { display: inline-block; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; text-align: center; }
+            .footer { background: #f9fafb; padding: 20px; text-align: center; font-size: 12px; color: #6b7280; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>⚠️ Suspensión de Cuenta</h1>
+            </div>
+            <div class="content">
+              <p>Estimado/a <strong>${nombre}</strong>,</p>
+              
+              <div class="alert">
+                <strong>Aviso Importante: Su cuenta ha sido suspendida temporalmente</strong>
+              </div>
+
+              <p><strong>Motivo:</strong> ${motivo}</p>
+
+              <p style="line-height: 1.8;">
+                Le informamos que su cuenta en el Aula Virtual ha sido suspendida debido a que presenta 
+                <strong>cuotas de pago vencidas</strong>. Para poder reactivar su acceso y continuar con sus 
+                estudios sin inconvenientes, es necesario que regularice su situación de pagos.
+              </p>
+
+              <p style="line-height: 1.8;">
+                <strong>Por favor, acérquese al área administrativa de la Escuela</strong> para coordinar 
+                la regularización de sus pagos pendientes. Nuestro equipo estará disponible para ayudarle 
+                y encontrar la mejor solución.
+              </p>
+
+              <div style="background: #eff6ff; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                <p style="margin: 0; color: #1e40af;">
+                  <strong>📍 Horario de Atención:</strong><br>
+                  Lunes a Sábado: 9:00 AM - 5:00 PM
+                </p>
+              </div>
+            </div>
+            <div class="footer">
+              <p><strong>Escuela Jessica Vélez</strong></p>
+              <p>Si cree que esto es un error, por favor contáctenos.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Email de bloqueo enviado a:', email);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('Error enviando email de bloqueo:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Enviar notificación de desbloqueo temporal
+ */
+async function enviarNotificacionDesbloqueoTemporal(email, nombre, fechaExpiracion) {
+  try {
+    const fechaFormateada = new Date(fechaExpiracion).toLocaleString('es-EC', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+
+    const mailOptions = {
+      from: `"${process.env.EMAIL_FROM_NAME || 'Escuela Jessica Vélez'}" <${process.env.EMAIL_USER}>`,
+      to: email,
+      replyTo: process.env.EMAIL_USER,
+      subject: '🔓 Aviso: Desbloqueo Temporal de Cuenta',
+      headers: {
+        'X-Priority': '1',
+        'X-MSMail-Priority': 'High',
+        'Importance': 'high',
+        'X-Mailer': 'Escuela Jessica Vélez - SGA'
+      },
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); padding: 30px; text-align: center; color: white; }
+            .header h1 { margin: 0; font-size: 24px; font-weight: 700; }
+            .content { padding: 30px; }
+            .alert { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px; }
+            .footer { background: #f9fafb; padding: 20px; text-align: center; font-size: 12px; color: #6b7280; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🔓 Desbloqueo Temporal</h1>
+            </div>
+            <div class="content">
+              <p>Estimado/a <strong>${nombre}</strong>,</p>
+              
+              <div class="alert">
+                <strong>Su cuenta ha sido desbloqueada temporalmente por 24 horas.</strong>
+              </div>
+
+              <p style="line-height: 1.8;">
+                Se le ha concedido un plazo especial para que pueda regularizar sus pagos pendientes.
+                Durante este tiempo, tendrá acceso completo a su Aula Virtual.
+              </p>
+
+              <p style="line-height: 1.8;">
+                <strong>Este desbloqueo expirará el:</strong><br>
+                📅 ${fechaFormateada}
+              </p>
+
+              <p style="line-height: 1.8;">
+                Por favor, aproveche este tiempo para realizar el pago y subir su comprobante.
+                Si no regulariza su situación antes de la fecha indicada, el sistema volverá a bloquear su cuenta automáticamente.
+              </p>
+            </div>
+            <div class="footer">
+              <p><strong>Escuela Jessica Vélez</strong></p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Email de desbloqueo temporal enviado a:', email);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('Error enviando email de desbloqueo temporal:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = {
   enviarNotificacionNuevaMatricula,
   enviarEmailBienvenidaEstudiante,
   enviarComprobantePagoMensual,
-  enviarNotificacionPagoEstudiante
+  enviarNotificacionPagoEstudiante,
+  enviarNotificacionBloqueoCuenta,
+  enviarNotificacionDesbloqueoTemporal
 };

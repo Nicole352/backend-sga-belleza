@@ -1,5 +1,6 @@
 const { pool } = require('../config/database');
 const { emitToUser, emitToRole } = require('./socket.service');
+const emailService = require('./emailService');
 
 class TemporaryUnblockService {
     /**
@@ -62,6 +63,20 @@ class TemporaryUnblockService {
                     mensaje: 'Su cuenta ha sido desbloqueada temporalmente. Tiene 24 horas para subir la evidencia de pago.',
                     horas_restantes: 24
                 });
+            }
+
+            // Enviar email de notificación
+            if (estudiante.length > 0 && estudiante[0].email) {
+                try {
+                    await emailService.enviarNotificacionDesbloqueoTemporal(
+                        estudiante[0].email,
+                        `${estudiante[0].nombre} ${estudiante[0].apellido}`,
+                        expiraEn24h
+                    );
+                } catch (emailError) {
+                    console.error('Error enviando email de desbloqueo temporal:', emailError);
+                    // No interrumpimos el flujo si falla el email
+                }
             }
 
             // Guardar notificación en la base de datos para que persista

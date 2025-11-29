@@ -171,7 +171,7 @@ class PaymentReminderService {
             for (const estudiante of estudiantes) {
                 // Bloquear si tiene 2 o más cuotas vencidas y no está bloqueado
                 if (estudiante.cuotas_vencidas >= 2 && !estudiante.cuenta_bloqueada) {
-                    const motivo = `Falta de pago - ${estudiante.cuotas_vencidas} cuotas vencidas`;
+                    const motivo = `Cuenta Suspendida: Acumula ${estudiante.cuotas_vencidas} Pagos Vencidos. Por favor acérquese al Área Administrativa para regularizar su situación.`;
 
                     await pool.execute(`
             UPDATE usuarios 
@@ -194,7 +194,7 @@ class PaymentReminderService {
                         'usuarios',
                         'UPDATE',
                         estudiante.id_usuario,
-                        null, // Sistema automático
+                        1, // Usar ID 1 (Superadmin/Sistema) para acciones automáticas
                         JSON.stringify({
                             accion: 'BLOQUEO_AUTOMATICO',
                             motivo: motivo,
@@ -212,31 +212,22 @@ class PaymentReminderService {
                     });
 
                     // Enviar notificación WebSocket a los administradores
-                    emitToRole('admin', 'cuenta_bloqueada', {
+                    emitToRole('administrativo', 'cuenta_bloqueada', {
                         tipo: 'cuenta_bloqueada',
                         nombre_estudiante: `${estudiante.nombre} ${estudiante.apellido}`,
-                        motivo: motivo,
+                        motivo: `Bloqueo automático: Acumula ${estudiante.cuotas_vencidas} pagos vencidos`,
                         fecha_bloqueo: new Date()
                     });
 
                     // Enviar email de notificación
                     try {
-                        await emailService.sendEmail(
+                        await emailService.enviarNotificacionBloqueoCuenta(
                             estudiante.email,
-                            'Cuenta Bloqueada - SGA Belleza',
-                            `
-                <h2>Cuenta Bloqueada</h2>
-                <p>Estimado/a ${estudiante.nombre} ${estudiante.apellido},</p>
-                <p>Su cuenta ha sido bloqueada debido a falta de pago.</p>
-                <p><strong>Motivo:</strong> ${motivo}</p>
-                <p><strong>Cuotas vencidas:</strong></p>
-                <p>${estudiante.detalle_cuotas.replace(/\|/g, '<br>')}</p>
-                <p>Por favor, acérquese a la escuela y póngase en contacto con el área administrativa para regularizar su situación.</p>
-                <p>Saludos cordiales,<br>SGA Belleza</p>
-              `
+                            `${estudiante.nombre} ${estudiante.apellido}`,
+                            motivo
                         );
                     } catch (emailError) {
-                        console.error('Error enviando email de bloqueo:', emailError);
+                        console.error(`Error enviando email de bloqueo a ${estudiante.email}:`, emailError);
                     }
 
                     console.log(`✓ Cuenta bloqueada: ${estudiante.nombre} ${estudiante.apellido} (${estudiante.cuotas_vencidas} cuotas)`);
