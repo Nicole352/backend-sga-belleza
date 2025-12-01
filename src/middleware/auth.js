@@ -1,14 +1,15 @@
 const jwt = require('jsonwebtoken');
+const { getUserById } = require('../models/usuarios.model');
 
 // Obtener JWT_SECRET con validación
-const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' 
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production'
   ? (() => { throw new Error('JWT_SECRET no configurado en producción'); })()
   : 'dev_secret');
 
-function authMiddleware(req, res, next) {
+async function authMiddleware(req, res, next) {
   const auth = req.headers.authorization || "";
   let token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-  
+
   // Si no hay token en el header, buscar en query params (para imágenes)
   if (!token && req.query.token) {
     token = req.query.token;
@@ -22,6 +23,28 @@ function authMiddleware(req, res, next) {
 
   try {
     const payload = jwt.verify(token, JWT_SECRET);
+
+    // Verificar estado actual del usuario en la base de datos
+    const user = await getUserById(payload.id_usuario);
+
+    if (!user) {
+      console.log('Usuario no encontrado en BD:', payload.id_usuario);
+      return res.status(401).json({ error: "Usuario no encontrado" });
+    }
+
+    if (user.estado !== 'activo') {
+      console.log('Usuario inactivo intentando acceder:', payload.id_usuario);
+      return res.status(403).json({ error: "Usuario inactivo" });
+    }
+
+    if (user.cuenta_bloqueada) {
+      console.log('Usuario bloqueado intentando acceder:', payload.id_usuario);
+      return res.status(403).json({
+        error: "Cuenta bloqueada",
+        motivo: user.motivo_bloqueo || 'Cuenta bloqueada por el administrador'
+      });
+    }
+
     req.user = payload; // { id_usuario, rol, email }
     next();
   } catch (e) {
@@ -33,23 +56,17 @@ function authMiddleware(req, res, next) {
 function requireRole(rolesPermitidos) {
   return (req, res, next) => {
     if (!req.user) {
-      console.log('requireRole: No hay req.user');
       return res.status(401).json({ error: "No autorizado" });
     }
-    
-    console.log('requireRole - Usuario:', req.user.id_usuario, 'Rol:', req.user.rol);
-    console.log('requireRole - Roles permitidos:', rolesPermitidos);
-    
+
     if (!rolesPermitidos.includes(req.user.rol)) {
-      console.log('requireRole: Acceso denegado. Rol', req.user.rol, 'no está en', rolesPermitidos);
-      return res.status(403).json({ 
-        error: "Acceso denegado", 
+      return res.status(403).json({
+        error: "Acceso denegado",
         rol_actual: req.user.rol,
-        roles_requeridos: rolesPermitidos 
+        roles_requeridos: rolesPermitidos
       });
     }
-    
-    console.log('requireRole: Acceso permitido');
+
     next();
   };
 }

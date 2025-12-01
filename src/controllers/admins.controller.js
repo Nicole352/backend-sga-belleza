@@ -104,6 +104,7 @@ async function listAdminsController(req, res) {
       fecha_nacimiento: a.fecha_nacimiento,
       direccion: a.direccion,
       genero: a.genero,
+      foto_perfil: a.foto_perfil,
       rol: a.nombre_rol,
       estado: a.estado,
       fecha_registro: a.fecha_registro,
@@ -135,6 +136,7 @@ async function updateAdminController(req, res) {
       genero,
       rolId,
       roleName,
+      estado,
     } = req.body || {};
 
     // Resolver rol (estricto solo 'administrativo')
@@ -191,7 +193,20 @@ async function updateAdminController(req, res) {
       id_rol: id_rol ?? undefined,
       foto_perfil_url: foto_perfil_url ?? undefined,
       foto_perfil_public_id: foto_perfil_public_id ?? undefined,
+      estado: estado ?? undefined,
     };
+
+    // Si se está desactivando el usuario, cerrar todas sus sesiones activas
+    if (estado === 'inactivo' && current.estado === 'activo') {
+      const { pool } = require('../config/database');
+      await pool.execute(
+        `UPDATE sesiones_usuario 
+         SET activa = FALSE, fecha_cierre = CURRENT_TIMESTAMP 
+         WHERE id_usuario = ? AND activa = TRUE`,
+        [id_usuario]
+      );
+      console.log(`Sesiones cerradas para usuario ${id_usuario} (desactivado)`);
+    }
 
     const updated = await updateAdminUser(id_usuario, fields);
     return res.json({

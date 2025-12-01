@@ -28,9 +28,9 @@ router.post('/', authMiddleware, requireRole(['superadmin', 'admin', 'administra
 router.get('/', authMiddleware, requireRole(['superadmin', 'admin', 'administrativo']), listAdminsController);
 
 // Actualizar administrador (datos); acepta foto opcional via multipart
-router.put('/:id', authMiddleware, requireRole(['admin', 'administrativo']), upload.single('foto_perfil'), updateAdminController);
+router.put('/:id', authMiddleware, requireRole(['superadmin', 'admin', 'administrativo']), upload.single('foto_perfil'), updateAdminController);
 
 // Actualizar contraseña
-router.patch('/:id/password', authMiddleware, requireRole(['admin', 'administrativo']), updateAdminPasswordController);
+router.patch('/:id/password', authMiddleware, requireRole(['superadmin', 'admin', 'administrativo']), updateAdminPasswordController);
 
 module.exports = router;

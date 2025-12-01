@@ -427,7 +427,8 @@ async function updateAdminUser(id_usuario, fields) {
     id_rol: 'id_rol',
     foto_perfil: 'foto_perfil',
     foto_perfil_url: 'foto_perfil_url',
-    foto_perfil_public_id: 'foto_perfil_public_id'
+    foto_perfil_public_id: 'foto_perfil_public_id',
+    estado: 'estado',
   };
 
   Object.keys(fields).forEach((field) => {

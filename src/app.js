@@ -5,6 +5,7 @@ const compression = require("compression");
 
 // Middleware de auditoría
 const { auditoriaMiddleware } = require("./middleware/auditoria.middleware");
+const { metricsMiddleware } = require('./middleware/metrics.middleware');
 
 // Utilidad de inicialización
 const inicializarTiposReportes = require("./utils/inicializarTiposReportes");
@@ -34,6 +35,7 @@ const asistenciasRoutes = require('./routes/asistencias');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const promocionesRoutes = require('./routes/promociones');
 const notificacionesRoutes = require('./routes/notificaciones');
+const sistemaRoutes = require('./routes/sistema.routes');
 
 const app = express();
 
@@ -69,6 +71,7 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Middleware de auditoría (debe ir después de body parsing)
 app.use(auditoriaMiddleware);
+app.use(metricsMiddleware);
 
 // Health check
 app.get("/api/health", (req, res) => {
@@ -105,6 +108,7 @@ app.use('/api/asistencias', asistenciasRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/promociones', promocionesRoutes);
 app.use('/api/notificaciones', notificacionesRoutes);
+app.use('/api/sistema', sistemaRoutes);
 
 // Inicializar tipos de reportes al cargar el módulo
 // Se ejecutará automáticamente cuando el servidor inicie
