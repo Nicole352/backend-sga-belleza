@@ -369,10 +369,13 @@ exports.actualizarDecisionPromocion = async (req, res) => {
 // Generar reporte Excel de pagos mensuales
 exports.generarReporteExcel = async (req, res) => {
   try {
+    // Obtener filtros de la query
+    const { estado = '', horario = '', cursoId = '', search = '' } = req.query;
+    
     // 1. Obtener todos los pagos con información completa
     // IMPORTANTE: Ordenar por Estudiante -> Curso -> Cuota para poder agrupar (merge) en Excel
-    const [pagos] = await pool.execute(`
-      SELECT 
+    let sql = `
+      SELECT
         pm.id_pago,
         pm.numero_cuota,
         pm.monto,
@@ -392,6 +395,7 @@ exports.generarReporteExcel = async (req, res) => {
         u_est.email as estudiante_email,
         c.nombre as curso_nombre,
         c.codigo_curso,
+        c.horario as curso_horario,
         m.codigo_matricula,
         verificador.nombre as verificado_por_nombre,
         verificador.apellido as verificado_por_apellido,
@@ -402,8 +406,35 @@ exports.generarReporteExcel = async (req, res) => {
       INNER JOIN cursos c ON c.id_curso = m.id_curso
       LEFT JOIN usuarios verificador ON pm.verificado_por = verificador.id_usuario
       LEFT JOIN roles r ON r.id_rol = verificador.id_rol
-      ORDER BY u_est.apellido, u_est.nombre, c.nombre, pm.numero_cuota ASC
-    `);
+      WHERE 1=1
+    `;
+    
+    const params = [];
+    
+    if (estado) {
+      sql += ` AND pm.estado = ?`;
+      params.push(estado);
+    }
+    
+    if (horario) {
+      sql += ` AND c.horario = ?`;
+      params.push(horario);
+    }
+    
+    if (cursoId) {
+      sql += ` AND c.id_curso = ?`;
+      params.push(parseInt(cursoId));
+    }
+    
+    if (search) {
+      sql += ` AND (u_est.nombre LIKE ? OR u_est.apellido LIKE ? OR u_est.cedula LIKE ? OR c.nombre LIKE ?)`;
+      const searchParam = `%${search}%`;
+      params.push(searchParam, searchParam, searchParam, searchParam);
+    }
+    
+    sql += ` ORDER BY u_est.apellido, u_est.nombre, c.nombre, pm.numero_cuota ASC`;
+    
+    const [pagos] = await pool.execute(sql, params);
 
     // 2. Obtener estadísticas generales
     const [estadisticas] = await pool.execute(`
