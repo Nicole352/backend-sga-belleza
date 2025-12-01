@@ -60,6 +60,7 @@ app.use(
           "http://localhost:4173"
         ],
     credentials: true,
+    exposedHeaders: ['X-Total-Count', 'X-Total-Activos'],
   }),
 );
 

@@ -880,18 +880,106 @@ exports.updateDecision = async (req, res) => {
         );
 
         if (matriculaExistenteRows.length === 0) {
-          // Generar código de matrícula para el curso promocional
-          const codigoMatricula = `MAT-PROMO-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
-
-          // Crear matrícula del curso promocional con monto 0 (gratis)
-          const [resultMatricula] = await connection.execute(
-            `INSERT INTO matriculas 
-             (id_estudiante, id_curso, codigo_matricula, fecha_matricula, monto_matricula, estado)
-             VALUES (?, ?, ?, NOW(), 0, 'activa')`,
-            [solicitud.id_estudiante_existente, promo.id_curso_promocional, codigoMatricula]
+          // Obtener datos de pago de la solicitud original para heredarlos
+          const [solicitudOriginalRows] = await connection.execute(
+            `SELECT metodo_pago, numero_comprobante, banco_comprobante, fecha_transferencia,
+                    recibido_por, comprobante_pago_url, comprobante_pago_public_id,
+                    identificacion_solicitante, nombre_solicitante, apellido_solicitante,
+                    email_solicitante, telefono_solicitante, fecha_nacimiento_solicitante,
+                    direccion_solicitante, genero_solicitante, contacto_emergencia, id_tipo_curso
+             FROM solicitudes_matricula
+             WHERE id_solicitud = ?`,
+            [id]
           );
 
-          console.log(` Matrícula promocional creada: ${codigoMatricula} para curso ${promo.curso_nombre}`);
+          const solicitudOriginal = solicitudOriginalRows[0] || {};
+
+          // Generar códigos únicos
+          const codigoMatricula = `MAT-PROMO-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+          const codigoSolicitudPromo = `SOL-PROMO-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+
+          // PASO 1: Crear solicitud_matricula para el curso promocional (heredando datos de pago)
+          const [resultSolicitudPromo] = await connection.execute(
+            `INSERT INTO solicitudes_matricula (
+              codigo_solicitud, identificacion_solicitante, nombre_solicitante, apellido_solicitante,
+              telefono_solicitante, email_solicitante, id_tipo_curso, id_curso,
+              fecha_nacimiento_solicitante, direccion_solicitante, genero_solicitante,
+              horario_preferido, monto_matricula, metodo_pago, numero_comprobante,
+              banco_comprobante, fecha_transferencia, recibido_por, comprobante_pago_url,
+              comprobante_pago_public_id, id_estudiante_existente, contacto_emergencia,
+              id_promocion_seleccionada, estado, observaciones, verificado_por, fecha_verificacion
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+            [
+              codigoSolicitudPromo,
+              solicitudOriginal.identificacion_solicitante,
+              solicitudOriginal.nombre_solicitante,
+              solicitudOriginal.apellido_solicitante,
+              solicitudOriginal.telefono_solicitante,
+              solicitudOriginal.email_solicitante,
+              solicitudOriginal.id_tipo_curso,
+              promo.id_curso_promocional,
+              solicitudOriginal.fecha_nacimiento_solicitante,
+              solicitudOriginal.direccion_solicitante,
+              solicitudOriginal.genero_solicitante,
+              solicitud.horario_preferido,
+              0, // monto_matricula = 0 (gratis por promoción)
+              solicitudOriginal.metodo_pago || 'transferencia',
+              solicitudOriginal.numero_comprobante,
+              solicitudOriginal.banco_comprobante,
+              solicitudOriginal.fecha_transferencia,
+              solicitudOriginal.recibido_por,
+              solicitudOriginal.comprobante_pago_url,
+              solicitudOriginal.comprobante_pago_public_id,
+              solicitud.id_estudiante_existente,
+              solicitudOriginal.contacto_emergencia,
+              solicitud.id_promocion_seleccionada,
+              'aprobado',
+              `Matrícula promocional generada automáticamente por promoción: ${promo.nombre_promocion}`,
+              verificado_por || null
+            ]
+          );
+
+          console.log(`  → Solicitud promocional creada: ${codigoSolicitudPromo} (heredando datos de pago)`);
+
+          // PASO 2: Crear matrícula del curso promocional vinculada a la solicitud
+          const [resultMatricula] = await connection.execute(
+            `INSERT INTO matriculas 
+             (id_solicitud, id_estudiante, id_curso, codigo_matricula, fecha_matricula, monto_matricula, estado)
+             VALUES (?, ?, ?, ?, NOW(), 0, 'activa')`,
+            [resultSolicitudPromo.insertId, solicitud.id_estudiante_existente, promo.id_curso_promocional, codigoMatricula]
+          );
+
+          console.log(`  → Matrícula promocional creada: ${codigoMatricula} para curso ${promo.curso_nombre}`);
+
+          // PASO 3: Actualizar la cuota #1 en pagos_mensuales con los datos del pago original
+          // (Las cuotas se generan automáticamente por trigger/función al crear la matrícula, 
+          //  así que actualizamos el registro existente)
+          await connection.execute(
+            `UPDATE pagos_mensuales 
+             SET banco_comprobante = ?,
+                 numero_comprobante = ?,
+                 fecha_transferencia = ?,
+                 metodo_pago = 'PROMOCIÓN',
+                 recibido_por = ?,
+                 comprobante_pago_url = ?,
+                 comprobante_pago_public_id = ?,
+                 observaciones = CONCAT(COALESCE(observaciones, ''), ' - Pago heredado de curso principal (Promoción)'),
+                 verificado_por = ?,
+                 fecha_verificacion = NOW(),
+                 estado = 'verificado'
+             WHERE id_matricula = ? AND numero_cuota = 1`,
+            [
+              solicitudOriginal.banco_comprobante,
+              solicitudOriginal.numero_comprobante,
+              solicitudOriginal.fecha_transferencia,
+              solicitudOriginal.recibido_por,
+              solicitudOriginal.comprobante_pago_url,
+              solicitudOriginal.comprobante_pago_public_id,
+              verificado_por || null, // ID del administrador que aprueba
+              resultMatricula.insertId
+            ]
+          );
+          console.log(`  → Datos de pago actualizados en pagos_mensuales para la cuota #1 (Marcado como PROMOCIÓN y Verificado)`);
 
           // Crear registro en estudiante_promocion
           await connection.execute(

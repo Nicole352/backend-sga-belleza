@@ -3,7 +3,7 @@ const { pool } = require('../config/database');
 class EstudiantesModel {
   // Obtener todos los estudiantes con paginación y filtros
   static async getAll(filters = {}) {
-    const { page = 1, limit = 10, search = '' } = filters;
+    const { page = 1, limit = 10, search = '', estado = '', estadoCurso = '', tipoCurso = '' } = filters;
     const offset = (page - 1) * limit;
 
     let sql = `
@@ -43,10 +43,28 @@ class EstudiantesModel {
         END as tipo_documento
       FROM usuarios u
       INNER JOIN roles r ON u.id_rol = r.id_rol
+      LEFT JOIN matriculas mat ON mat.id_estudiante = u.id_usuario
+      LEFT JOIN cursos cur ON cur.id_curso = mat.id_curso
       WHERE r.nombre_rol = 'estudiante'
     `;
 
     const params = [];
+
+    if (estado) {
+      sql += ` AND u.estado = ?`;
+      params.push(estado);
+    }
+
+    if (estadoCurso) {
+      sql += ` AND cur.estado = ?`;
+      params.push(estadoCurso);
+    }
+
+    if (tipoCurso) {
+      sql += ` AND cur.id_tipo_curso = ?`;
+      params.push(tipoCurso);
+    }
+
 
     if (search) {
       sql += ` AND (
@@ -66,13 +84,31 @@ class EstudiantesModel {
 
     // Consulta de total
     let sqlCount = `
-      SELECT COUNT(*) as total 
+      SELECT COUNT(DISTINCT u.id_usuario) as total
       FROM usuarios u
       INNER JOIN roles r ON u.id_rol = r.id_rol
+      LEFT JOIN matriculas mat ON mat.id_estudiante = u.id_usuario
+      LEFT JOIN cursos cur ON cur.id_curso = mat.id_curso
       WHERE r.nombre_rol = 'estudiante'
     `;
 
     const paramsCount = [];
+
+    if (estado) {
+      sqlCount += ` AND u.estado = ?`;
+      paramsCount.push(estado);
+    }
+
+    if (estadoCurso) {
+      sqlCount += ` AND cur.estado = ?`;
+      paramsCount.push(estadoCurso);
+    }
+
+    if (tipoCurso) {
+      sqlCount += ` AND cur.id_tipo_curso = ?`;
+      paramsCount.push(tipoCurso);
+    }
+
     if (search) {
       sqlCount += ` AND (
         u.nombre LIKE ? OR 

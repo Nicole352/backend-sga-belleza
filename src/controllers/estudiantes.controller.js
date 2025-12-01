@@ -575,20 +575,45 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
 
                 // Las primeras cuotas (meses gratis) tienen monto 0
                 const montoCuota = i <= mesesGratis ? 0 : precioMensual;
-                const estadoCuota = i <= mesesGratis ? 'verificado' : 'pendiente';
 
-                await connection.execute(`
-                  INSERT INTO pagos_mensuales (
-                    id_matricula, numero_cuota, monto, fecha_vencimiento, estado, metodo_pago, observaciones
-                  ) VALUES (?, ?, ?, ?, ?, 'transferencia', ?)
-                `, [
-                  id_matricula_promo,
-                  i,
-                  montoCuota,
-                  fechaVencimiento.toISOString().split('T')[0],
-                  estadoCuota,
-                  i <= mesesGratis ? ` Mes ${i} de ${mesesGratis} - PROMOCIONAL GRATIS` : `Cuota mensual ${i}`
-                ]);
+                if (i <= mesesGratis) {
+                  // Cuota GRATIS (Promocional) - Heredar datos de pago y marcar como PROMOCIÓN
+                  await connection.execute(`
+                    INSERT INTO pagos_mensuales (
+                      id_matricula, numero_cuota, monto, fecha_vencimiento, 
+                      estado, metodo_pago, observaciones,
+                      banco_comprobante, numero_comprobante, fecha_transferencia, recibido_por,
+                      comprobante_pago_url, comprobante_pago_public_id,
+                      verificado_por, fecha_verificacion, fecha_pago
+                    ) VALUES (?, ?, ?, ?, 'verificado', 'PROMOCIÓN', ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                  `, [
+                    id_matricula_promo,
+                    i,
+                    montoCuota,
+                    fechaVencimiento.toISOString().split('T')[0],
+                    `Mes ${i} de ${mesesGratis} - PROMOCIONAL GRATIS`,
+                    solicitud.banco_comprobante,
+                    `PROMO-${id_matricula_promo}-${i}`,
+                    solicitud.fecha_transferencia,
+                    solicitud.recibido_por,
+                    solicitud.comprobante_pago_url,
+                    solicitud.comprobante_pago_public_id,
+                    aprobado_por
+                  ]);
+                } else {
+                  // Cuotas normales pendientes
+                  await connection.execute(`
+                    INSERT INTO pagos_mensuales (
+                      id_matricula, numero_cuota, monto, fecha_vencimiento, estado, metodo_pago, observaciones
+                    ) VALUES (?, ?, ?, ?, 'pendiente', 'transferencia', ?)
+                  `, [
+                    id_matricula_promo,
+                    i,
+                    montoCuota,
+                    fechaVencimiento.toISOString().split('T')[0],
+                    `Cuota mensual ${i}`
+                  ]);
+                }
 
                 console.log(`${i <= mesesGratis ? '🎁' : '💰'} Cuota #${i}: ${montoCuota === 0 ? 'GRATIS (Promocional)' : `$${montoCuota.toFixed(2)}`}`);
               }
@@ -618,106 +643,107 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
               UPDATE promociones 
               SET cupos_utilizados = cupos_utilizados + 1 
               WHERE id_promocion = ?
-            `, [solicitud.id_promocion_seleccionada]);
-            console.log(`Cupo de promoción utilizado (ID: ${solicitud.id_promocion_seleccionada})`);
+                `, [solicitud.id_promocion_seleccionada]);
+            console.log(`Cupo de promoción utilizado(ID: ${solicitud.id_promocion_seleccionada})`);
 
           } else {
             console.log(`Ya existe matrícula del curso promocional para este estudiante`);
           }
         } else {
-          console.log(`No se encontró la promoción ID ${solicitud.id_promocion_seleccionada}`);
+          console.log(`No se encontró la promoción ID ${solicitud.id_promocion_seleccionada} `);
         }
       }
-    }
 
-    // 9. Actualizar estado de la solicitud
-    await connection.execute(`
+      // 9. Actualizar estado de la solicitud
+      await connection.execute(`
       UPDATE solicitudes_matricula 
-      SET estado = 'aprobado', 
-          verificado_por = ?, 
-          fecha_verificacion = NOW()
+      SET estado = 'aprobado',
+                verificado_por = ?,
+                fecha_verificacion = NOW()
       WHERE id_solicitud = ?
-    `, [aprobado_por, id_solicitud]);
+                `, [aprobado_por, id_solicitud]);
 
-    await connection.commit();
+      await connection.commit();
 
-    // ========================================
-    // EMITIR EVENTO DE WEBSOCKET - NUEVA MATRÍCULA APROBADA
-    // ========================================
-    try {
-      const io = req.app.get('io');
-      if (io) {
-        // Emitir a todos los administradores
-        io.to('rol_administrativo').emit('matricula_aprobada', {
-          id_solicitud,
-          id_estudiante,
-          id_curso,
-          nombre_estudiante: `${solicitud.nombre_solicitante} ${solicitud.apellido_solicitante}`,
-          tipo_estudiante: esEstudianteExistente ? 'existente' : 'nuevo',
-          timestamp: new Date().toISOString()
-        });
+      // ========================================
+      // EMITIR EVENTO DE WEBSOCKET - NUEVA MATRÍCULA APROBADA
+      // ========================================
+      try {
+        const io = req.app.get('io');
+        if (io) {
+          // Emitir a todos los administradores
+          io.to('rol_administrativo').emit('matricula_aprobada', {
+            id_solicitud,
+            id_estudiante,
+            id_curso,
+            nombre_estudiante: `${solicitud.nombre_solicitante} ${solicitud.apellido_solicitante} `,
+            tipo_estudiante: esEstudianteExistente ? 'existente' : 'nuevo',
+            timestamp: new Date().toISOString()
+          });
 
-        console.log(' Evento WebSocket emitido: matricula_aprobada');
+          console.log(' Evento WebSocket emitido: matricula_aprobada');
+        }
+      } catch (socketError) {
+        console.error('Error emitiendo evento WebSocket:', socketError);
+        // No afecta el flujo principal
       }
-    } catch (socketError) {
-      console.error('Error emitiendo evento WebSocket:', socketError);
-      // No afecta el flujo principal
-    }
 
-    // Registrar auditoría - Creación de estudiante (solo si es nuevo)
-    if (!esEstudianteExistente) {
-      await registrarAuditoria(
-        'usuarios',
-        'INSERT',
-        id_estudiante,
-        aprobado_por,
-        'usuarios',
-        {
-          cedula: solicitud.identificacion_solicitante,
-          nombre: solicitud.nombre_solicitante,
-          apellido: solicitud.apellido_solicitante,
-          username: username,
-          rol: 'estudiante',
-          desde_solicitud: id_solicitud
-        },
-        req
-      );
-    }
-
-    // Registrar auditoría - Aprobación de solicitud
-    await registrarAuditoria(
-      'solicitudes_matricula',
-      'UPDATE',
-      id_solicitud,
-      aprobado_por,
-      { estado: 'pendiente' },
-      { estado: 'aprobado', verificado_por: aprobado_por },
-      req
-    );
-
-    // 10. ENVIAR EMAIL DE BIENVENIDA CON CREDENCIALES Y PDF DEL PRIMER PAGO (solo para estudiantes nuevos, asíncrono)
-    if (!esEstudianteExistente && passwordTemporal) {
-      setImmediate(async () => {
-        try {
-          const datosEstudiante = {
-            nombres: solicitud.nombre_solicitante,
-            apellidos: solicitud.apellido_solicitante,
+      // Registrar auditoría - Creación de estudiante (solo si es nuevo)
+      if (!esEstudianteExistente) {
+        await registrarAuditoria({
+          tabla_afectada: 'usuarios',
+          operacion: 'INSERT',
+          id_registro: id_estudiante,
+          usuario_id: aprobado_por,
+          datos_anteriores: null,
+          datos_nuevos: {
             cedula: solicitud.identificacion_solicitante,
-            email: solicitud.email_solicitante
-          };
-
-          const credenciales = {
+            nombre: solicitud.nombre_solicitante,
+            apellido: solicitud.apellido_solicitante,
             username: username,
-            password: passwordTemporal
-          };
+            rol: 'estudiante',
+            desde_solicitud: id_solicitud
+          },
+          ip_address: req.ip,
+          user_agent: req.get('User-Agent')
+        });
+      }
 
-          // Generar PDF del comprobante del primer pago
-          let pdfComprobante = null;
+      // Registrar auditoría - Aprobación de solicitud
+      await registrarAuditoria({
+        tabla_afectada: 'solicitudes_matricula',
+        operacion: 'UPDATE',
+        id_registro: id_solicitud,
+        usuario_id: aprobado_por,
+        datos_anteriores: { estado: 'pendiente' },
+        datos_nuevos: { estado: 'aprobado', verificado_por: aprobado_por },
+        ip_address: req.ip,
+        user_agent: req.get('User-Agent')
+      });
+
+      // 10. ENVIAR EMAIL DE BIENVENIDA CON CREDENCIALES Y PDF DEL PRIMER PAGO (solo para estudiantes nuevos, asíncrono)
+      if (!esEstudianteExistente && passwordTemporal) {
+        setImmediate(async () => {
           try {
-            // Obtener datos del primer pago (cuota #1 que se creó automáticamente como VERIFICADA)
-            const [primerPago] = await pool.execute(`
-              SELECT 
-                pm.id_pago as id_pago_mensual,
+            const datosEstudiante = {
+              nombres: solicitud.nombre_solicitante,
+              apellidos: solicitud.apellido_solicitante,
+              cedula: solicitud.identificacion_solicitante,
+              email: solicitud.email_solicitante
+            };
+
+            const credenciales = {
+              username: username,
+              password: passwordTemporal
+            };
+
+            // Generar PDF del comprobante del primer pago
+            let pdfComprobante = null;
+            try {
+              // Obtener datos del primer pago (cuota #1 que se creó automáticamente como VERIFICADA)
+              const [primerPago] = await pool.execute(`
+              SELECT
+              pm.id_pago as id_pago_mensual,
                 pm.monto,
                 pm.fecha_pago,
                 pm.metodo_pago,
@@ -730,77 +756,78 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
               FROM pagos_mensuales pm
               INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
               INNER JOIN cursos c ON m.id_curso = c.id_curso
-              WHERE m.id_estudiante = ? 
+              WHERE m.id_estudiante = ?
                 AND pm.numero_cuota = 1
                 AND pm.estado = 'verificado'
               ORDER BY pm.fecha_pago DESC
               LIMIT 1
             `, [id_estudiante]);
 
-            if (primerPago.length > 0) {
-              const datosPago = primerPago[0];
-              const datosCurso = {
-                nombre_curso: datosPago.nombre_curso
-              };
+              if (primerPago.length > 0) {
+                const datosPago = primerPago[0];
+                const datosCurso = {
+                  nombre_curso: datosPago.nombre_curso
+                };
 
-              // Generar PDF del comprobante
-              pdfComprobante = await generarComprobantePagoMensual(datosEstudiante, datosPago, datosCurso);
-              console.log('PDF del comprobante del primer pago generado');
-              console.log(' Datos del PDF:', {
-                estudiante: `${datosEstudiante.nombres} ${datosEstudiante.apellidos}`,
-                monto: datosPago.monto,
-                cuota: datosPago.numero_cuota,
-                comprobante: datosPago.numero_comprobante
-              });
-            } else {
-              console.log(' No se encontró el primer pago para generar PDF');
+                // Generar PDF del comprobante
+                pdfComprobante = await generarComprobantePagoMensual(datosEstudiante, datosPago, datosCurso);
+                console.log('PDF del comprobante del primer pago generado');
+                console.log(' Datos del PDF:', {
+                  estudiante: `${datosEstudiante.nombres} ${datosEstudiante.apellidos} `,
+                  monto: datosPago.monto,
+                  cuota: datosPago.numero_cuota,
+                  comprobante: datosPago.numero_comprobante
+                });
+              } else {
+                console.log(' No se encontró el primer pago para generar PDF');
+              }
+            } catch (pdfError) {
+              console.error('Error generando PDF del comprobante (continuando sin PDF):', pdfError);
             }
-          } catch (pdfError) {
-            console.error('Error generando PDF del comprobante (continuando sin PDF):', pdfError);
+
+            // Enviar email de bienvenida con credenciales y PDF del primer pago
+            await enviarEmailBienvenidaEstudiante(datosEstudiante, credenciales, pdfComprobante);
+            console.log(' Email de bienvenida enviado a:', solicitud.email_solicitante);
+            if (pdfComprobante) {
+              console.log(' PDF del primer pago incluido en el email');
+            }
+
+          } catch (emailError) {
+            console.error('Error enviando email de bienvenida (no afecta la creación):', emailError);
           }
+        });
+      }
 
-          // Enviar email de bienvenida con credenciales y PDF del primer pago
-          await enviarEmailBienvenidaEstudiante(datosEstudiante, credenciales, pdfComprobante);
-          console.log(' Email de bienvenida enviado a:', solicitud.email_solicitante);
-          if (pdfComprobante) {
-            console.log(' PDF del primer pago incluido en el email');
+      // Respuesta diferente según si es nuevo o existente
+      if (esEstudianteExistente) {
+        res.json({
+          success: true,
+          message: 'Nueva matrícula creada para estudiante existente',
+          tipo: 'estudiante_existente',
+          estudiante: {
+            id_usuario: id_estudiante,
+            identificacion: solicitud.identificacion_solicitante,
+            username: username
           }
+        });
+      } else {
+        res.json({
+          success: true,
+          message: 'Estudiante creado exitosamente',
+          tipo: 'estudiante_nuevo',
+          estudiante: {
+            id_usuario: id_estudiante,
+            identificacion: solicitud.identificacion_solicitante,
+            nombre: solicitud.nombre_solicitante,
+            apellido: solicitud.apellido_solicitante,
+            email: solicitud.email_solicitante,
+            username: username,
+            password_temporal: passwordTemporal
+          }
+        });
+      }
 
-        } catch (emailError) {
-          console.error('Error enviando email de bienvenida (no afecta la creación):', emailError);
-        }
-      });
     }
-
-    // Respuesta diferente según si es nuevo o existente
-    if (esEstudianteExistente) {
-      res.json({
-        success: true,
-        message: 'Nueva matrícula creada para estudiante existente',
-        tipo: 'estudiante_existente',
-        estudiante: {
-          id_usuario: id_estudiante,
-          identificacion: solicitud.identificacion_solicitante,
-          username: username
-        }
-      });
-    } else {
-      res.json({
-        success: true,
-        message: 'Estudiante creado exitosamente',
-        tipo: 'estudiante_nuevo',
-        estudiante: {
-          id_usuario: id_estudiante,
-          identificacion: solicitud.identificacion_solicitante,
-          nombre: solicitud.nombre_solicitante,
-          apellido: solicitud.apellido_solicitante,
-          email: solicitud.email_solicitante,
-          username: username,
-          password_temporal: passwordTemporal
-        }
-      });
-    }
-
   } catch (error) {
     await connection.rollback();
     console.error('Error creando estudiante:', error);
@@ -816,10 +843,15 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
 exports.getEstudiantes = async (req, res) => {
   try {
     const filters = {
-      page: req.query.page || 1,
-      limit: req.query.limit || 10,
-      search: req.query.search || ''
+      page: parseInt(req.query.page) || 1,
+      limit: parseInt(req.query.limit) || 10,
+      search: req.query.search || '',
+      estado: req.query.estado || '',
+      estadoCurso: req.query.estadoCurso || '',
+      tipoCurso: req.query.tipoCurso || ''
     };
+
+    console.log('📊 Filtros estudiantes:', filters, '| Total esperado desde BD');
 
     const result = await EstudiantesModel.getAll(filters);
     const { estudiantes, total } = result;
@@ -828,26 +860,36 @@ exports.getEstudiantes = async (req, res) => {
     for (const estudiante of estudiantes) {
       try {
         const [cursos] = await pool.execute(`
-          SELECT 
-            c.id_curso,
-            c.nombre,
-            c.codigo_curso,
-            c.horario,
-            m.estado
+              SELECT
+              c.id_curso,
+                c.nombre,
+                c.codigo_curso,
+                c.horario,
+                m.estado
           FROM matriculas m
           INNER JOIN cursos c ON c.id_curso = m.id_curso
           WHERE m.id_estudiante = ?
-          ORDER BY m.fecha_matricula DESC
+                ORDER BY m.fecha_matricula DESC
         `, [estudiante.id_usuario]);
 
         estudiante.cursos = cursos;
       } catch (err) {
-        console.error(`Error obteniendo cursos del estudiante ${estudiante.id_usuario}:`, err);
+        console.error(`Error obteniendo cursos del estudiante ${estudiante.id_usuario}: `, err);
         estudiante.cursos = [];
       }
     }
 
+    // Contar estudiantes activos (total, no solo de la pagina)
+    const [[{ totalActivos }]] = await pool.execute(`
+      SELECT COUNT(*) as totalActivos
+      FROM usuarios u
+      INNER JOIN roles r ON u.id_rol = r.id_rol
+      WHERE r.nombre_rol = 'estudiante' AND u.estado = 'activo'
+    `);
+    
+    console.log('Total estudiantes en BD:', total, '| Activos:', totalActivos);
     res.setHeader('X-Total-Count', String(total));
+    res.setHeader('X-Total-Activos', String(totalActivos));
     res.json(estudiantes);
 
   } catch (error) {
@@ -988,24 +1030,24 @@ exports.getEstudianteById = async (req, res) => {
     }
 
     const [estudiantes] = await pool.execute(`
-      SELECT 
-        u.id_usuario,
-        u.cedula as identificacion,
-        u.nombre,
-        u.apellido,
-        u.username,
-        u.email,
-        u.telefono,
-        u.fecha_nacimiento,
-        u.genero,
-        u.direccion,
-        u.estado,
-        u.fecha_registro,
-        u.fecha_ultima_conexion
+              SELECT
+              u.id_usuario,
+                u.cedula as identificacion,
+                u.nombre,
+                u.apellido,
+                u.username,
+                u.email,
+                u.telefono,
+                u.fecha_nacimiento,
+                u.genero,
+                u.direccion,
+                u.estado,
+                u.fecha_registro,
+                u.fecha_ultima_conexion
       FROM usuarios u
       INNER JOIN roles r ON u.id_rol = r.id_rol
       WHERE r.nombre_rol = 'estudiante' AND u.id_usuario = ?
-    `, [id]);
+                `, [id]);
 
     if (estudiantes.length === 0) {
       return res.status(404).json({ error: 'Estudiante no encontrado' });
@@ -1046,7 +1088,7 @@ exports.updateEstudiante = async (req, res) => {
       FROM usuarios u
       INNER JOIN roles r ON u.id_rol = r.id_rol
       WHERE r.nombre_rol = 'estudiante' AND u.id_usuario = ?
-    `, [id]);
+                `, [id]);
 
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Estudiante no encontrado' });
@@ -1055,17 +1097,17 @@ exports.updateEstudiante = async (req, res) => {
     // Actualizar datos en la tabla usuarios
     await pool.execute(`
       UPDATE usuarios 
-      SET nombre = ?, apellido = ?, telefono = ?, 
-          fecha_nacimiento = ?, genero = ?, direccion = ?, estado = ?
-      WHERE id_usuario = ?
-    `, [nombre, apellido, telefono, fecha_nacimiento, genero, direccion, estado, id]);
+      SET nombre = ?, apellido = ?, telefono = ?,
+                fecha_nacimiento = ?, genero = ?, direccion = ?, estado = ?
+                  WHERE id_usuario = ?
+                    `, [nombre, apellido, telefono, fecha_nacimiento, genero, direccion, estado, id]);
 
     // Si se proporciona contacto_emergencia, actualizar en la tabla solicitudes_matricula
     if (contacto_emergencia !== undefined) {
       // Obtener la cédula del estudiante
       const [userData] = await pool.execute(`
         SELECT cedula FROM usuarios WHERE id_usuario = ?
-      `, [id]);
+                `, [id]);
 
       if (userData.length > 0) {
         const cedula = userData[0].cedula;
@@ -1074,10 +1116,10 @@ exports.updateEstudiante = async (req, res) => {
         await pool.execute(`
           UPDATE solicitudes_matricula 
           SET contacto_emergencia = ?
-          WHERE identificacion_solicitante = ? AND estado = 'aprobado'
+                WHERE identificacion_solicitante = ? AND estado = 'aprobado'
           ORDER BY fecha_solicitud DESC
           LIMIT 1
-        `, [contacto_emergencia, cedula]);
+                `, [contacto_emergencia, cedula]);
       }
     }
 
@@ -1095,15 +1137,15 @@ exports.updateEstudiante = async (req, res) => {
 exports.getEstudiantesRecientes = async (req, res) => {
   try {
     const [estudiantes] = await pool.execute(`
-      SELECT 
-        u.id_usuario,
-        u.username,
-        u.cedula,
-        u.nombre,
-        u.apellido,
-        u.password_temporal,
-        u.fecha_registro,
-        r.nombre_rol
+              SELECT
+              u.id_usuario,
+                u.username,
+                u.cedula,
+                u.nombre,
+                u.apellido,
+                u.password_temporal,
+                u.fecha_registro,
+                r.nombre_rol
       FROM usuarios u
       JOIN roles r ON u.id_rol = r.id_rol
       WHERE r.nombre_rol = 'estudiante'
@@ -1117,7 +1159,7 @@ exports.getEstudiantesRecientes = async (req, res) => {
         id_usuario: est.id_usuario,
         username: est.username,
         cedula: est.cedula,
-        nombre: `${est.nombre} ${est.apellido}`,
+        nombre: `${est.nombre} ${est.apellido} `,
         password_temporal: est.password_temporal,
         fecha_registro: est.fecha_registro,
         login_info: {
@@ -1151,7 +1193,7 @@ exports.getMisPagosMenuales = async (req, res) => {
       FROM usuarios u 
       JOIN roles r ON u.id_rol = r.id_rol 
       WHERE u.id_usuario = ?
-    `, [id_estudiante]);
+                `, [id_estudiante]);
 
     if (userCheck.length === 0 || userCheck[0].nombre_rol !== 'estudiante') {
       return res.status(403).json({ error: 'Acceso denegado. Solo estudiantes pueden acceder a esta información.' });
@@ -1159,30 +1201,30 @@ exports.getMisPagosMenuales = async (req, res) => {
 
     // Obtener pagos mensuales del estudiante
     const [pagos] = await pool.execute(`
-      SELECT 
-        pm.id_pago,
-        pm.id_matricula,
-        pm.numero_cuota,
-        pm.monto,
-        pm.fecha_vencimiento,
-        pm.fecha_pago,
-        pm.numero_comprobante,
-        pm.banco_comprobante,
-        pm.fecha_transferencia,
-        pm.metodo_pago,
-        pm.estado,
-        pm.observaciones,
-        c.nombre as curso_nombre,
-        c.codigo_curso,
-        tc.nombre as tipo_curso_nombre,
-        m.codigo_matricula
+      SELECT
+              pm.id_pago,
+                pm.id_matricula,
+                pm.numero_cuota,
+                pm.monto,
+                pm.fecha_vencimiento,
+                pm.fecha_pago,
+                pm.numero_comprobante,
+                pm.banco_comprobante,
+                pm.fecha_transferencia,
+                pm.metodo_pago,
+                pm.estado,
+                pm.observaciones,
+                c.nombre as curso_nombre,
+                c.codigo_curso,
+                tc.nombre as tipo_curso_nombre,
+                m.codigo_matricula
       FROM pagos_mensuales pm
       INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
       INNER JOIN cursos c ON m.id_curso = c.id_curso
       INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
       WHERE m.id_estudiante = ?
-      ORDER BY pm.fecha_vencimiento ASC, pm.numero_cuota ASC
-    `, [id_estudiante]);
+                ORDER BY pm.fecha_vencimiento ASC, pm.numero_cuota ASC
+                  `, [id_estudiante]);
 
     res.json(pagos);
 
@@ -1206,24 +1248,24 @@ exports.verificarEstudiante = async (req, res) => {
 
     // Buscar estudiante por cédula en tabla usuarios con rol estudiante
     const [usuarios] = await pool.execute(`
-      SELECT 
-        u.id_usuario,
-        u.cedula as identificacion,
-        u.nombre,
-        u.apellido,
-        u.email,
-        u.telefono,
-        u.fecha_nacimiento,
-        u.genero,
-        u.direccion,
-        u.estado,
-        r.nombre_rol
+              SELECT
+              u.id_usuario,
+                u.cedula as identificacion,
+                u.nombre,
+                u.apellido,
+                u.email,
+                u.telefono,
+                u.fecha_nacimiento,
+                u.genero,
+                u.direccion,
+                u.estado,
+                r.nombre_rol
       FROM usuarios u
       INNER JOIN roles r ON u.id_rol = r.id_rol
       WHERE r.nombre_rol = 'estudiante' 
         AND u.cedula = ?
-        AND u.estado = 'activo'
-    `, [identificacion.trim().toUpperCase()]);
+                AND u.estado = 'activo'
+                  `, [identificacion.trim().toUpperCase()]);
 
     if (usuarios.length === 0) {
       return res.json({
@@ -1236,17 +1278,17 @@ exports.verificarEstudiante = async (req, res) => {
 
     // Obtener cursos matriculados
     const [cursos] = await pool.execute(`
-      SELECT 
-        c.nombre as curso_nombre,
-        tc.nombre as tipo_curso_nombre,
-        m.estado as estado_matricula,
-        m.fecha_matricula
+              SELECT
+              c.nombre as curso_nombre,
+                tc.nombre as tipo_curso_nombre,
+                m.estado as estado_matricula,
+                m.fecha_matricula
       FROM matriculas m
       INNER JOIN cursos c ON m.id_curso = c.id_curso
       INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
       WHERE m.id_estudiante = ?
-      ORDER BY m.fecha_matricula DESC
-    `, [estudiante.id_usuario]);
+                ORDER BY m.fecha_matricula DESC
+                  `, [estudiante.id_usuario]);
 
     return res.json({
       existe: true,
@@ -1277,9 +1319,12 @@ exports.verificarEstudiante = async (req, res) => {
 // Generar reporte Excel de estudiantes
 exports.generarReporteExcel = async (req, res) => {
   try {
-    // 1. Obtener todos los estudiantes con información completa (SIN DUPLICADOS)
-    const [estudiantes] = await pool.execute(`
-      SELECT 
+    // Obtener filtros de la query
+    const { search = '', estado = '', estadoCurso = '', tipoCurso = '' } = req.query;
+    
+    // Construir consulta dinamica con filtros
+    let baseSql = `
+      SELECT DISTINCT
         u.id_usuario,
         u.cedula as identificacion,
         u.nombre,
@@ -1293,12 +1338,12 @@ exports.generarReporteExcel = async (req, res) => {
         u.estado,
         u.fecha_registro,
         (
-          SELECT contacto_emergencia 
-          FROM solicitudes_matricula s 
-          WHERE s.identificacion_solicitante = u.cedula 
-            AND s.estado = 'aprobado' 
-            AND s.contacto_emergencia IS NOT NULL 
-            AND s.contacto_emergencia != ''
+          SELECT contacto_emergencia
+          FROM solicitudes_matricula s
+          WHERE s.identificacion_solicitante = u.cedula
+          AND s.estado = 'aprobado'
+          AND s.contacto_emergencia IS NOT NULL
+          AND s.contacto_emergencia != ''
           ORDER BY s.fecha_solicitud DESC LIMIT 1
         ) as contacto_emergencia,
         CASE
@@ -1307,23 +1352,52 @@ exports.generarReporteExcel = async (req, res) => {
         END as tipo_documento
       FROM usuarios u
       INNER JOIN roles r ON u.id_rol = r.id_rol
+      LEFT JOIN matriculas mat ON mat.id_estudiante = u.id_usuario
+      LEFT JOIN cursos cur ON cur.id_curso = mat.id_curso
       WHERE r.nombre_rol = 'estudiante'
-      ORDER BY u.fecha_registro DESC
-    `);
+    `;
+    
+    const params = [];
+    
+    if (estado) {
+      baseSql += ` AND u.estado = ?`;
+      params.push(estado);
+    }
+    
+    if (estadoCurso) {
+      baseSql += ` AND cur.estado = ?`;
+      params.push(estadoCurso);
+    }
+    
+    if (tipoCurso) {
+      baseSql += ` AND cur.id_tipo_curso = ?`;
+      params.push(parseInt(tipoCurso));
+    }
+    
+    if (search) {
+      baseSql += ` AND (u.nombre LIKE ? OR u.apellido LIKE ? OR u.cedula LIKE ? OR u.email LIKE ?)`;
+      const searchParam = `%${search}%`;
+      params.push(searchParam, searchParam, searchParam, searchParam);
+    }
+    
+    baseSql += ` ORDER BY u.fecha_registro DESC`;
+    
+    // 1. Obtener estudiantes filtrados
+    const [estudiantes] = await pool.execute(baseSql, params);
 
     // 2. Obtener cursos por estudiante
     const [cursosEstudiantes] = await pool.execute(`
-      SELECT 
-        ec.id_estudiante,
-        c.nombre as curso_nombre,
-        c.codigo_curso,
-        c.horario,
-        tc.nombre as tipo_curso
+              SELECT
+              ec.id_estudiante,
+                c.nombre as curso_nombre,
+                c.codigo_curso,
+                c.horario,
+                tc.nombre as tipo_curso
       FROM estudiante_curso ec
       INNER JOIN cursos c ON c.id_curso = ec.id_curso
       INNER JOIN tipos_cursos tc ON tc.id_tipo_curso = c.id_tipo_curso
       ORDER BY ec.id_estudiante, c.nombre
-    `);
+                `);
 
     // Mapear cursos por estudiante
     const cursosMap = {};
@@ -1336,27 +1410,27 @@ exports.generarReporteExcel = async (req, res) => {
 
     // 3. Obtener estadísticas generales
     const [estadisticas] = await pool.execute(`
-      SELECT 
-        COUNT(*) as total_estudiantes,
-        COUNT(CASE WHEN u.estado = 'activo' THEN 1 END) as activos,
-        COUNT(CASE WHEN u.estado = 'inactivo' THEN 1 END) as inactivos,
-        COUNT(CASE WHEN u.genero = 'masculino' THEN 1 END) as masculinos,
-        COUNT(CASE WHEN u.genero = 'femenino' THEN 1 END) as femeninos,
-        COUNT(CASE WHEN LENGTH(u.cedula) > 10 THEN 1 END) as extranjeros,
-        COUNT(CASE WHEN LENGTH(u.cedula) <= 10 THEN 1 END) as ecuatorianos
+              SELECT
+              COUNT(*) as total_estudiantes,
+                COUNT(CASE WHEN u.estado = 'activo' THEN 1 END) as activos,
+                COUNT(CASE WHEN u.estado = 'inactivo' THEN 1 END) as inactivos,
+                COUNT(CASE WHEN u.genero = 'masculino' THEN 1 END) as masculinos,
+                COUNT(CASE WHEN u.genero = 'femenino' THEN 1 END) as femeninos,
+                COUNT(CASE WHEN LENGTH(u.cedula) > 10 THEN 1 END) as extranjeros,
+                COUNT(CASE WHEN LENGTH(u.cedula) <= 10 THEN 1 END) as ecuatorianos
       FROM usuarios u
       INNER JOIN roles r ON u.id_rol = r.id_rol
       WHERE r.nombre_rol = 'estudiante'
-    `);
+                `);
 
     // 4. Obtener distribución por curso
     const [distribucionCursos] = await pool.execute(`
-      SELECT 
-        c.codigo_curso,
-        c.nombre as curso_nombre,
-        tc.nombre as tipo_curso,
-        c.horario,
-        COUNT(ec.id_estudiante) as total_estudiantes
+              SELECT
+              c.codigo_curso,
+                c.nombre as curso_nombre,
+                tc.nombre as tipo_curso,
+                c.horario,
+                COUNT(ec.id_estudiante) as total_estudiantes
       FROM cursos c
       LEFT JOIN tipos_cursos tc ON tc.id_tipo_curso = c.id_tipo_curso
       LEFT JOIN estudiante_curso ec ON ec.id_curso = c.id_curso
@@ -1492,8 +1566,8 @@ exports.generarReporteExcel = async (req, res) => {
         const columnasMerge = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'M', 'N', 'O'];
         columnasMerge.forEach(col => {
           try {
-            sheet1.mergeCells(`${col}${filaInicioEstudiante}:${col}${currentRow}`);
-            const cell = sheet1.getCell(`${col}${filaInicioEstudiante}`);
+            sheet1.mergeCells(`${col}${filaInicioEstudiante}:${col}${currentRow} `);
+            const cell = sheet1.getCell(`${col}${filaInicioEstudiante} `);
             cell.alignment = {
               horizontal: cell.alignment?.horizontal || 'left',
               vertical: 'middle'
@@ -1554,7 +1628,8 @@ exports.generarReporteExcel = async (req, res) => {
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
-    })}`;
+    })
+      } `;
     sheet2.getCell('A2').font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
     sheet2.getCell('A2').alignment = { horizontal: 'center', vertical: 'middle' };
     sheet2.getRow(2).height = 20;
@@ -1600,62 +1675,62 @@ exports.generarReporteExcel = async (req, res) => {
       const cantidad = Number(dato.cantidad);
       const porcentaje = total > 0 ? (cantidad / total) : 0;
 
-      sheet2.getCell(`A${row}`).value = dato.categoria;
-      sheet2.getCell(`B${row}`).value = cantidad;
-      sheet2.getCell(`C${row}`).value = porcentaje;
+      sheet2.getCell(`A${row} `).value = dato.categoria;
+      sheet2.getCell(`B${row} `).value = cantidad;
+      sheet2.getCell(`C${row} `).value = porcentaje;
 
-      sheet2.getCell(`B${row}`).alignment = { horizontal: 'center' };
-      sheet2.getCell(`B${row}`).numFmt = '0'; // Formato número entero
+      sheet2.getCell(`B${row} `).alignment = { horizontal: 'center' };
+      sheet2.getCell(`B${row} `).numFmt = '0'; // Formato número entero
 
-      sheet2.getCell(`C${row}`).alignment = { horizontal: 'center' };
-      sheet2.getCell(`C${row}`).numFmt = '0.0%'; // Formato porcentaje
-      sheet2.getCell(`C${row}`).font = { bold: true, color: { argb: dato.color } };
+      sheet2.getCell(`C${row} `).alignment = { horizontal: 'center' };
+      sheet2.getCell(`C${row} `).numFmt = '0.0%'; // Formato porcentaje
+      sheet2.getCell(`C${row} `).font = { bold: true, color: { argb: dato.color } };
 
       row++;
     });
 
     // Sección 2: Distribución por Curso
     const startRow = row + 2;
-    sheet2.mergeCells(`A${startRow}:E${startRow}`);
-    sheet2.getCell(`A${startRow}`).value = 'DISTRIBUCIÓN POR CURSO';
-    sheet2.getCell(`A${startRow}`).font = { bold: true, size: 12, color: { argb: 'FFDC2626' } };
-    sheet2.getCell(`A${startRow}`).fill = {
+    sheet2.mergeCells(`A${startRow}:E${startRow} `);
+    sheet2.getCell(`A${startRow} `).value = 'DISTRIBUCIÓN POR CURSO';
+    sheet2.getCell(`A${startRow} `).font = { bold: true, size: 12, color: { argb: 'FFDC2626' } };
+    sheet2.getCell(`A${startRow} `).fill = {
       type: 'pattern',
       pattern: 'solid',
       fgColor: { argb: 'FFFEF2F2' }
     };
-    sheet2.getCell(`A${startRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
+    sheet2.getCell(`A${startRow} `).alignment = { horizontal: 'center', vertical: 'middle' };
     sheet2.getRow(startRow).height = 25;
 
     // Encabezados tabla cursos
     const headerRow = startRow + 2;
-    sheet2.getCell(`A${headerRow}`).value = 'Código';
-    sheet2.getCell(`B${headerRow}`).value = 'Curso';
-    sheet2.getCell(`C${headerRow}`).value = 'Horario';
-    sheet2.getCell(`D${headerRow}`).value = 'Estudiantes';
+    sheet2.getCell(`A${headerRow} `).value = 'Código';
+    sheet2.getCell(`B${headerRow} `).value = 'Curso';
+    sheet2.getCell(`C${headerRow} `).value = 'Horario';
+    sheet2.getCell(`D${headerRow} `).value = 'Estudiantes';
 
     ['A', 'B', 'C', 'D'].forEach(col => {
-      sheet2.getCell(`${col}${headerRow}`).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-      sheet2.getCell(`${col}${headerRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF10B981' } };
-      sheet2.getCell(`${col}${headerRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
+      sheet2.getCell(`${col}${headerRow} `).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      sheet2.getCell(`${col}${headerRow} `).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF10B981' } };
+      sheet2.getCell(`${col}${headerRow} `).alignment = { horizontal: 'center', vertical: 'middle' };
     });
 
     // Datos por curso
     let cursoRow = headerRow + 1;
     distribucionCursos.forEach((curso, index) => {
-      sheet2.getCell(`A${cursoRow}`).value = curso.codigo_curso;
-      sheet2.getCell(`B${cursoRow}`).value = curso.curso_nombre;
-      sheet2.getCell(`C${cursoRow}`).value = curso.horario;
-      sheet2.getCell(`D${cursoRow}`).value = Number(curso.total_estudiantes);
+      sheet2.getCell(`A${cursoRow} `).value = curso.codigo_curso;
+      sheet2.getCell(`B${cursoRow} `).value = curso.curso_nombre;
+      sheet2.getCell(`C${cursoRow} `).value = curso.horario;
+      sheet2.getCell(`D${cursoRow} `).value = Number(curso.total_estudiantes);
 
-      sheet2.getCell(`D${cursoRow}`).alignment = { horizontal: 'center' };
-      sheet2.getCell(`D${cursoRow}`).numFmt = '0';
-      sheet2.getCell(`D${cursoRow}`).font = { bold: true, color: { argb: 'FF10B981' } };
+      sheet2.getCell(`D${cursoRow} `).alignment = { horizontal: 'center' };
+      sheet2.getCell(`D${cursoRow} `).numFmt = '0';
+      sheet2.getCell(`D${cursoRow} `).font = { bold: true, color: { argb: 'FF10B981' } };
 
       // Filas alternadas
       if (index % 2 === 0) {
         ['A', 'B', 'C', 'D'].forEach(col => {
-          sheet2.getCell(`${col}${cursoRow}`).fill = {
+          sheet2.getCell(`${col}${cursoRow} `).fill = {
             type: 'pattern',
             pattern: 'solid',
             fgColor: { argb: 'FFF9FAFB' }
@@ -1675,7 +1750,7 @@ exports.generarReporteExcel = async (req, res) => {
     // Aplicar bordes
     for (let i = 6; i < row; i++) {
       ['A', 'B', 'C'].forEach(col => {
-        sheet2.getCell(`${col}${i}`).border = {
+        sheet2.getCell(`${col}${i} `).border = {
           top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
           left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
           bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
@@ -1686,7 +1761,7 @@ exports.generarReporteExcel = async (req, res) => {
 
     for (let i = headerRow; i < cursoRow; i++) {
       ['A', 'B', 'C', 'D'].forEach(col => {
-        sheet2.getCell(`${col}${i}`).border = {
+        sheet2.getCell(`${col}${i} `).border = {
           top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
           left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
           bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
@@ -1700,7 +1775,7 @@ exports.generarReporteExcel = async (req, res) => {
     const fecha = new Date().toISOString().split('T')[0];
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=Reporte_Estudiantes_${fecha}.xlsx`);
+    res.setHeader('Content-Disposition', `attachment; filename = Reporte_Estudiantes_${fecha}.xlsx`);
     res.send(buffer);
 
   } catch (error) {
