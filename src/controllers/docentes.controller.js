@@ -5,10 +5,10 @@ const { registrarAuditoria } = require('../utils/auditoria');
 const { enviarEmailBienvenidaDocente } = require('../services/emailService');
 
 // =====================================================
-// FUNCIONES AUXILIARES PARA GENERACIÃ“N DE USERNAME
+// FUNCIONES AUXILIARES PARA GENERACIÓN DE USERNAME
 // =====================================================
 
-// FunciÃ³n para generar username Ãºnico (igual que estudiantes)
+// Función para generar username único (igual que estudiantes)
 async function generateUniqueUsername(nombres, apellidos) {
   try {
     // Extraer iniciales del nombre (todas las palabras)
@@ -32,7 +32,7 @@ async function generateUniqueUsername(nombres, apellidos) {
       return baseUsername;
     }
     
-    // Si existe, buscar el siguiente nÃºmero disponible (usernameX)
+    // Si existe, buscar el siguiente número disponible (usernameX)
     let counter = 2;
     while (counter <= 99) {
       const numberedUsername = baseUsername + counter;
@@ -73,7 +73,7 @@ exports.getDocentes = async (req, res) => {
       estado: req.query.estado || ''
     };
 
-    console.log('ParÃ¡metros recibidos:', filters);
+    console.log('Parámetros recibidos:', filters);
 
     const result = await DocentesModel.getAll(filters);
     const { docentes, total } = result;
@@ -101,7 +101,7 @@ exports.getDocentes = async (req, res) => {
             estado: usuario.estado || docente.estado
           });
         } else {
-          // Si no hay usuario, usar campos vacÃ­os
+          // Si no hay usuario, usar campos vacíos
           docentesFormateados.push({
             ...docente,
             telefono: '',
@@ -114,7 +114,7 @@ exports.getDocentes = async (req, res) => {
         }
       } catch (userError) {
         console.error('Error obteniendo usuario para:', docente.identificacion, userError);
-        // En caso de error, usar campos vacÃ­os
+        // En caso de error, usar campos vacíos
         docentesFormateados.push({
           ...docente,
           telefono: '',
@@ -196,7 +196,7 @@ exports.createDocente = async (req, res) => {
     if (!identificacion || identificacion.trim() === '') {
       return res.status(400).json({
         success: false,
-        message: 'La identificaciÃ³n es obligatoria'
+        message: 'La identificación es obligatoria'
       });
     }
     
@@ -217,18 +217,18 @@ exports.createDocente = async (req, res) => {
     if (!titulo_profesional || titulo_profesional.trim() === '') {
       return res.status(400).json({
         success: false,
-        message: 'El tÃ­tulo profesional es obligatorio'
+        message: 'El título profesional es obligatorio'
       });
     }
     
     if (!['activo', 'inactivo'].includes(estado)) {
       return res.status(400).json({
         success: false,
-        message: 'Estado invÃ¡lido'
+        message: 'Estado inválido'
       });
     }
     
-    // 1. Verificar que no exista usuario con la misma cÃ©dula
+    // 1. Verificar que no exista usuario con la misma cédula
     const [existingUser] = await connection.execute(
       'SELECT id_usuario FROM usuarios WHERE cedula = ?',
       [identificacion.trim()]
@@ -238,11 +238,11 @@ exports.createDocente = async (req, res) => {
       await connection.rollback();
       return res.status(400).json({
         success: false,
-        message: 'Ya existe un usuario con esa identificaciÃ³n'
+        message: 'Ya existe un usuario con esa identificación'
       });
     }
     
-    // 2. Verificar email Ãºnico si se proporciona
+    // 2. Verificar email único si se proporciona
     if (gmail && gmail.trim() !== '') {
       const [existingEmail] = await connection.execute(
         'SELECT id_usuario FROM usuarios WHERE email = ?',
@@ -276,10 +276,10 @@ exports.createDocente = async (req, res) => {
       id_rol_docente = roles[0].id_rol;
     }
     
-    // 4. Generar username Ãºnico
+    // 4. Generar username único
     const username = await generateUniqueUsername(nombres, apellidos);
     
-    // 5. Generar contraseÃ±a temporal (identificaciÃ³n) con bcrypt
+    // 5. Generar contraseña temporal (identificación) con bcrypt
     const passwordTemporal = identificacion.trim();
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(passwordTemporal, salt);
@@ -327,7 +327,7 @@ exports.createDocente = async (req, res) => {
     
     await connection.commit();
     
-    // Registrar auditorÃ­a - CreaciÃ³n de docente
+    // Registrar auditoría - Creación de docente
     await registrarAuditoria(
       'docentes',
       'INSERT',
@@ -343,7 +343,7 @@ exports.createDocente = async (req, res) => {
       req
     );
     
-    // Registrar auditorÃ­a - CreaciÃ³n de usuario
+    // Registrar auditoría - Creación de usuario
     await registrarAuditoria(
       'usuarios',
       'INSERT',
@@ -411,7 +411,7 @@ exports.createDocente = async (req, res) => {
       if (error.message.includes('cedula')) {
         return res.status(400).json({
           success: false,
-          message: 'Ya existe un usuario con esa identificaciÃ³n'
+          message: 'Ya existe un usuario con esa identificación'
         });
       } else if (error.message.includes('email')) {
         return res.status(400).json({
@@ -421,7 +421,7 @@ exports.createDocente = async (req, res) => {
       } else if (error.message.includes('username')) {
         return res.status(400).json({
           success: false,
-          message: 'Error al generar username Ãºnico'
+          message: 'Error al generar username único'
         });
       }
     }
@@ -454,7 +454,7 @@ exports.updateDocente = async (req, res) => {
     if (!identificacion || identificacion.trim() === '') {
       return res.status(400).json({
         success: false,
-        message: 'La identificaciÃ³n es obligatoria'
+        message: 'La identificación es obligatoria'
       });
     }
     
@@ -475,14 +475,14 @@ exports.updateDocente = async (req, res) => {
     if (!titulo_profesional || titulo_profesional.trim() === '') {
       return res.status(400).json({
         success: false,
-        message: 'El tÃ­tulo profesional es obligatorio'
+        message: 'El título profesional es obligatorio'
       });
     }
     
     if (!['activo', 'inactivo'].includes(estado)) {
       return res.status(400).json({
         success: false,
-        message: 'Estado invÃ¡lido'
+        message: 'Estado inválido'
       });
     }
     
@@ -539,7 +539,7 @@ exports.updateDocente = async (req, res) => {
       if (error.message.includes('identificacion')) {
         return res.status(400).json({
           success: false,
-          message: 'Ya existe otro docente con esa identificaciÃ³n'
+          message: 'Ya existe otro docente con esa identificación'
         });
       } else if (error.message.includes('gmail')) {
         return res.status(400).json({
@@ -615,7 +615,7 @@ exports.getDocentesStats = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error al obtener estadÃ­sticas:', error);
+    console.error('Error al obtener estadísticas:', error);
     res.status(500).json({
       success: false,
       message: 'Error interno del servidor',
@@ -640,7 +640,7 @@ exports.getMisCursos = async (req, res) => {
     const isDocente = await DocentesModel.isDocente(id_usuario);
     
     if (!isDocente) {
-      return res.status(403).json({ error: 'Acceso denegado. Solo docentes pueden acceder a esta informaciÃ³n.' });
+      return res.status(403).json({ error: 'Acceso denegado. Solo docentes pueden acceder a esta información.' });
     }
 
     // Obtener ID del docente
@@ -654,11 +654,11 @@ exports.getMisCursos = async (req, res) => {
     const todosCursos = await DocentesModel.getMisCursos(id_docente);
 
     // FILTRAR: Solo devolver cursos ACTIVOS (no finalizados)
-    // Un curso estÃ¡ ACTIVO si:
+    // Un curso está ACTIVO si:
     // - El estado del curso NO es 'finalizado' ni 'cancelado', Y
     // - La fecha de fin NO ha pasado (es hoy o futura)
     const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0); // Normalizar a medianoche para comparaciÃ³n justa
+    hoy.setHours(0, 0, 0, 0); // Normalizar a medianoche para comparación justa
     
     const cursosActivos = todosCursos.filter(curso => {
       const fechaFin = new Date(curso.fecha_fin);
@@ -669,7 +669,7 @@ exports.getMisCursos = async (req, res) => {
         return false;
       }
       
-      // Excluir cursos cuya fecha de fin ya pasÃ³
+      // Excluir cursos cuya fecha de fin ya pasó
       if (fechaFin < hoy) {
         return false;
       }
@@ -704,7 +704,7 @@ exports.getTodosMisCursos = async (req, res) => {
     const isDocente = await DocentesModel.isDocente(id_usuario);
     
     if (!isDocente) {
-      return res.status(403).json({ error: 'Acceso denegado. Solo docentes pueden acceder a esta informaciÃ³n.' });
+      return res.status(403).json({ error: 'Acceso denegado. Solo docentes pueden acceder a esta información.' });
     }
 
     // Obtener ID del docente
@@ -742,7 +742,7 @@ exports.getMisEstudiantes = async (req, res) => {
     const isDocente = await DocentesModel.isDocente(id_usuario);
     
     if (!isDocente) {
-      return res.status(403).json({ error: 'Acceso denegado. Solo docentes pueden acceder a esta informaciÃ³n.' });
+      return res.status(403).json({ error: 'Acceso denegado. Solo docentes pueden acceder a esta información.' });
     }
 
     // Obtener ID del docente
@@ -778,7 +778,7 @@ exports.getMiHorario = async (req, res) => {
     const isDocente = await DocentesModel.isDocente(id_usuario);
     
     if (!isDocente) {
-      return res.status(403).json({ error: 'Acceso denegado. Solo docentes pueden acceder a esta informaciÃ³n.' });
+      return res.status(403).json({ error: 'Acceso denegado. Solo docentes pueden acceder a esta información.' });
     }
 
     // Obtener ID del docente
