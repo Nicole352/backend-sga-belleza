@@ -70,7 +70,7 @@ exports.getAllPagos = async (req, res) => {
     }
 
     // Agregar limit y offset como números directamente en el SQL (no como parámetros)
-    const limitNum = parseInt(limit) || 50;
+    const limitNum = parseInt(limit) || 999999;
     const offsetNum = parseInt(offset) || 0;
 
     sql += ` ORDER BY pm.fecha_vencimiento DESC, pm.id_pago DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;

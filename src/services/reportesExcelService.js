@@ -439,13 +439,46 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
         currentRowIndex++;
       });
 
-      // Combinar celdas si el estudiante tiene más de un pago
+      // COMBINAR CELDAS POR ESTUDIANTE (ya existente)
       if (pagosEstudiante.length > 1) {
         const endRow = currentRowIndex - 1;
-        // Columnas a combinar: #, Cédula, Apellidos, Nombres
+        // Columnas: #, Cédula, Apellidos, Nombres
         ['A', 'B', 'C', 'D'].forEach(col => {
           hojaDatos.mergeCells(`${col}${startRow}:${col}${endRow}`);
         });
+      }
+
+      // COMBINAR CELDAS POR COMPROBANTE (nuevo)
+      // Agrupar pagos consecutivos con el mismo comprobante
+      let i = 0;
+      while (i < pagosEstudiante.length) {
+        const pagoActual = pagosEstudiante[i];
+        const comprobanteActual = pagoActual.numero_comprobante;
+        
+        // Solo combinar si tiene comprobante válido
+        if (comprobanteActual && comprobanteActual !== 'N/A' && comprobanteActual.trim() !== '') {
+          let j = i + 1;
+          
+          // Buscar cuántos pagos consecutivos tienen el mismo comprobante
+          while (j < pagosEstudiante.length && pagosEstudiante[j].numero_comprobante === comprobanteActual) {
+            j++;
+          }
+          
+          // Si hay más de un pago con el mismo comprobante, combinar celdas
+          if (j - i > 1) {
+            const rowInicio = startRow + i;
+            const rowFin = startRow + j - 1;
+            
+            // Combinar: Método de Pago (J), Recibido Por (K), Número Comprobante (L)
+            hojaDatos.mergeCells(`J${rowInicio}:J${rowFin}`); // metodo_pago
+            hojaDatos.mergeCells(`K${rowInicio}:K${rowFin}`); // recibido_por
+            hojaDatos.mergeCells(`L${rowInicio}:L${rowFin}`); // numero_comprobante
+          }
+          
+          i = j;
+        } else {
+          i++;
+        }
       }
 
       indice++;

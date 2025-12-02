@@ -193,7 +193,7 @@ class PagosMenualesModel {
         throw new Error('El monto supera la cantidad de cuotas/clases pendientes disponibles');
       }
 
-      // Verificar que el número de comprobante sea único
+      // Verificar que el número de comprobante sea único (excluyendo las cuotas que se van a actualizar)
       if (pagoData.numero_comprobante) {
         const idsPendientes = cuotasPendientes.map(c => c.id_pago);
         const placeholders = idsPendientes.map(() => '?').join(',');
@@ -248,10 +248,10 @@ class PagosMenualesModel {
 
         await connection.execute(updateQuery, [
           pagoData.metodo_pago,
-          esPrimera ? pagoData.numero_comprobante?.trim().toUpperCase() : null,
-          esPrimera ? pagoData.banco_comprobante : null,
-          esPrimera ? pagoData.fecha_transferencia : null,
-          esPrimera ? pagoData.recibido_por : null,
+          pagoData.numero_comprobante?.trim().toUpperCase(),
+          pagoData.banco_comprobante,
+          pagoData.fecha_transferencia,
+          pagoData.recibido_por,
           esPrimera && archivoData ? archivoData.comprobanteUrl : null,
           esPrimera && archivoData ? archivoData.comprobantePublicId : null,
           observacionesFinal,

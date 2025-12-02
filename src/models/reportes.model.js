@@ -177,9 +177,12 @@ const ReportesModel = {
         u.nombre as nombre_estudiante,
         u.apellido as apellido_estudiante,
         u.email as email_estudiante,
+        c.id_curso,
         c.codigo_curso,
         c.nombre as nombre_curso,
         c.horario,
+        c.fecha_inicio,
+        c.fecha_fin,
         c.estado as estado_curso,
         tc.nombre as tipo_curso,
         tc.modalidad_pago,
@@ -259,24 +262,61 @@ const ReportesModel = {
   /**
    * ESTADÍSTICAS FINANCIERAS
    */
-  async getEstadisticasFinancieras({ fechaInicio, fechaFin }) {
+  async getEstadisticasFinancieras({ fechaInicio, fechaFin, idCurso, estadoCurso, horario, metodoPago, tipoPago }) {
     try {
-      const query = `
+      let query = `
 SELECT
 COUNT(*) as total_pagos,
-  COUNT(CASE WHEN estado = 'pagado' THEN 1 END) as pagos_realizados,
-  COUNT(CASE WHEN estado = 'verificado' THEN 1 END) as pagos_verificados,
-  COUNT(CASE WHEN estado = 'pendiente' THEN 1 END) as pagos_pendientes,
-  COUNT(CASE WHEN estado = 'vencido' THEN 1 END) as pagos_vencidos,
-  SUM(CASE WHEN estado IN('pagado', 'verificado') THEN monto ELSE 0 END) as ingresos_totales,
-  SUM(CASE WHEN estado = 'pendiente' THEN monto ELSE 0 END) as ingresos_pendientes,
-  AVG(CASE WHEN estado IN('pagado', 'verificado') THEN monto END) as promedio_pago,
-  COUNT(DISTINCT CASE WHEN numero_cuota = 1 THEN id_matricula END) as matriculas_pagadas
-        FROM pagos_mensuales
-        WHERE DATE(COALESCE(fecha_pago, fecha_vencimiento)) BETWEEN ? AND ?
+  COUNT(CASE WHEN pm.estado = 'pagado' THEN 1 END) as pagos_realizados,
+  COUNT(CASE WHEN pm.estado = 'verificado' THEN 1 END) as pagos_verificados,
+  COUNT(CASE WHEN pm.estado = 'pendiente' THEN 1 END) as pagos_pendientes,
+  COUNT(CASE WHEN pm.estado = 'vencido' THEN 1 END) as pagos_vencidos,
+  SUM(CASE WHEN pm.estado IN('pagado', 'verificado') THEN pm.monto ELSE 0 END) as ingresos_totales,
+  SUM(CASE WHEN pm.estado = 'pendiente' THEN pm.monto ELSE 0 END) as ingresos_pendientes,
+  AVG(CASE WHEN pm.estado IN('pagado', 'verificado') THEN pm.monto END) as promedio_pago,
+  COUNT(DISTINCT CASE WHEN pm.numero_cuota = 1 THEN pm.id_matricula END) as matriculas_pagadas
+        FROM pagos_mensuales pm
+        INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
+        INNER JOIN cursos c ON m.id_curso = c.id_curso
+        INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
+        WHERE DATE(COALESCE(pm.fecha_pago, pm.fecha_vencimiento)) BETWEEN ? AND ?
     `;
 
-      const [rows] = await pool.query(query, [fechaInicio, fechaFin]);
+      const params = [fechaInicio, fechaFin];
+
+      // Aplicar filtros adicionales
+      if (idCurso) {
+        query += ` AND c.id_curso = ?`;
+        params.push(idCurso);
+      }
+
+      if (estadoCurso && estadoCurso !== 'todos') {
+        query += ` AND c.estado = ?`;
+        params.push(estadoCurso);
+      }
+
+      if (horario && horario !== 'todos') {
+        query += ` AND c.horario = ?`;
+        params.push(horario);
+      }
+
+      if (metodoPago && metodoPago !== 'todos') {
+        query += ` AND pm.metodo_pago = ?`;
+        params.push(metodoPago);
+      }
+
+      // Filtro por tipo de pago
+      if (tipoPago && tipoPago !== 'todos') {
+        if (tipoPago === 'primer_mes') {
+          query += ` AND pm.numero_cuota = 1`;
+        } else if (tipoPago === 'mensualidad') {
+          query += ` AND pm.numero_cuota > 1 AND tc.modalidad_pago = 'mensual'`;
+        } else if (tipoPago === 'clase') {
+          query += ` AND tc.modalidad_pago = 'clases'`;
+        }
+      }
+
+      const [rows] = await pool.query(query, params);
       return rows[0];
     } catch (error) {
       console.error('Error en getEstadisticasFinancieras:', error);
@@ -324,10 +364,14 @@ c.id_curso,
         LEFT JOIN asignaciones_aulas aa ON c.id_curso = aa.id_curso AND aa.estado = 'activa'
         LEFT JOIN docentes d ON aa.id_docente = d.id_docente
         LEFT JOIN aulas a ON aa.id_aula = a.id_aula
-        WHERE DATE(c.fecha_inicio) BETWEEN ? AND ?
+        WHERE (
+          (DATE(c.fecha_inicio) BETWEEN ? AND ?) OR
+          (DATE(c.fecha_fin) BETWEEN ? AND ?) OR
+          (DATE(c.fecha_inicio) <= ? AND DATE(c.fecha_fin) >= ?)
+        )
   `;
 
-      const params = [fechaInicio, fechaFin];
+      const params = [fechaInicio, fechaFin, fechaInicio, fechaFin, fechaInicio, fechaFin];
 
       // Filtro por estado del curso
       if (estado && estado !== 'todos') {

@@ -160,17 +160,40 @@ const ReportesController = {
         fechaFin
       });
 
-      // Obtener nombre del curso
+      // Obtener nombre del curso y fechas reales
       let nombreCurso = null;
-      if (idCurso) {
+      let fechasParaEncabezado = { fechaInicio, fechaFin };
+      
+      if (idCurso && datos.length > 0) {
         const cursoEncontrado = datos.find(d => d.id_curso == idCurso);
-        nombreCurso = cursoEncontrado ? cursoEncontrado.nombre_curso : null;
+        if (cursoEncontrado) {
+          nombreCurso = cursoEncontrado.nombre_curso;
+          // Usar las fechas del curso filtrado
+          fechasParaEncabezado = {
+            fechaInicio: cursoEncontrado.fecha_inicio?.split('T')[0] || fechaInicio,
+            fechaFin: cursoEncontrado.fecha_fin?.split('T')[0] || fechaFin
+          };
+        }
+      } else if (datos.length > 0) {
+        // Si no hay filtro de curso, usar el rango de todos los cursos en los datos
+        const fechasReales = datos.map(d => ({
+          inicio: d.fecha_inicio,
+          fin: d.fecha_fin
+        }));
+        const fechaMasAntiguaInicio = fechasReales.reduce((min, d) => 
+          d.inicio < min ? d.inicio : min, fechasReales[0].inicio);
+        const fechaMasTardiaFin = fechasReales.reduce((max, d) => 
+          d.fin > max ? d.fin : max, fechasReales[0].fin);
+        
+        fechasParaEncabezado = {
+          fechaInicio: fechaMasAntiguaInicio?.split('T')[0] || fechaInicio,
+          fechaFin: fechaMasTardiaFin?.split('T')[0] || fechaFin
+        };
       }
 
       // Generar Excel
       const excelBuffer = await generarExcelEstudiantes(datos, {
-        fechaInicio,
-        fechaFin,
+        ...fechasParaEncabezado,
         estado: estado || 'todos',
         horario: horario || 'todos',
         nombreCurso
@@ -230,7 +253,13 @@ const ReportesController = {
       // Obtener estadísticas
       const estadisticas = await ReportesModel.getEstadisticasFinancieras({
         fechaInicio,
-        fechaFin
+        fechaFin,
+        tipoPago: tipoPago || 'todos',
+        estadoPago: estadoPago || 'todos',
+        idCurso: idCurso || null,
+        estadoCurso: estadoCurso || 'todos',
+        metodoPago: metodoPago || 'todos',
+        horario: horario || 'todos'
       });
 
       res.json({
@@ -290,7 +319,13 @@ const ReportesController = {
 
       const estadisticas = await ReportesModel.getEstadisticasFinancieras({
         fechaInicio,
-        fechaFin
+        fechaFin,
+        tipoPago: tipoPago || 'todos',
+        estadoPago: estadoPago || 'todos',
+        idCurso: idCurso || null,
+        estadoCurso: estadoCurso || 'todos',
+        metodoPago: metodoPago || 'todos',
+        horario: horario || 'todos'
       });
 
       // Generar PDF
@@ -352,7 +387,13 @@ const ReportesController = {
 
       const estadisticas = await ReportesModel.getEstadisticasFinancieras({
         fechaInicio,
-        fechaFin
+        fechaFin,
+        tipoPago: tipoPago || 'todos',
+        estadoPago: estadoPago || 'todos',
+        idCurso: idCurso || null,
+        estadoCurso: estadoCurso || 'todos',
+        metodoPago: metodoPago || 'todos',
+        horario: horario || 'todos'
       });
 
       // Para Estado de Cuenta: obtener TODOS los pagos sin filtro de estado
@@ -368,10 +409,68 @@ const ReportesController = {
         horario: horario || 'todos'
       });
 
+      // Determinar fechas para el encabezado
+      let fechasParaEncabezado = { fechaInicio, fechaFin };
+      
+      console.log('🔍 DEBUG Financiero - idCurso recibido:', idCurso);
+      console.log('🔍 DEBUG Financiero - Total datos:', datos.length);
+      
+      if (idCurso && datos.length > 0) {
+        // Si hay filtro de curso, usar las fechas del curso
+        const cursoEncontrado = datos.find(d => d.id_curso == idCurso);
+        console.log('🔍 DEBUG Financiero - Curso encontrado:', cursoEncontrado ? 'SÍ' : 'NO');
+        
+        if (cursoEncontrado) {
+          console.log('🔍 DEBUG Financiero - Fecha inicio curso:', cursoEncontrado.fecha_inicio);
+          console.log('🔍 DEBUG Financiero - Fecha fin curso:', cursoEncontrado.fecha_fin);
+          
+          // Convertir Date a string YYYY-MM-DD
+          const fechaInicioStr = cursoEncontrado.fecha_inicio instanceof Date 
+            ? cursoEncontrado.fecha_inicio.toISOString().split('T')[0]
+            : (typeof cursoEncontrado.fecha_inicio === 'string' ? cursoEncontrado.fecha_inicio.split('T')[0] : fechaInicio);
+            
+          const fechaFinStr = cursoEncontrado.fecha_fin instanceof Date
+            ? cursoEncontrado.fecha_fin.toISOString().split('T')[0]
+            : (typeof cursoEncontrado.fecha_fin === 'string' ? cursoEncontrado.fecha_fin.split('T')[0] : fechaFin);
+          
+          fechasParaEncabezado = {
+            fechaInicio: fechaInicioStr,
+            fechaFin: fechaFinStr
+          };
+          
+          console.log('✅ Fechas actualizadas para encabezado:', fechasParaEncabezado);
+        }
+      } else if (datos.length > 0) {
+        // Si no hay filtro de curso, usar el rango de todos los cursos en los datos
+        const cursosUnicos = new Map();
+        datos.forEach(d => {
+          if (d.id_curso && d.fecha_inicio && d.fecha_fin) {
+            cursosUnicos.set(d.id_curso, {
+              inicio: d.fecha_inicio instanceof Date ? d.fecha_inicio : new Date(d.fecha_inicio),
+              fin: d.fecha_fin instanceof Date ? d.fecha_fin : new Date(d.fecha_fin)
+            });
+          }
+        });
+        
+        if (cursosUnicos.size > 0) {
+          const fechasReales = Array.from(cursosUnicos.values());
+          const fechaMasAntiguaInicio = fechasReales.reduce((min, d) => 
+            d.inicio < min ? d.inicio : min, fechasReales[0].inicio);
+          const fechaMasTardiaFin = fechasReales.reduce((max, d) => 
+            d.fin > max ? d.fin : max, fechasReales[0].fin);
+          
+          fechasParaEncabezado = {
+            fechaInicio: fechaMasAntiguaInicio.toISOString().split('T')[0],
+            fechaFin: fechaMasTardiaFin.toISOString().split('T')[0]
+          };
+        }
+      }
+      
+      console.log('📊 Fechas finales para Excel:', fechasParaEncabezado);
+
       // Generar Excel: datos filtrados para "Pagos Detallados", datos completos para "Estado de Cuenta"
       const excelBuffer = await generarExcelFinanciero(datos, datosSinFiltroEstado, {
-        fechaInicio,
-        fechaFin,
+        ...fechasParaEncabezado,
         tipoPago: tipoPago || 'todos',
         estadoPago: estadoPago || 'todos'
       }, estadisticas);
@@ -545,10 +644,28 @@ const ReportesController = {
       });
       const estadisticas = await ReportesModel.getEstadisticasCursos({ fechaInicio, fechaFin });
 
+      // Si hay datos y es un solo curso, usar sus fechas para el encabezado
+      let fechasParaEncabezado = { fechaInicio, fechaFin };
+      if (datos.length > 0) {
+        // Obtener rango real de fechas de los cursos en los datos
+        const fechasReales = datos.map(c => ({
+          inicio: c.fecha_inicio,
+          fin: c.fecha_fin
+        }));
+        const fechaMasAntiguaInicio = fechasReales.reduce((min, c) => 
+          c.inicio < min ? c.inicio : min, fechasReales[0].inicio);
+        const fechaMasTardiaFin = fechasReales.reduce((max, c) => 
+          c.fin > max ? c.fin : max, fechasReales[0].fin);
+        
+        fechasParaEncabezado = {
+          fechaInicio: fechaMasAntiguaInicio?.split('T')[0] || fechaInicio,
+          fechaFin: fechaMasTardiaFin?.split('T')[0] || fechaFin
+        };
+      }
+
       // Generar Excel
       const excelBuffer = await generarExcelCursos(datos, {
-        fechaInicio,
-        fechaFin,
+        ...fechasParaEncabezado,
         estado: estado || 'todos',
         ocupacion: ocupacion || 'todos',
         horario: horario || 'todos'
@@ -749,21 +866,91 @@ const ReportesController = {
         horario: horario || 'todos'
       };
 
-      // Obtener datos CON filtros
+      // Obtener datos CON filtros (para hoja 1: Pagos Detallados)
       const datos = await ReportesModel.getReporteFinanciero(parametros);
-      console.log('DEBUG: Datos Financieros encontrados:', datos.length);
+      console.log('DEBUG: Datos Financieros encontrados (con filtros):', datos.length);
+
+      // Obtener datos SIN filtro de estadoPago (para hoja 2: Estado de Cuenta)
+      // Pero manteniendo otros filtros como curso, fechas, horario, etc.
+      const datosSinFiltroEstado = await ReportesModel.getReporteFinanciero({
+        ...parametros,
+        estadoPago: 'todos' // SIN filtro de estado de pago
+      });
+      console.log('DEBUG: Datos Financieros encontrados (sin filtro de estado):', datosSinFiltroEstado.length);
 
       // Obtener estadísticas financieras
-      const estadisticas = await ReportesModel.getEstadisticasFinancieras({
-        fechaInicio,
-        fechaFin
-      });
+      const estadisticas = await ReportesModel.getEstadisticasFinancieras(parametros);
 
-      // Generar Excel con datos y estadísticas
-      const excelBuffer = await generarExcelFinanciero(datos, datos, parametros, estadisticas);
+      // Determinar fechas para el encabezado
+      let fechasParaEncabezado = { fechaInicio, fechaFin };
+      
+      console.log('🔍 DEBUG FinancieroV2 - idCurso recibido:', idCurso);
+      console.log('🔍 DEBUG FinancieroV2 - Total datos:', datos.length);
+      
+      if (idCurso && datos.length > 0) {
+        // Si hay filtro de curso, usar las fechas del curso
+        const cursoEncontrado = datos.find(d => d.id_curso == idCurso);
+        console.log('🔍 DEBUG FinancieroV2 - Curso encontrado:', cursoEncontrado ? 'SÍ' : 'NO');
+        
+        if (cursoEncontrado) {
+          console.log('🔍 DEBUG FinancieroV2 - Fecha inicio curso:', cursoEncontrado.fecha_inicio);
+          console.log('🔍 DEBUG FinancieroV2 - Fecha fin curso:', cursoEncontrado.fecha_fin);
+          
+          // Convertir Date a string YYYY-MM-DD
+          const fechaInicioStr = cursoEncontrado.fecha_inicio instanceof Date 
+            ? cursoEncontrado.fecha_inicio.toISOString().split('T')[0]
+            : (typeof cursoEncontrado.fecha_inicio === 'string' ? cursoEncontrado.fecha_inicio.split('T')[0] : fechaInicio);
+            
+          const fechaFinStr = cursoEncontrado.fecha_fin instanceof Date
+            ? cursoEncontrado.fecha_fin.toISOString().split('T')[0]
+            : (typeof cursoEncontrado.fecha_fin === 'string' ? cursoEncontrado.fecha_fin.split('T')[0] : fechaFin);
+          
+          fechasParaEncabezado = {
+            fechaInicio: fechaInicioStr,
+            fechaFin: fechaFinStr
+          };
+          
+          console.log('✅ Fechas actualizadas para encabezado:', fechasParaEncabezado);
+        }
+      } else if (datos.length > 0) {
+        // Si no hay filtro de curso, usar el rango de todos los cursos en los datos
+        const cursosUnicos = new Map();
+        datos.forEach(d => {
+          if (d.id_curso && d.fecha_inicio && d.fecha_fin) {
+            cursosUnicos.set(d.id_curso, {
+              inicio: d.fecha_inicio instanceof Date ? d.fecha_inicio : new Date(d.fecha_inicio),
+              fin: d.fecha_fin instanceof Date ? d.fecha_fin : new Date(d.fecha_fin)
+            });
+          }
+        });
+        
+        if (cursosUnicos.size > 0) {
+          const fechasReales = Array.from(cursosUnicos.values());
+          const fechaMasAntiguaInicio = fechasReales.reduce((min, d) => 
+            d.inicio < min ? d.inicio : min, fechasReales[0].inicio);
+          const fechaMasTardiaFin = fechasReales.reduce((max, d) => 
+            d.fin > max ? d.fin : max, fechasReales[0].fin);
+          
+          fechasParaEncabezado = {
+            fechaInicio: fechaMasAntiguaInicio.toISOString().split('T')[0],
+            fechaFin: fechaMasTardiaFin.toISOString().split('T')[0]
+          };
+        }
+      }
+      
+      console.log('📊 Fechas finales para Excel:', fechasParaEncabezado);
 
-      // Nombre del archivo
-      const nombreArchivo = `Reporte_Financiero_${fechaInicio}_${fechaFin}.xlsx`;
+      // Generar Excel con datos filtrados y datos sin filtro de estado
+      const excelBuffer = await generarExcelFinanciero(datos, datosSinFiltroEstado, {
+        ...parametros,
+        ...fechasParaEncabezado
+      }, estadisticas);
+
+      // Nombre del archivo usando las fechas del encabezado (con timestamp para evitar caché)
+      const timestamp = new Date().getTime();
+      const nombreArchivo = `Reporte_Financiero_${fechasParaEncabezado.fechaInicio}_${fechasParaEncabezado.fechaFin}_${timestamp}.xlsx`;
+      
+      console.log('📥 Nombre del archivo a descargar:', nombreArchivo);
 
       // SNAPSHOT: Calcular resumen para el historial
       const totalMonto = datos.reduce((sum, item) => sum + (parseFloat(item.monto) || 0), 0);
