@@ -2,7 +2,7 @@ const { pool } = require('../config/database');
 const bcrypt = require('bcryptjs');
 const EstudiantesModel = require('../models/estudiantes.model');
 const PromocionesModel = require('../models/promociones.model');
-const { enviarEmailBienvenidaEstudiante } = require('../services/emailService');
+const { enviarEmailBienvenidaEstudiante, enviarConfirmacionMatricula } = require('../services/emailService');
 const { generarComprobantePagoMensual } = require('../services/pdfService');
 const { registrarAuditoria } = require('../utils/auditoria');
 const ExcelJS = require('exceljs');
@@ -482,6 +482,9 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         console.log('No se encontró tipo de curso para generar cuotas');
       }
 
+      // Variable para almacenar el ID de la matrícula promocional (si existe)
+      let id_matricula_promo = null;
+
       // ========================================
       // CREAR MATRÍCULA DEL CURSO PROMOCIONAL SI LA SOLICITUD TIENE PROMOCIÓN
       // ========================================
@@ -532,7 +535,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
               aprobado_por
             ]);
 
-            const id_matricula_promo = resultMatriculaPromo.insertId;
+            id_matricula_promo = resultMatriculaPromo.insertId;
             console.log(` Matrícula promocional creada: ${codigoMatriculaPromo} (ID: ${id_matricula_promo})`);
 
             // Agregar a estudiante_curso para reportes (si no existe)
@@ -721,82 +724,103 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         user_agent: req.get('User-Agent')
       });
 
-      // 10. ENVIAR EMAIL DE BIENVENIDA CON CREDENCIALES Y PDF DEL PRIMER PAGO (solo para estudiantes nuevos, asíncrono)
-      if (!esEstudianteExistente && passwordTemporal) {
-        setImmediate(async () => {
-          try {
-            const datosEstudiante = {
-              nombres: solicitud.nombre_solicitante,
-              apellidos: solicitud.apellido_solicitante,
-              cedula: solicitud.identificacion_solicitante,
-              email: solicitud.email_solicitante
-            };
+      // 10. GENERAR PDFs Y ENVIAR EMAILS (para TODOS los estudiantes, nuevos y existentes)
+      setImmediate(async () => {
+        try {
+          const datosEstudiante = {
+            nombres: solicitud.nombre_solicitante,
+            apellidos: solicitud.apellido_solicitante,
+            cedula: solicitud.identificacion_solicitante,
+            email: solicitud.email_solicitante
+          };
 
+          // Generar PDFs SOLO de las matrículas recién creadas (curso principal + curso promocional si aplica)
+          const pdfComprobantes = [];
+          try {
+            // Construir lista de IDs de matrículas recién creadas
+            const matriculasIds = [id_matricula];
+            if (id_matricula_promo) {
+              matriculasIds.push(id_matricula_promo);
+            }
+
+            console.log(`📄 Buscando primeros pagos de las matrículas recién creadas: [${matriculasIds.join(', ')}]`);
+
+            // Obtener SOLO los primeros pagos de las matrículas recién creadas
+            const [primerosPagos] = await pool.execute(`
+            SELECT
+            pm.id_pago as id_pago_mensual,
+              pm.monto,
+              pm.fecha_pago,
+              pm.metodo_pago,
+              pm.numero_cuota,
+              pm.numero_comprobante,
+              pm.banco_comprobante,
+              pm.fecha_transferencia,
+              DATE_FORMAT(pm.fecha_pago, '%Y-%m') as mes_pago,
+              c.nombre as nombre_curso,
+              m.id_matricula
+            FROM pagos_mensuales pm
+            INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
+            INNER JOIN cursos c ON m.id_curso = c.id_curso
+            WHERE m.id_matricula IN (${matriculasIds.map(() => '?').join(',')})
+              AND pm.numero_cuota = 1
+              AND pm.estado = 'verificado'
+            ORDER BY pm.fecha_pago DESC
+          `, matriculasIds);
+
+            console.log(`📄 Encontrados ${primerosPagos.length} primeros pagos verificados para generar PDFs`);
+
+            // Generar un PDF por cada primer pago (curso principal + curso promocional)
+            for (const pago of primerosPagos) {
+              const datosPago = pago;
+              const datosCurso = {
+                nombre_curso: datosPago.nombre_curso
+              };
+
+              // Generar PDF del comprobante
+              const pdfBuffer = await generarComprobantePagoMensual(datosEstudiante, datosPago, datosCurso);
+
+              pdfComprobantes.push({
+                buffer: pdfBuffer,
+                nombreCurso: datosPago.nombre_curso
+              });
+
+              console.log(`✅ PDF generado para: ${datosPago.nombre_curso}`);
+            }
+
+            console.log(`📎 Total de PDFs generados: ${pdfComprobantes.length}`);
+          } catch (pdfError) {
+            console.error('Error generando PDFs de comprobantes (continuando sin PDFs):', pdfError);
+          }
+
+          // ESTUDIANTES NUEVOS: Email con credenciales + PDFs
+          if (!esEstudianteExistente && passwordTemporal) {
             const credenciales = {
               username: username,
               password: passwordTemporal
             };
 
-            // Generar PDF del comprobante del primer pago
-            let pdfComprobante = null;
-            try {
-              // Obtener datos del primer pago (cuota #1 que se creó automáticamente como VERIFICADA)
-              const [primerPago] = await pool.execute(`
-              SELECT
-              pm.id_pago as id_pago_mensual,
-                pm.monto,
-                pm.fecha_pago,
-                pm.metodo_pago,
-                pm.numero_cuota,
-                pm.numero_comprobante,
-                pm.banco_comprobante,
-                pm.fecha_transferencia,
-                DATE_FORMAT(pm.fecha_pago, '%Y-%m') as mes_pago,
-                c.nombre as nombre_curso
-              FROM pagos_mensuales pm
-              INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
-              INNER JOIN cursos c ON m.id_curso = c.id_curso
-              WHERE m.id_estudiante = ?
-                AND pm.numero_cuota = 1
-                AND pm.estado = 'verificado'
-              ORDER BY pm.fecha_pago DESC
-              LIMIT 1
-            `, [id_estudiante]);
-
-              if (primerPago.length > 0) {
-                const datosPago = primerPago[0];
-                const datosCurso = {
-                  nombre_curso: datosPago.nombre_curso
-                };
-
-                // Generar PDF del comprobante
-                pdfComprobante = await generarComprobantePagoMensual(datosEstudiante, datosPago, datosCurso);
-                console.log('PDF del comprobante del primer pago generado');
-                console.log(' Datos del PDF:', {
-                  estudiante: `${datosEstudiante.nombres} ${datosEstudiante.apellidos} `,
-                  monto: datosPago.monto,
-                  cuota: datosPago.numero_cuota,
-                  comprobante: datosPago.numero_comprobante
-                });
-              } else {
-                console.log(' No se encontró el primer pago para generar PDF');
-              }
-            } catch (pdfError) {
-              console.error('Error generando PDF del comprobante (continuando sin PDF):', pdfError);
+            await enviarEmailBienvenidaEstudiante(datosEstudiante, credenciales, pdfComprobantes);
+            console.log('✉️ Email de bienvenida (con credenciales) enviado a:', solicitud.email_solicitante);
+            if (pdfComprobantes.length > 0) {
+              console.log(`📄 ${pdfComprobantes.length} PDF(s) incluido(s) en el email:`);
+              pdfComprobantes.forEach(pdf => console.log(`   - ${pdf.nombreCurso}`));
             }
-
-            // Enviar email de bienvenida con credenciales y PDF del primer pago
-            await enviarEmailBienvenidaEstudiante(datosEstudiante, credenciales, pdfComprobante);
-            console.log(' Email de bienvenida enviado a:', solicitud.email_solicitante);
-            if (pdfComprobante) {
-              console.log(' PDF del primer pago incluido en el email');
-            }
-
-          } catch (emailError) {
-            console.error('Error enviando email de bienvenida (no afecta la creación):', emailError);
           }
-        });
-      }
+          // ESTUDIANTES EXISTENTES: Email de confirmación con PDFs (sin credenciales)
+          else if (esEstudianteExistente) {
+            await enviarConfirmacionMatricula(datosEstudiante, pdfComprobantes, false);
+            console.log('✉️ Email de confirmación de matrícula enviado a:', solicitud.email_solicitante);
+            if (pdfComprobantes.length > 0) {
+              console.log(`📄 ${pdfComprobantes.length} PDF(s) incluido(s) en el email:`);
+              pdfComprobantes.forEach(pdf => console.log(`   - ${pdf.nombreCurso}`));
+            }
+          }
+
+        } catch (emailError) {
+          console.error('Error enviando email (no afecta la creación):', emailError);
+        }
+      });
 
       // Respuesta diferente según si es nuevo o existente
       if (esEstudianteExistente) {
@@ -886,7 +910,7 @@ exports.getEstudiantes = async (req, res) => {
       INNER JOIN roles r ON u.id_rol = r.id_rol
       WHERE r.nombre_rol = 'estudiante' AND u.estado = 'activo'
     `);
-    
+
     console.log('Total estudiantes en BD:', total, '| Activos:', totalActivos);
     res.setHeader('X-Total-Count', String(total));
     res.setHeader('X-Total-Activos', String(totalActivos));
@@ -1321,7 +1345,7 @@ exports.generarReporteExcel = async (req, res) => {
   try {
     // Obtener filtros de la query
     const { search = '', estado = '', estadoCurso = '', tipoCurso = '' } = req.query;
-    
+
     // Construir consulta dinamica con filtros
     let baseSql = `
       SELECT DISTINCT
@@ -1356,32 +1380,32 @@ exports.generarReporteExcel = async (req, res) => {
       LEFT JOIN cursos cur ON cur.id_curso = mat.id_curso
       WHERE r.nombre_rol = 'estudiante'
     `;
-    
+
     const params = [];
-    
+
     if (estado) {
       baseSql += ` AND u.estado = ?`;
       params.push(estado);
     }
-    
+
     if (estadoCurso) {
       baseSql += ` AND cur.estado = ?`;
       params.push(estadoCurso);
     }
-    
+
     if (tipoCurso) {
       baseSql += ` AND cur.id_tipo_curso = ?`;
       params.push(parseInt(tipoCurso));
     }
-    
+
     if (search) {
       baseSql += ` AND (u.nombre LIKE ? OR u.apellido LIKE ? OR u.cedula LIKE ? OR u.email LIKE ?)`;
       const searchParam = `%${search}%`;
       params.push(searchParam, searchParam, searchParam, searchParam);
     }
-    
+
     baseSql += ` ORDER BY u.fecha_registro DESC`;
-    
+
     // 1. Obtener estudiantes filtrados
     const [estudiantes] = await pool.execute(baseSql, params);
 

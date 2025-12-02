@@ -164,10 +164,15 @@ async function enviarNotificacionNuevaMatricula(solicitud) {
  * Enviar email de bienvenida al estudiante cuando su matrícula es aprobada
  * @param {Object} estudiante - Datos del estudiante
  * @param {Object} credenciales - Credenciales de acceso (username, password)
- * @param {Buffer} pdfComprobante - PDF del comprobante del primer pago (opcional)
+ * @param {Array<{buffer: Buffer, nombreCurso: string}>} pdfComprobantes - Array de PDFs de comprobantes (opcional)
  */
-async function enviarEmailBienvenidaEstudiante(estudiante, credenciales, pdfComprobante = null) {
+async function enviarEmailBienvenidaEstudiante(estudiante, credenciales, pdfComprobantes = []) {
   try {
+    // Convertir a array si se pasa un solo PDF (compatibilidad hacia atrás)
+    if (pdfComprobantes && !Array.isArray(pdfComprobantes)) {
+      pdfComprobantes = [{ buffer: pdfComprobantes, nombreCurso: 'Curso' }];
+    }
+
     const mailOptions = {
       from: `"${process.env.EMAIL_FROM_NAME || 'Escuela Jessica Vélez'}" <${process.env.EMAIL_USER}>`,
       to: estudiante.email,
@@ -184,13 +189,11 @@ async function enviarEmailBienvenidaEstudiante(estudiante, credenciales, pdfComp
         'X-Auto-Response-Suppress': 'OOF, DR, RN, NRN, AutoReply',
         'Content-Language': 'es-ES'
       },
-      attachments: pdfComprobante ? [
-        {
-          filename: `Comprobante_Primer_Pago_${estudiante.nombres}_${estudiante.apellidos}.pdf`,
-          content: pdfComprobante,
-          contentType: 'application/pdf'
-        }
-      ] : [],
+      attachments: pdfComprobantes.length > 0 ? pdfComprobantes.map((pdf, index) => ({
+        filename: `Comprobante_${pdf.nombreCurso.replace(/\s+/g, '_')}_${estudiante.nombres}_${estudiante.apellidos}.pdf`,
+        content: pdf.buffer,
+        contentType: 'application/pdf'
+      })) : [],
       html: `
         <!DOCTYPE html>
         <html>
@@ -556,13 +559,20 @@ async function enviarEmailBienvenidaEstudiante(estudiante, credenciales, pdfComp
                 </ul>
               </div>
 
-              ${pdfComprobante ? `
+              ${pdfComprobantes.length > 0 ? `
               <div class="info-section" style="background: #eff6ff; border-left: 4px solid #3b82f6;">
-                <h4 style="color: #1e40af;">📎 Comprobante del Primer Pago Adjunto</h4>
+                <h4 style="color: #1e40af;">📎 Comprobante${pdfComprobantes.length > 1 ? 's' : ''} de Pago Adjunto${pdfComprobantes.length > 1 ? 's' : ''}</h4>
                 <p style="color: #1e40af; margin: 10px 0 0 0;">
-                  Hemos adjuntado el <strong>comprobante de tu primer pago</strong> en formato PDF. 
-                  Guárdalo para tus registros personales. 📄
+                  ${pdfComprobantes.length > 1
+            ? `Hemos adjuntado <strong>${pdfComprobantes.length} comprobantes de pago</strong> en formato PDF (uno por cada curso en el que te has inscrito). Guárdalos para tus registros personales. 📄`
+            : `Hemos adjuntado el <strong>comprobante de tu primer pago</strong> en formato PDF. Guárdalo para tus registros personales. 📄`
+          }
                 </p>
+                ${pdfComprobantes.length > 1 ? `
+                <ul style="color: #1e40af; margin: 10px 0 0 20px;">
+                  ${pdfComprobantes.map(pdf => `<li><strong>${pdf.nombreCurso}</strong></li>`).join('')}
+                </ul>
+                ` : ''}
               </div>
               ` : ''}
 
@@ -1223,6 +1233,152 @@ async function enviarEmailBienvenidaDocente(docente, credenciales) {
     return { success: false, error: error.message };
   }
 }
+
+/**
+ * Enviar confirmación de matrícula con comprobantes de pago
+ * (Para estudiantes nuevos Y existentes)
+ * @param {Object} estudiante - Datos del estudiante
+ * @param {Array<{buffer: Buffer, nombreCurso: string}>} pdfComprobantes - Array de PDFs de comprobantes
+ * @param {boolean} esNuevo - Si es estudiante nuevo (para personalizar mensaje)
+ */
+async function enviarConfirmacionMatricula(estudiante, pdfComprobantes = [], esNuevo = false) {
+  try {
+    // Convertir a array si se pasa un solo PDF
+    if (pdfComprobantes && !Array.isArray(pdfComprobantes)) {
+      pdfComprobantes = [{ buffer: pdfComprobantes, nombreCurso: 'Curso' }];
+    }
+
+    const mailOptions = {
+      from: `"${process.env.EMAIL_FROM_NAME || 'Escuela Jessica Vélez'}" <${process.env.EMAIL_USER}>`,
+      to: estudiante.email,
+      replyTo: process.env.EMAIL_USER,
+      subject: esNuevo
+        ? '🎉 ¡Matrícula Confirmada! - Comprobantes de Pago'
+        : '✅ Nueva Matrícula Confirmada - Comprobantes de Pago',
+      headers: {
+        'X-Priority': '1',
+        'X-MSMail-Priority': 'High',
+        'Importance': 'high',
+        'X-Mailer': 'Escuela Jessica Vélez - SGA',
+        'X-Entity-Ref-ID': `confirmacion-matricula-${estudiante.cedula}-${Date.now()}`,
+        'List-Unsubscribe': `<mailto:${process.env.EMAIL_USER}?subject=unsubscribe>`,
+        'Content-Language': 'es-ES'
+      },
+      attachments: pdfComprobantes.length > 0 ? pdfComprobantes.map((pdf) => ({
+        filename: `Comprobante_${pdf.nombreCurso.replace(/\s+/g, '_')}_${estudiante.nombres}_${estudiante.apellidos}.pdf`,
+        content: pdf.buffer,
+        contentType: 'application/pdf'
+      })) : [],
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 40px 20px; text-align: center; color: white; }
+            .header h1 { margin: 0; font-size: 28px; font-weight: 700; }
+            .content { padding: 30px 20px; }
+            .success-box { background: #d1fae5; border: 2px solid #10b981; padding: 20px; border-radius: 12px; text-align: center; margin: 20px 0; }
+            .success-box h2 { color: #065f46; margin: 0 0 10px 0; font-size: 20px; }
+            .info-section { background: #f9fafb; padding: 20px; border-radius: 8px; margin: 20px 0; }
+            .info-section h4 { color: #374151; margin: 0 0 15px 0; font-size: 16px; }
+            .info-section ul { margin: 10px 0 0 20px; padding: 0; }
+            .info-section li { margin: 8px 0; color: #4b5563; line-height: 1.6; }
+            .pdf-box { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 20px; margin: 20px 0; border-radius: 8px; }
+            .pdf-box h4 { color: #1e40af; margin: 0 0 10px 0; }
+            .pdf-box ul { color: #1e40af; margin: 10px 0 0 20px; }
+            .footer { background: #f9fafb; padding: 25px 20px; text-align: center; font-size: 12px; color: #6b7280; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div style="width: 80px; height: 80px; margin: 0 auto 15px; background: rgba(255,255,255,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 40px;">
+                ${esNuevo ? '🎉' : '✅'}
+              </div>
+              <h1>${esNuevo ? '¡Bienvenido a Escuela Jessica Vélez!' : '¡Nueva Matrícula Confirmada!'}</h1>
+              <p>${esNuevo ? 'Tu matrícula ha sido aprobada exitosamente' : 'Tu nueva inscripción ha sido procesada'}</p>
+            </div>
+            
+            <div class="content">
+              <div class="success-box">
+                <h2>✅ Matrícula Confirmada</h2>
+                <p style="color: #065f46; margin: 10px 0 0 0;">
+                  ${pdfComprobantes.length > 1
+          ? `Te has inscrito exitosamente en <strong>${pdfComprobantes.length} cursos</strong>`
+          : 'Tu inscripción ha sido procesada exitosamente'
+        }
+                </p>
+              </div>
+
+              <div class="info-section">
+                <h4>👤 Información del Estudiante</h4>
+                <p style="margin: 5px 0;"><strong>Nombre:</strong> ${estudiante.nombres} ${estudiante.apellidos}</p>
+                <p style="margin: 5px 0;"><strong>Cédula:</strong> ${estudiante.cedula}</p>
+                <p style="margin: 5px 0;"><strong>Email:</strong> ${estudiante.email}</p>
+              </div>
+
+              ${pdfComprobantes.length > 0 ? `
+              <div class="pdf-box">
+                <h4>📎 Comprobante${pdfComprobantes.length > 1 ? 's' : ''} de Pago Adjunto${pdfComprobantes.length > 1 ? 's' : ''}</h4>
+                <p style="color: #1e40af; margin: 10px 0;">
+                  ${pdfComprobantes.length > 1
+            ? `Hemos adjuntado <strong>${pdfComprobantes.length} comprobantes de pago</strong> en formato PDF:`
+            : 'Hemos adjuntado el <strong>comprobante de tu pago</strong> en formato PDF.'
+          }
+                </p>
+                ${pdfComprobantes.length > 1 ? `
+                <ul>
+                  ${pdfComprobantes.map(pdf => `<li><strong>${pdf.nombreCurso}</strong></li>`).join('')}
+                </ul>
+                ` : `<p style="color: #1e40af; margin: 10px 0;"><strong>${pdfComprobantes[0].nombreCurso}</strong></p>`}
+                <p style="color: #1e40af; margin: 10px 0 0 0; font-size: 14px;">
+                  📄 Guarda estos comprobantes para tus registros personales.
+                </p>
+              </div>
+              ` : ''}
+
+              <div class="info-section" style="background: #fef3c7; border-left: 4px solid #f59e0b;">
+                <h4 style="color: #92400e;">💰 Información Importante</h4>
+                <ul style="color: #92400e; margin: 10px 0 0 20px;">
+                  <li>Recuerda ser puntual con tus pagos mensuales</li>
+                  <li>Puedes realizar tus pagos desde el panel de estudiante</li>
+                  <li>Recibirás un comprobante PDF por cada pago realizado</li>
+                </ul>
+              </div>
+
+              <p style="color: #4b5563; text-align: center; margin-top: 30px; font-size: 15px;">
+                ${esNuevo
+          ? '¡Bienvenido a nuestra familia! Estamos emocionados de acompañarte en tu formación. 🌿'
+          : '¡Gracias por continuar tu formación con nosotros! 🌿'
+        }
+              </p>
+            </div>
+
+            <div class="footer">
+              <p><strong>Escuela Jessica Vélez</strong></p>
+              <p>Tu carrera en belleza estética comienza aquí</p>
+              <p style="margin-top: 15px; color: #9ca3af;">
+                Este correo fue enviado a: ${estudiante.email}
+              </p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✉️ Email de confirmación de matrícula enviado a: ${estudiante.email} (${esNuevo ? 'nuevo' : 'existente'})`);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('Error enviando email de confirmación de matrícula:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = {
   enviarNotificacionNuevaMatricula,
   enviarEmailBienvenidaEstudiante,
@@ -1230,6 +1386,7 @@ module.exports = {
   enviarComprobantePagoMensual,
   enviarNotificacionPagoEstudiante,
   enviarNotificacionBloqueoCuenta,
-  enviarNotificacionDesbloqueoTemporal
+  enviarNotificacionDesbloqueoTemporal,
+  enviarConfirmacionMatricula
 };
 
