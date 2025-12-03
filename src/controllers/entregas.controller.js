@@ -2,6 +2,7 @@ const EntregasModel = require('../models/entregas.model');
 const CalificacionesModel = require('../models/calificaciones.model');
 const DocentesModel = require('../models/docentes.model');
 const { notificarTareaEntregadaDocente, notificarTareaCalificada } = require('../utils/notificationHelper');
+const { registrarAuditoria } = require('../utils/auditoria');
 const multer = require('multer');
 const cloudinaryService = require('../services/cloudinary.service');
 
@@ -115,6 +116,43 @@ async function createEntrega(req, res) {
       }, archivoData);
 
       const entrega = await EntregasModel.getById(id_entrega);
+
+      // Registrar auditoría - Estudiante entregó tarea
+      try {
+        const { pool } = require('../config/database');
+        
+        // Obtener información de la tarea para la auditoría
+        const [tareaInfoAudit] = await pool.execute(
+          `SELECT t.titulo, t.id_modulo, m.id_curso, c.nombre as curso_nombre
+           FROM tareas_modulo t 
+           JOIN modulos_curso m ON t.id_modulo = m.id_modulo
+           JOIN cursos c ON m.id_curso = c.id_curso
+           WHERE t.id_tarea = ?`,
+          [id_tarea]
+        );
+
+        if (tareaInfoAudit.length > 0) {
+          await registrarAuditoria({
+            tabla_afectada: 'entregas_tareas',
+            operacion: 'INSERT',
+            id_registro: id_entrega,
+            usuario_id: id_estudiante,
+            datos_nuevos: {
+              id_tarea,
+              titulo_tarea: tareaInfoAudit[0].titulo,
+              id_modulo: tareaInfoAudit[0].id_modulo,
+              id_curso: tareaInfoAudit[0].id_curso,
+              curso_nombre: tareaInfoAudit[0].curso_nombre,
+              tiene_archivo: archivoData ? true : false,
+              comentario_estudiante: comentario_estudiante || null
+            },
+            ip_address: req.ip || req.connection?.remoteAddress || null,
+            user_agent: req.get('user-agent') || null
+          });
+        }
+      } catch (auditError) {
+        console.error('Error registrando auditoría de entrega (no afecta la entrega):', auditError);
+      }
 
       // 🔥 Notificar al docente cuando el estudiante entrega una tarea
       try {
@@ -264,6 +302,45 @@ async function updateEntrega(req, res) {
 
       const entrega = await EntregasModel.getById(id);
 
+      // Registrar auditoría - Estudiante re-entregó tarea
+      try {
+        const { pool } = require('../config/database');
+        
+        // Obtener información de la tarea para la auditoría
+        const [tareaInfoAudit] = await pool.execute(
+          `SELECT t.titulo, t.id_modulo, m.id_curso, c.nombre as curso_nombre
+           FROM tareas_modulo t 
+           JOIN modulos_curso m ON t.id_modulo = m.id_modulo
+           JOIN cursos c ON m.id_curso = c.id_curso
+           WHERE t.id_tarea = ?`,
+          [entrega.id_tarea]
+        );
+
+        if (tareaInfoAudit.length > 0) {
+          await registrarAuditoria({
+            tabla_afectada: 'entregas_tareas',
+            operacion: 'UPDATE',
+            id_registro: id,
+            usuario_id: id_estudiante,
+            datos_nuevos: {
+              id_entrega: id,
+              id_tarea: entrega.id_tarea,
+              titulo_tarea: tareaInfoAudit[0].titulo,
+              id_modulo: tareaInfoAudit[0].id_modulo,
+              id_curso: tareaInfoAudit[0].id_curso,
+              curso_nombre: tareaInfoAudit[0].curso_nombre,
+              tiene_archivo_nuevo: archivoData ? true : false,
+              comentario_estudiante: comentario_estudiante || null,
+              accion: 're_entrega'
+            },
+            ip_address: req.ip || req.connection?.remoteAddress || null,
+            user_agent: req.get('user-agent') || null
+          });
+        }
+      } catch (auditError) {
+        console.error('Error registrando auditoría de re-entrega (no afecta la re-entrega):', auditError);
+      }
+
       // 🔥 Emitir evento WebSocket para notificar al docente
       const io = req.app.get('io');
       if (io) {
@@ -387,6 +464,54 @@ async function calificarEntrega(req, res) {
 
     // Obtener datos de la entrega para notificar al estudiante
     const entrega = await EntregasModel.getById(id);
+
+    // Registrar auditoría - Docente calificó tarea
+    try {
+      const { pool } = require('../config/database');
+      
+      // Obtener información completa para la auditoría
+      const [infoCompleta] = await pool.execute(`
+        SELECT 
+          t.titulo as titulo_tarea,
+          t.id_modulo,
+          m.id_curso,
+          c.nombre as curso_nombre,
+          u_est.nombre as estudiante_nombre,
+          u_est.apellido as estudiante_apellido
+        FROM entregas_tareas e
+        INNER JOIN tareas_modulo t ON e.id_tarea = t.id_tarea
+        INNER JOIN modulos_curso m ON t.id_modulo = m.id_modulo
+        INNER JOIN cursos c ON m.id_curso = c.id_curso
+        INNER JOIN usuarios u_est ON e.id_estudiante = u_est.id_usuario
+        WHERE e.id_entrega = ?
+      `, [id]);
+
+      if (infoCompleta.length > 0) {
+        const info = infoCompleta[0];
+        await registrarAuditoria({
+          tabla_afectada: 'calificaciones_tareas',
+          operacion: 'INSERT',
+          id_registro: id_calificacion,
+          usuario_id: req.user.id_usuario,
+          datos_nuevos: {
+            id_entrega: id,
+            id_tarea: entrega.id_tarea,
+            titulo_tarea: info.titulo_tarea,
+            id_estudiante: entrega.id_estudiante,
+            estudiante_nombre: `${info.estudiante_nombre} ${info.estudiante_apellido}`,
+            id_curso: info.id_curso,
+            curso_nombre: info.curso_nombre,
+            nota,
+            comentario_docente: comentario_docente || null,
+            calificado_por: id_docente
+          },
+          ip_address: req.ip || req.connection?.remoteAddress || null,
+          user_agent: req.get('user-agent') || null
+        });
+      }
+    } catch (auditError) {
+      console.error('Error registrando auditoría de calificación (no afecta la calificación):', auditError);
+    }
 
     // Obtener información del docente y curso
     const { pool } = require('../config/database');

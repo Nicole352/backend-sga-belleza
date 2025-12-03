@@ -75,7 +75,15 @@ async function createModulo(req, res) {
       operacion: "INSERT",
       id_registro: id_modulo,
       usuario_id: req.user?.id_usuario,
-      datos_nuevos: req.body,
+      datos_nuevos: {
+        nombre_modulo: modulo?.nombre || nombre,
+        id_curso: modulo?.id_curso || id_curso,
+        nombre_curso: modulo?.nombre_curso || null,
+        descripcion: modulo?.descripcion || descripcion,
+        fecha_inicio: modulo?.fecha_inicio || fecha_inicio,
+        fecha_fin: modulo?.fecha_fin || fecha_fin,
+        docente: modulo?.docente_nombre || null
+      },
       ip_address: req.ip || "0.0.0.0",
       user_agent: req.get("user-agent") || "unknown",
     });
@@ -183,6 +191,13 @@ async function updateModulo(req, res) {
         .json({ error: "No tienes permiso para modificar este módulo" });
     }
 
+    // Obtener módulo anterior antes de actualizar
+    const moduloAnterior = await ModulosModel.getById(id);
+    
+    if (!moduloAnterior) {
+      return res.status(404).json({ error: "Módulo no encontrado" });
+    }
+
     const updated = await ModulosModel.update(id, {
       nombre,
       descripcion,
@@ -196,6 +211,38 @@ async function updateModulo(req, res) {
     }
 
     const modulo = await ModulosModel.getById(id);
+
+    // Registrar auditoría - Docente actualizó módulo
+    try {
+      await registrarAuditoria({
+        tabla_afectada: 'modulos_curso',
+        operacion: 'UPDATE',
+        id_registro: parseInt(id),
+        usuario_id: req.user?.id_usuario,
+        datos_anteriores: {
+          id_modulo: parseInt(id),
+          nombre_modulo: moduloAnterior.nombre,
+          estado: moduloAnterior.estado,
+          descripcion: moduloAnterior.descripcion,
+          fecha_inicio: moduloAnterior.fecha_inicio,
+          fecha_fin: moduloAnterior.fecha_fin
+        },
+        datos_nuevos: {
+          id_modulo: parseInt(id),
+          nombre_modulo: modulo?.nombre || nombre,
+          nombre_curso: modulo?.nombre_curso || null,
+          descripcion: modulo?.descripcion || descripcion,
+          fecha_inicio: modulo?.fecha_inicio || fecha_inicio,
+          fecha_fin: modulo?.fecha_fin || fecha_fin,
+          estado: modulo?.estado || estado,
+          id_curso: modulo?.id_curso
+        },
+        ip_address: req.ip || req.connection?.remoteAddress || null,
+        user_agent: req.get('user-agent') || null
+      });
+    } catch (auditError) {
+      console.error('Error registrando auditoría de actualización de módulo (no afecta la actualización):', auditError);
+    }
 
     return res.json({
       success: true,
@@ -248,6 +295,34 @@ async function cerrarModulo(req, res) {
 
     const modulo = await ModulosModel.getById(id);
     console.log("Módulo actualizado:", modulo);
+
+    // Registrar auditoría - Docente cerró módulo
+    try {
+      await registrarAuditoria({
+        tabla_afectada: 'modulos_curso',
+        operacion: 'UPDATE',
+        id_registro: parseInt(id),
+        usuario_id: req.user?.id_usuario,
+        datos_anteriores: {
+          id_modulo: parseInt(id),
+          nombre_modulo: modulo.nombre,
+          nombre_curso: modulo.nombre_curso || null,
+          estado: 'activo'
+        },
+        datos_nuevos: {
+          id_modulo: parseInt(id),
+          nombre_modulo: modulo.nombre,
+          nombre_curso: modulo.nombre_curso || null,
+          id_curso: modulo.id_curso,
+          estado: 'cerrado',
+          accion: 'modulo_cerrado'
+        },
+        ip_address: req.ip || req.connection?.remoteAddress || null,
+        user_agent: req.get('user-agent') || null
+      });
+    } catch (auditError) {
+      console.error('Error registrando auditoría de cierre de módulo (no afecta el cierre):', auditError);
+    }
 
     // Emitir evento de WebSocket para notificar a los estudiantes
     try {
@@ -317,6 +392,34 @@ async function reabrirModulo(req, res) {
     const modulo = await ModulosModel.getById(id);
     console.log("Módulo actualizado:", modulo);
 
+    // Registrar auditoría - Docente reabrió módulo
+    try {
+      await registrarAuditoria({
+        tabla_afectada: 'modulos_curso',
+        operacion: 'UPDATE',
+        id_registro: parseInt(id),
+        usuario_id: req.user?.id_usuario,
+        datos_anteriores: {
+          id_modulo: parseInt(id),
+          nombre_modulo: modulo.nombre,
+          nombre_curso: modulo.nombre_curso || null,
+          estado: 'finalizado'
+        },
+        datos_nuevos: {
+          id_modulo: parseInt(id),
+          nombre_modulo: modulo.nombre,
+          nombre_curso: modulo.nombre_curso || null,
+          id_curso: modulo.id_curso,
+          estado: 'activo',
+          accion: 'modulo_reabierto'
+        },
+        ip_address: req.ip || req.connection?.remoteAddress || null,
+        user_agent: req.get('user-agent') || null
+      });
+    } catch (auditError) {
+      console.error('Error registrando auditoría de reapertura de módulo (no afecta la reapertura):', auditError);
+    }
+
     // Emitir evento de WebSocket para notificar a los estudiantes
     try {
       socketService.emitToCurso(req, modulo.id_curso, 'modulo_reabierto', {
@@ -367,6 +470,38 @@ async function deleteModulo(req, res) {
       return res
         .status(403)
         .json({ error: "No tienes permiso para eliminar este módulo" });
+    }
+
+    // Obtener información del módulo antes de eliminar
+    const moduloAnterior = await ModulosModel.getById(id);
+    
+    if (!moduloAnterior) {
+      return res.status(404).json({ error: "Módulo no encontrado" });
+    }
+
+    // Registrar auditoría antes de eliminar
+    try {
+      await registrarAuditoria({
+        tabla_afectada: 'modulos_curso',
+        operacion: 'DELETE',
+        id_registro: parseInt(id),
+        usuario_id: req.user?.id_usuario,
+        datos_anteriores: {
+          id_modulo: parseInt(id),
+          nombre_modulo: moduloAnterior.nombre,
+          nombre_curso: moduloAnterior.nombre_curso || null,
+          id_curso: moduloAnterior.id_curso,
+          descripcion: moduloAnterior.descripcion,
+          estado: moduloAnterior.estado,
+          fecha_inicio: moduloAnterior.fecha_inicio,
+          fecha_fin: moduloAnterior.fecha_fin
+        },
+        datos_nuevos: null,
+        ip_address: req.ip || req.connection?.remoteAddress || null,
+        user_agent: req.get('user-agent') || null
+      });
+    } catch (auditError) {
+      console.error('Error registrando auditoría de eliminación de módulo (no afecta la eliminación):', auditError);
     }
 
     const deleted = await ModulosModel.delete(id);

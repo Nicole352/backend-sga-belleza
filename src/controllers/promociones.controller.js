@@ -42,13 +42,23 @@ exports.create = async (req, res) => {
       created_by: req.user.id_usuario
     });
 
-    // Auditoría
+    // Auditoría con datos completos
     await registrarAuditoria({
       tabla_afectada: 'promociones',
       operacion: 'INSERT',
       id_registro: id_promocion,
       usuario_id: req.user.id_usuario,
-      datos_nuevos: req.body,
+      datos_nuevos: {
+        id_promocion,
+        nombre_promocion,
+        descripcion,
+        meses_gratis: meses_gratis || 0,
+        clases_gratis: clases_gratis || 0,
+        fecha_inicio,
+        fecha_fin,
+        cupos_disponibles,
+        activa: true
+      },
       ip_address: req.ip,
       user_agent: req.get('user-agent')
     });

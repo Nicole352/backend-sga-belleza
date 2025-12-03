@@ -207,17 +207,34 @@ async function cambiarEstado(req, res) {
     const estadoAnterior = usuario.estado;
     const usuarioActualizado = await usuariosModel.changeUserStatus(id, estado);
 
-    // Registrar auditoría - Cambio de estado
-    await registrarAuditoria({
-      tabla_afectada: 'usuarios',
-      operacion: 'UPDATE',
-      id_registro: parseInt(id),
-      usuario_id: req.user?.id_usuario || parseInt(id),
-      datos_anteriores: { estado: estadoAnterior },
-      datos_nuevos: { estado: estado },
-      ip_address: req.ip || req.connection?.remoteAddress || null,
-      user_agent: req.get('user-agent') || null
-    });
+    // Registrar auditoría - Admin activó/desactivó usuario
+    try {
+      const adminNombre = req.user ? `${req.user.nombre || ''} ${req.user.apellido || ''}`.trim() : 'Administrador';
+      await registrarAuditoria({
+        tabla_afectada: 'usuarios',
+        operacion: 'UPDATE',
+        id_registro: parseInt(id),
+        usuario_id: req.user?.id_usuario || parseInt(id),
+        datos_anteriores: {
+          estado: estadoAnterior,
+          nombre: usuario.nombre,
+          apellido: usuario.apellido,
+          rol: usuario.rol || 'No especificado'
+        },
+        datos_nuevos: {
+          estado: estado,
+          nombre: usuario.nombre,
+          apellido: usuario.apellido,
+          rol: usuario.rol || 'No especificado',
+          admin_que_modifico: adminNombre,
+          accion: estado === 'activo' ? 'usuario_activado' : 'usuario_desactivado'
+        },
+        ip_address: req.ip || req.connection?.remoteAddress || null,
+        user_agent: req.get('user-agent') || null
+      });
+    } catch (auditError) {
+      console.error('Error registrando auditoría de cambio de estado (no afecta el cambio):', auditError);
+    }
 
     res.json({
       success: true,
@@ -1040,17 +1057,29 @@ async function cambiarMiPassword(req, res) {
     // Actualizar contraseña
     await usuariosModel.updateUserPassword(id_usuario, passwordHash);
 
-    // Registrar auditoría
-    await registrarAuditoria({
-      tabla_afectada: 'usuarios',
-      operacion: 'UPDATE',
-      id_registro: id_usuario,
-      usuario_id: id_usuario,
-      datos_anteriores: null,
-      datos_nuevos: { accion: 'cambio_password' },
-      ip_address: req.ip || req.connection?.remoteAddress || null,
-      user_agent: req.get('user-agent') || null
-    });
+    // Registrar auditoría - Usuario cambió contraseña
+    try {
+      // Obtener información del usuario para la auditoría
+      const usuarioInfo = await usuariosModel.getUserById(id_usuario);
+      await registrarAuditoria({
+        tabla_afectada: 'usuarios',
+        operacion: 'UPDATE',
+        id_registro: id_usuario,
+        usuario_id: id_usuario,
+        datos_anteriores: null,
+        datos_nuevos: {
+          accion: 'cambio_password',
+          usuario_nombre: usuarioInfo?.nombre || null,
+          usuario_apellido: usuarioInfo?.apellido || null,
+          usuario_email: usuarioInfo?.email || null,
+          rol: usuarioInfo?.rol || null
+        },
+        ip_address: req.ip || req.connection?.remoteAddress || null,
+        user_agent: req.get('user-agent') || null
+      });
+    } catch (auditError) {
+      console.error('Error registrando auditoría de cambio de contraseña (no afecta el cambio):', auditError);
+    }
 
     res.json({
       success: true,

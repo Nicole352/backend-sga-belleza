@@ -703,9 +703,13 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
             cedula: solicitud.identificacion_solicitante,
             nombre: solicitud.nombre_solicitante,
             apellido: solicitud.apellido_solicitante,
+            email: solicitud.email_solicitante,
             username: username,
+            telefono: solicitud.telefono_solicitante,
             rol: 'estudiante',
-            desde_solicitud: id_solicitud
+            estado: 'activo',
+            desde_solicitud: id_solicitud,
+            curso_matriculado: id_curso
           },
           ip_address: req.ip,
           user_agent: req.get('User-Agent')
@@ -718,8 +722,19 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         operacion: 'UPDATE',
         id_registro: id_solicitud,
         usuario_id: aprobado_por,
-        datos_anteriores: { estado: 'pendiente' },
-        datos_nuevos: { estado: 'aprobado', verificado_por: aprobado_por },
+        datos_anteriores: { 
+          estado: 'pendiente',
+          codigo_solicitud: solicitud.codigo_solicitud
+        },
+        datos_nuevos: { 
+          estado: 'aprobado', 
+          verificado_por: aprobado_por,
+          codigo_solicitud: solicitud.codigo_solicitud,
+          nombre_solicitante: solicitud.nombre_solicitante,
+          apellido_solicitante: solicitud.apellido_solicitante,
+          monto_matricula: solicitud.monto_matricula,
+          metodo_pago: solicitud.metodo_pago
+        },
         ip_address: req.ip,
         user_agent: req.get('User-Agent')
       });

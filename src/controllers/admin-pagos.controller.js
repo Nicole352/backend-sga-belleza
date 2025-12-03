@@ -3,6 +3,7 @@ const { enviarComprobantePagoMensual } = require('../services/emailService');
 const { generarComprobantePagoMensual } = require('../services/pdfService');
 const { emitSocketEvent, emitToUser } = require('../services/socket.service');
 const { notificarPagoVerificado } = require('../utils/notificationHelper');
+const { registrarAuditoria } = require('../utils/auditoria');
 
 // Obtener todos los pagos con información de estudiantes
 exports.getAllPagos = async (req, res) => {
@@ -232,15 +233,42 @@ exports.verificarPago = async (req, res) => {
         pm.numero_cuota,
         pm.monto,
         pm.fecha_vencimiento,
-        c.nombre as curso_nombre
+        pm.metodo_pago,
+        c.nombre as curso_nombre,
+        u.nombre as estudiante_nombre,
+        u.apellido as estudiante_apellido,
+        u.cedula as estudiante_cedula
       FROM pagos_mensuales pm
       INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
       INNER JOIN cursos c ON m.id_curso = c.id_curso
+      INNER JOIN usuarios u ON m.id_estudiante = u.id_usuario
       WHERE pm.id_pago = ?
     `, [id]);
 
     const id_estudiante = estudianteInfo[0]?.id_estudiante;
     console.log(`ID Estudiante obtenido: ${id_estudiante}`);
+
+    // Registrar auditoría de verificación de pago
+    await registrarAuditoria({
+      tabla_afectada: 'pagos_mensuales',
+      operacion: 'UPDATE',
+      id_registro: parseInt(id),
+      usuario_id: verificado_por,
+      datos_anteriores: { estado: 'pagado' },
+      datos_nuevos: {
+        estado: 'verificado',
+        id_pago: parseInt(id),
+        numero_cuota: estudianteInfo[0]?.numero_cuota,
+        monto: estudianteInfo[0]?.monto,
+        metodo_pago: estudianteInfo[0]?.metodo_pago,
+        nombre_curso: estudianteInfo[0]?.curso_nombre,
+        estudiante_nombre: estudianteInfo[0]?.estudiante_nombre,
+        estudiante_apellido: estudianteInfo[0]?.estudiante_apellido,
+        estudiante_cedula: estudianteInfo[0]?.estudiante_cedula
+      },
+      ip_address: req.ip || '0.0.0.0',
+      user_agent: req.get('user-agent') || 'unknown'
+    });
 
     // VERIFICAR SI EL ESTUDIANTE DEBE SER DESBLOQUEADO PERMANENTEMENTE
     // Esto ocurre cuando:
@@ -589,6 +617,55 @@ exports.rechazarPago = async (req, res) => {
     `, [id]);
 
     const id_estudiante = pagoInfo[0]?.id_estudiante;
+
+    // Registrar auditoría - Admin rechazó pago
+    try {
+      const [pagoCompleto] = await pool.execute(`
+        SELECT 
+          pm.numero_cuota,
+          pm.monto,
+          pm.metodo_pago,
+          pm.estado as estado_anterior,
+          u.nombre as estudiante_nombre,
+          u.apellido as estudiante_apellido,
+          u.cedula as estudiante_cedula,
+          c.nombre as curso_nombre,
+          c.codigo_curso
+        FROM pagos_mensuales pm
+        INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
+        INNER JOIN usuarios u ON m.id_estudiante = u.id_usuario
+        INNER JOIN cursos c ON m.id_curso = c.id_curso
+        WHERE pm.id_pago = ?
+      `, [id]);
+
+      if (pagoCompleto.length > 0) {
+        const pago = pagoCompleto[0];
+        await registrarAuditoria({
+          tabla_afectada: 'pagos_mensuales',
+          operacion: 'UPDATE',
+          id_registro: parseInt(id),
+          usuario_id: verificado_por,
+          datos_anteriores: { estado: pago.estado_anterior || 'pagado' },
+          datos_nuevos: {
+            estado: 'pendiente',
+            id_pago: parseInt(id),
+            numero_cuota: pago.numero_cuota,
+            monto: parseFloat(pago.monto),
+            metodo_pago: pago.metodo_pago,
+            curso_nombre: pago.curso_nombre,
+            codigo_curso: pago.codigo_curso,
+            estudiante_nombre: `${pago.estudiante_nombre} ${pago.estudiante_apellido}`,
+            estudiante_cedula: pago.estudiante_cedula,
+            observaciones: observaciones,
+            accion: 'pago_rechazado'
+          },
+          ip_address: req.ip || req.connection?.remoteAddress || null,
+          user_agent: req.get('user-agent') || null
+        });
+      }
+    } catch (auditError) {
+      console.error('Error registrando auditoría de rechazo de pago (no afecta el rechazo):', auditError);
+    }
 
     console.log(`Emitiendo evento pago_rechazado a todos los admins...`);
     emitSocketEvent(req, 'pago_rechazado', {

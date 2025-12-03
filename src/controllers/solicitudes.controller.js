@@ -1078,6 +1078,43 @@ exports.updateDecision = async (req, res) => {
     await connection.commit();
     connection.release();
 
+    // Registrar auditoría - Admin aprobó/rechazó solicitud
+    try {
+      const { registrarAuditoria } = require('../utils/auditoria');
+      const [solicitudInfo] = await pool.execute(
+        'SELECT codigo_solicitud, nombre_solicitante, apellido_solicitante, email_solicitante FROM solicitudes_matricula WHERE id_solicitud = ?',
+        [id]
+      );
+
+      if (solicitudInfo.length > 0) {
+        const sol = solicitudInfo[0];
+        await registrarAuditoria({
+          tabla_afectada: 'solicitudes_matricula',
+          operacion: 'UPDATE',
+          id_registro: id,
+          usuario_id: verificado_por || req.user?.id_usuario,
+          datos_anteriores: {
+            estado: estadoAnterior,
+            codigo_solicitud: sol.codigo_solicitud,
+            nombre_solicitante: sol.nombre_solicitante,
+            apellido_solicitante: sol.apellido_solicitante
+          },
+          datos_nuevos: {
+            estado: estado,
+            codigo_solicitud: sol.codigo_solicitud,
+            nombre_solicitante: sol.nombre_solicitante,
+            apellido_solicitante: sol.apellido_solicitante,
+            email_solicitante: sol.email_solicitante,
+            observaciones: observaciones || null
+          },
+          ip_address: req.ip || req.connection?.remoteAddress || null,
+          user_agent: req.get('user-agent') || null
+        });
+      }
+    } catch (auditError) {
+      console.error('Error registrando auditoría de solicitud (no afecta la operación):', auditError);
+    }
+
     // Invalidar caché de cursos disponibles (los cupos cambiaron)
     cacheService.invalidateCursosDisponibles();
     console.log(' Caché invalidado: solicitud aprobada/rechazada');

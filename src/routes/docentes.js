@@ -26,12 +26,12 @@ router.get('/mi-horario', authMiddleware, docentesController.getMiHorario);
 router.get('/:id', docentesController.getDocenteById);
 
 // POST /api/docentes - Crear nuevo docente
-router.post('/', docentesController.createDocente);
+router.post('/', authMiddleware, docentesController.createDocente);
 
 // PUT /api/docentes/:id - Actualizar docente
-router.put('/:id', docentesController.updateDocente);
+router.put('/:id', authMiddleware, docentesController.updateDocente);
 
 // DELETE /api/docentes/:id - Eliminar docente (cambiar estado a inactivo)
-router.delete('/:id', docentesController.deleteDocente);
+router.delete('/:id', authMiddleware, docentesController.deleteDocente);
 
 module.exports = router;

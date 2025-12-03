@@ -1,6 +1,5 @@
 const { listCursos, getCursoById, createCurso, updateCurso, deleteCurso } = require('../models/cursos.model');
 const { pool } = require('../config/database');
-const { registrarAuditoria } = require('../utils/auditoria');
 const ExcelJS = require('exceljs');
 const cacheService = require('../services/cache.service');
 const { deleteFile } = require('../services/cloudinary.service');
@@ -132,16 +131,26 @@ async function createCursoController(req, res) {
   try {
     const result = await createCurso(req.body || {});
 
-    // Registrar auditoría
-    await registrarAuditoria({
-      tabla_afectada: 'cursos',
-      operacion: 'INSERT',
-      id_registro: result.id_curso,
-      usuario_id: req.user?.id_usuario,
-      datos_nuevos: req.body,
-      ip_address: req.ip || '0.0.0.0',
-      user_agent: req.get('user-agent') || 'unknown'
-    });
+    // Obtener el curso completo recién creado para auditoría detallada
+    const cursoCreado = await getCursoById(result.id_curso);
+
+    // Registrar auditoría con datos completos
+    await req.registrarAuditoria(
+      'cursos',
+      'INSERT',
+      result.id_curso,
+      null, // datos_anteriores
+      {
+        nombre: cursoCreado.nombre,
+        codigo_curso: cursoCreado.codigo_curso,
+        horario: cursoCreado.horario,
+        capacidad_maxima: cursoCreado.capacidad_maxima,
+        fecha_inicio: cursoCreado.fecha_inicio,
+        fecha_fin: cursoCreado.fecha_fin,
+        estado: cursoCreado.estado,
+        tipo_curso: cursoCreado.tipo_curso
+      }
+    );
 
     return res.status(201).json(result);
   } catch (err) {
@@ -224,21 +233,36 @@ async function updateCursoController(req, res) {
     const affected = await updateCurso(id, req.body || {});
     if (affected === 0) return res.status(404).json({ error: 'Curso no encontrado o sin cambios' });
 
-    // Registrar auditoría
-    await registrarAuditoria({
-      tabla_afectada: 'cursos',
-      operacion: 'UPDATE',
-      id_registro: id,
-      usuario_id: req.user?.id_usuario,
-      datos_anteriores: cursoAnterior,
-      datos_nuevos: req.body,
-      ip_address: req.ip || '0.0.0.0',
-      user_agent: req.get('user-agent') || 'unknown'
-    });
+    // Obtener el curso actualizado para auditoría detallada
+    const cursoActualizado = await getCursoById(id);
+
+    // Registrar auditoría con datos completos
+    await req.registrarAuditoria(
+      'cursos',
+      'UPDATE',
+      id,
+      {
+        nombre: cursoAnterior.nombre,
+        codigo_curso: cursoAnterior.codigo_curso,
+        horario: cursoAnterior.horario,
+        capacidad_maxima: cursoAnterior.capacidad_maxima,
+        fecha_inicio: cursoAnterior.fecha_inicio,
+        fecha_fin: cursoAnterior.fecha_fin,
+        estado: cursoAnterior.estado
+      },
+      {
+        nombre: cursoActualizado.nombre,
+        codigo_curso: cursoActualizado.codigo_curso,
+        horario: cursoActualizado.horario,
+        capacidad_maxima: cursoActualizado.capacidad_maxima,
+        fecha_inicio: cursoActualizado.fecha_inicio,
+        fecha_fin: cursoActualizado.fecha_fin,
+        estado: cursoActualizado.estado
+      }
+    );
 
     // Devolver el curso actualizado en lugar de solo { ok: true }
-    const updatedCurso = await getCursoById(id);
-    return res.json(updatedCurso);
+    return res.json(cursoActualizado);
   } catch (err) {
     console.error('Error actualizando curso:', err);
     return res.status(400).json({ error: err.message || 'Error al actualizar curso' });
@@ -250,6 +274,35 @@ async function deleteCursoController(req, res) {
   try {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ error: 'ID inválido' });
+    
+    // Obtener información del curso antes de eliminar
+    const cursoAnterior = await getCursoById(id);
+    
+    if (!cursoAnterior) {
+      return res.status(404).json({ error: 'Curso no encontrado' });
+    }
+
+    // Registrar auditoría antes de eliminar
+    try {
+      await req.registrarAuditoria(
+        'cursos',
+        'DELETE',
+        id,
+        {
+          nombre: cursoAnterior.nombre,
+          codigo_curso: cursoAnterior.codigo_curso,
+          horario: cursoAnterior.horario,
+          capacidad_maxima: cursoAnterior.capacidad_maxima,
+          fecha_inicio: cursoAnterior.fecha_inicio,
+          fecha_fin: cursoAnterior.fecha_fin,
+          estado: cursoAnterior.estado
+        },
+        null
+      );
+    } catch (auditError) {
+      console.error('Error registrando auditoría de eliminación de curso (no afecta la eliminación):', auditError);
+    }
+
     const affected = await deleteCurso(id);
     if (affected === 0) return res.status(404).json({ error: 'Curso no encontrado' });
     return res.json({ ok: true });

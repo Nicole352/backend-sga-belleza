@@ -249,13 +249,37 @@ async function guardarAsistenciaController(req, res) {
       });
     }
 
+    // Obtener nombre del curso para auditoría
+    let nombreCurso = null;
+    try {
+      const [cursoInfo] = await pool.execute('SELECT nombre FROM cursos WHERE id_curso = ?', [id_curso]);
+      nombreCurso = cursoInfo[0]?.nombre || null;
+    } catch (e) {
+      console.error('Error obteniendo nombre del curso para auditoría:', e);
+    }
+
+    // Contar estados
+    const presentes = asistencias.filter(a => a.estado === 'presente').length;
+    const ausentes = asistencias.filter(a => a.estado === 'ausente').length;
+    const justificados = asistencias.filter(a => a.estado === 'justificado').length;
+    const tardanzas = asistencias.filter(a => a.estado === 'tardanza').length;
+
     // Registrar auditoría
     await registrarAuditoria({
       tabla_afectada: 'asistencias',
       operacion: 'INSERT',
       id_registro: id_curso,
       usuario_id: req.user?.id_usuario || id_docente,
-      datos_nuevos: { id_curso, fecha, total_registros: asistencias.length },
+      datos_nuevos: { 
+        id_curso, 
+        nombre_curso: nombreCurso,
+        fecha, 
+        total_estudiantes: asistencias.length,
+        presentes,
+        ausentes,
+        justificados,
+        tardanzas
+      },
       ip_address: req.ip || '0.0.0.0',
       user_agent: req.get('user-agent') || 'unknown'
     });

@@ -159,7 +159,18 @@ async function createTarea(req, res) {
       operacion: 'INSERT',
       id_registro: id_tarea,
       usuario_id: req.user?.id_usuario,
-      datos_nuevos: req.body,
+      datos_nuevos: {
+        titulo: tarea?.titulo || titulo,
+        id_modulo: tarea?.id_modulo || id_modulo,
+        nombre_modulo: tarea?.modulo || null,
+        descripcion: tarea?.descripcion || descripcion,
+        nota_maxima: tarea?.nota_maxima || nota_maxima,
+        nota_minima_aprobacion: tarea?.nota_minima_aprobacion || nota_minima_aprobacion,
+        ponderacion: tarea?.ponderacion || ponderacion,
+        fecha_limite: tarea?.fecha_limite || fecha_limite,
+        permite_archivo: tarea?.permite_archivo || permite_archivo,
+        tamano_maximo_mb: tarea?.tamano_maximo_mb || tamano_maximo_mb
+      },
       ip_address: req.ip || '0.0.0.0',
       user_agent: req.get('user-agent') || 'unknown'
     });
@@ -298,6 +309,49 @@ async function updateTarea(req, res) {
 
     const tarea = await TareasModel.getById(id);
 
+    // Registrar auditoría - Docente actualizó tarea
+    try {
+      const { pool } = require('../config/database');
+      const [tareaAnterior] = await pool.execute(
+        'SELECT titulo, id_modulo, estado FROM tareas_modulo WHERE id_tarea = ?',
+        [id]
+      );
+
+      const [moduloInfo] = await pool.execute(
+        'SELECT m.id_curso, c.nombre as curso_nombre FROM modulos_curso m JOIN cursos c ON m.id_curso = c.id_curso WHERE m.id_modulo = ?',
+        [tarea.id_modulo]
+      );
+
+      if (tareaAnterior.length > 0 && moduloInfo.length > 0) {
+        await registrarAuditoria({
+          tabla_afectada: 'tareas_modulo',
+          operacion: 'UPDATE',
+          id_registro: parseInt(id),
+          usuario_id: req.user?.id_usuario,
+          datos_anteriores: {
+            id_tarea: parseInt(id),
+            titulo: tareaAnterior[0].titulo,
+            id_modulo: tareaAnterior[0].id_modulo,
+            estado: tareaAnterior[0].estado
+          },
+          datos_nuevos: {
+            id_tarea: parseInt(id),
+            titulo: tarea.titulo || titulo,
+            id_modulo: tarea.id_modulo,
+            id_curso: moduloInfo[0].id_curso,
+            curso_nombre: moduloInfo[0].curso_nombre,
+            nota_maxima: tarea.nota_maxima || nota_maxima,
+            fecha_limite: tarea.fecha_limite || fecha_limite,
+            estado: tarea.estado || estado
+          },
+          ip_address: req.ip || req.connection?.remoteAddress || null,
+          user_agent: req.get('user-agent') || null
+        });
+      }
+    } catch (auditError) {
+      console.error('Error registrando auditoría de actualización de tarea (no afecta la actualización):', auditError);
+    }
+
     return res.json({
       success: true,
       message: 'Tarea actualizada exitosamente',
@@ -325,6 +379,45 @@ async function deleteTarea(req, res) {
     const belongsToDocente = await TareasModel.belongsToDocente(id, id_docente);
     if (!belongsToDocente) {
       return res.status(403).json({ error: 'No tienes permiso para eliminar esta tarea' });
+    }
+
+    // Obtener información de la tarea antes de eliminar
+    const tareaAnterior = await TareasModel.getById(id);
+    
+    if (!tareaAnterior) {
+      return res.status(404).json({ error: 'Tarea no encontrada' });
+    }
+
+    // Registrar auditoría antes de eliminar
+    try {
+      const { pool } = require('../config/database');
+      const [moduloInfo] = await pool.execute(
+        'SELECT m.id_curso, c.nombre as curso_nombre FROM modulos_curso m JOIN cursos c ON m.id_curso = c.id_curso WHERE m.id_modulo = ?',
+        [tareaAnterior.id_modulo]
+      );
+
+      if (moduloInfo.length > 0) {
+        await registrarAuditoria({
+          tabla_afectada: 'tareas_modulo',
+          operacion: 'DELETE',
+          id_registro: parseInt(id),
+          usuario_id: req.user?.id_usuario,
+          datos_anteriores: {
+            id_tarea: parseInt(id),
+            titulo: tareaAnterior.titulo,
+            id_modulo: tareaAnterior.id_modulo,
+            id_curso: moduloInfo[0].id_curso,
+            curso_nombre: moduloInfo[0].curso_nombre,
+            nota_maxima: tareaAnterior.nota_maxima,
+            fecha_limite: tareaAnterior.fecha_limite
+          },
+          datos_nuevos: null,
+          ip_address: req.ip || req.connection?.remoteAddress || null,
+          user_agent: req.get('user-agent') || null
+        });
+      }
+    } catch (auditError) {
+      console.error('Error registrando auditoría de eliminación de tarea (no afecta la eliminación):', auditError);
     }
 
     const deleted = await TareasModel.delete(id);

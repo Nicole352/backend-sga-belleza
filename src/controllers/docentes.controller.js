@@ -14,24 +14,24 @@ async function generateUniqueUsername(nombres, apellidos) {
     // Extraer iniciales del nombre (todas las palabras)
     const nombreParts = nombres.trim().split(' ').filter(part => part.length > 0);
     const inicialesNombre = nombreParts.map(part => part.charAt(0).toLowerCase()).join('');
-    
+
     // Extraer primer apellido
     const apellidoParts = apellidos.trim().split(' ').filter(part => part.length > 0);
     const primerApellido = apellidoParts[0]?.toLowerCase() || '';
-    
+
     // Crear username base
     const baseUsername = inicialesNombre + primerApellido;
-    
+
     // Verificar si el username ya existe (en tabla usuarios, no docentes)
     const [existingUsers] = await pool.execute(
       'SELECT COUNT(*) as count FROM usuarios WHERE username = ?',
       [baseUsername]
     );
-    
+
     if (existingUsers[0].count === 0) {
       return baseUsername;
     }
-    
+
     // Si existe, buscar el siguiente número disponible (usernameX)
     let counter = 2;
     while (counter <= 99) {
@@ -40,13 +40,13 @@ async function generateUniqueUsername(nombres, apellidos) {
         'SELECT COUNT(*) as count FROM usuarios WHERE username = ?',
         [numberedUsername]
       );
-      
+
       if (checkUsers[0].count === 0) {
         return numberedUsername;
       }
       counter++;
     }
-    
+
     // Fallback si no se puede generar
     return baseUsername + Math.floor(Math.random() * 1000);
   } catch (error) {
@@ -65,7 +65,7 @@ async function generateUniqueUsername(nombres, apellidos) {
 exports.getDocentes = async (req, res) => {
   try {
     console.log('=== INICIANDO GET /api/docentes ===');
-    
+
     const filters = {
       page: req.query.page || 1,
       limit: req.query.limit || 10,
@@ -77,18 +77,18 @@ exports.getDocentes = async (req, res) => {
 
     const result = await DocentesModel.getAll(filters);
     const { docentes, total } = result;
-    
+
     console.log('Total docentes en BD:', total);
     console.log(`Mostrando docentes:`, docentes.length);
-    
+
     // Agregar datos de usuarios si existen
     const docentesFormateados = [];
-    
+
     for (const docente of docentes) {
       try {
         // Buscar datos del usuario usando el modelo
         const usuario = await DocentesModel.getWithUserData(docente.identificacion);
-        
+
         if (usuario) {
           docentesFormateados.push({
             ...docente,
@@ -126,16 +126,16 @@ exports.getDocentes = async (req, res) => {
         });
       }
     }
-    
+
     // Enviar respuesta
     res.set('X-Total-Count', total.toString());
     res.json(docentesFormateados);
-    
+
   } catch (error) {
     console.error('=== ERROR EN GET /api/docentes ===');
     console.error('Error completo:', error);
     console.error('Stack trace:', error.stack);
-    
+
     res.status(500).json({
       success: false,
       message: 'Error interno del servidor',
@@ -147,24 +147,24 @@ exports.getDocentes = async (req, res) => {
 exports.getDocenteById = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const [docentes] = await pool.execute(
       'SELECT * FROM docentes WHERE id_docente = ?',
       [id]
     );
-    
+
     if (docentes.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Docente no encontrado'
       });
     }
-    
+
     res.json({
       success: true,
       docente: docentes[0]
     });
-    
+
   } catch (error) {
     console.error('Error al obtener docente:', error);
     res.status(500).json({
@@ -177,21 +177,21 @@ exports.getDocenteById = async (req, res) => {
 
 exports.createDocente = async (req, res) => {
   const connection = await pool.getConnection();
-  
+
   try {
     await connection.beginTransaction();
-    
-    const { 
-      identificacion, 
-      nombres, 
-      apellidos, 
+
+    const {
+      identificacion,
+      nombres,
+      apellidos,
       fecha_nacimiento,
       titulo_profesional,
       gmail,
       experiencia_anos = 0,
       estado = 'activo'
     } = req.body;
-    
+
     // Validaciones obligatorias
     if (!identificacion || identificacion.trim() === '') {
       return res.status(400).json({
@@ -199,41 +199,41 @@ exports.createDocente = async (req, res) => {
         message: 'La identificación es obligatoria'
       });
     }
-    
+
     if (!nombres || nombres.trim() === '') {
       return res.status(400).json({
         success: false,
         message: 'Los nombres son obligatorios'
       });
     }
-    
+
     if (!apellidos || apellidos.trim() === '') {
       return res.status(400).json({
         success: false,
         message: 'Los apellidos son obligatorios'
       });
     }
-    
+
     if (!titulo_profesional || titulo_profesional.trim() === '') {
       return res.status(400).json({
         success: false,
         message: 'El título profesional es obligatorio'
       });
     }
-    
+
     if (!['activo', 'inactivo'].includes(estado)) {
       return res.status(400).json({
         success: false,
         message: 'Estado inválido'
       });
     }
-    
+
     // 1. Verificar que no exista usuario con la misma cédula
     const [existingUser] = await connection.execute(
       'SELECT id_usuario FROM usuarios WHERE cedula = ?',
       [identificacion.trim()]
     );
-    
+
     if (existingUser.length > 0) {
       await connection.rollback();
       return res.status(400).json({
@@ -241,14 +241,14 @@ exports.createDocente = async (req, res) => {
         message: 'Ya existe un usuario con esa identificación'
       });
     }
-    
+
     // 2. Verificar email único si se proporciona
     if (gmail && gmail.trim() !== '') {
       const [existingEmail] = await connection.execute(
         'SELECT id_usuario FROM usuarios WHERE email = ?',
         [gmail.trim()]
       );
-      
+
       if (existingEmail.length > 0) {
         await connection.rollback();
         return res.status(400).json({
@@ -257,13 +257,13 @@ exports.createDocente = async (req, res) => {
         });
       }
     }
-    
+
     // 3. Obtener el rol de docente
     const [roles] = await connection.execute(
       'SELECT id_rol FROM roles WHERE nombre_rol = ?',
       ['docente']
     );
-    
+
     let id_rol_docente;
     if (roles.length === 0) {
       // Crear rol docente si no existe
@@ -275,15 +275,15 @@ exports.createDocente = async (req, res) => {
     } else {
       id_rol_docente = roles[0].id_rol;
     }
-    
+
     // 4. Generar username único
     const username = await generateUniqueUsername(nombres, apellidos);
-    
+
     // 5. Generar contraseña temporal (identificación) con bcrypt
     const passwordTemporal = identificacion.trim();
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(passwordTemporal, salt);
-    
+
     // 6. Crear usuario docente
     const [userResult] = await connection.execute(`
       INSERT INTO usuarios (
@@ -305,7 +305,7 @@ exports.createDocente = async (req, res) => {
       id_rol_docente,
       estado
     ]);
-    
+
     // 7. Crear registro en tabla docentes (sin username ni password_temporal duplicados)
     const [docenteResult] = await connection.execute(`
       INSERT INTO docentes (
@@ -324,43 +324,45 @@ exports.createDocente = async (req, res) => {
       titulo_profesional.trim(),
       parseInt(experiencia_anos) || 0
     ]);
-    
+
     await connection.commit();
-    
+
     // Registrar auditoría - Creación de docente
-    await registrarAuditoria(
-      'docentes',
-      'INSERT',
-      docenteResult.insertId,
-      req.user?.id_usuario || userResult.insertId,
-      null,
-      {
+    await registrarAuditoria({
+      tabla_afectada: 'docentes',
+      operacion: 'INSERT',
+      id_registro: docenteResult.insertId,
+      usuario_id: req.user?.id_usuario || userResult.insertId,
+      datos_anteriores: null,
+      datos_nuevos: {
         identificacion: identificacion.trim(),
         nombres: nombres.trim(),
         apellidos: apellidos.trim(),
         titulo_profesional: titulo_profesional.trim()
       },
-      req
-    );
-    
+      ip_address: req.ip || req.connection?.remoteAddress || null,
+      user_agent: req.get('user-agent') || null
+    });
+
     // Registrar auditoría - Creación de usuario
-    await registrarAuditoria(
-      'usuarios',
-      'INSERT',
-      userResult.insertId,
-      req.user?.id_usuario || userResult.insertId,
-      null,
-      {
+    await registrarAuditoria({
+      tabla_afectada: 'usuarios',
+      operacion: 'INSERT',
+      id_registro: userResult.insertId,
+      usuario_id: req.user?.id_usuario || userResult.insertId,
+      datos_anteriores: null,
+      datos_nuevos: {
         cedula: identificacion.trim(),
         nombre: nombres.trim(),
         apellido: apellidos.trim(),
         username: username,
         rol: 'docente'
       },
-      req
-    );
-    
-    
+      ip_address: req.ip || req.connection?.remoteAddress || null,
+      user_agent: req.get('user-agent') || null
+    });
+
+
     // Enviar email de bienvenida si el docente tiene email
     if (gmail && gmail.trim() !== '') {
       try {
@@ -402,11 +404,11 @@ exports.createDocente = async (req, res) => {
         estado: estado
       }
     });
-    
+
   } catch (error) {
     await connection.rollback();
     console.error('Error al crear docente:', error);
-    
+
     if (error.code === 'ER_DUP_ENTRY') {
       if (error.message.includes('cedula')) {
         return res.status(400).json({
@@ -425,7 +427,7 @@ exports.createDocente = async (req, res) => {
         });
       }
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Error interno del servidor',
@@ -439,17 +441,17 @@ exports.createDocente = async (req, res) => {
 exports.updateDocente = async (req, res) => {
   try {
     const { id } = req.params;
-    const { 
-      identificacion, 
-      nombres, 
-      apellidos, 
+    const {
+      identificacion,
+      nombres,
+      apellidos,
       fecha_nacimiento,
       titulo_profesional,
       gmail,
       experiencia_anos,
       estado
     } = req.body;
-    
+
     // Validaciones obligatorias
     if (!identificacion || identificacion.trim() === '') {
       return res.status(400).json({
@@ -457,48 +459,50 @@ exports.updateDocente = async (req, res) => {
         message: 'La identificación es obligatoria'
       });
     }
-    
+
     if (!nombres || nombres.trim() === '') {
       return res.status(400).json({
         success: false,
         message: 'Los nombres son obligatorios'
       });
     }
-    
+
     if (!apellidos || apellidos.trim() === '') {
       return res.status(400).json({
         success: false,
         message: 'Los apellidos son obligatorios'
       });
     }
-    
+
     if (!titulo_profesional || titulo_profesional.trim() === '') {
       return res.status(400).json({
         success: false,
         message: 'El título profesional es obligatorio'
       });
     }
-    
+
     if (!['activo', 'inactivo'].includes(estado)) {
       return res.status(400).json({
         success: false,
         message: 'Estado inválido'
       });
     }
-    
-    // Verificar que el docente existe
+
+    // Verificar que el docente existe y obtener todos sus datos actuales
     const [existingDocente] = await pool.execute(
-      'SELECT id_docente, nombres, apellidos FROM docentes WHERE id_docente = ?',
+      `SELECT id_docente, identificacion, nombres, apellidos, fecha_nacimiento, 
+              titulo_profesional, experiencia_anos, estado 
+       FROM docentes WHERE id_docente = ?`,
       [id]
     );
-    
+
     if (existingDocente.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Docente no encontrado'
       });
     }
-    
+
     // Actualizar docente
     await pool.execute(
       `UPDATE docentes 
@@ -519,22 +523,61 @@ exports.updateDocente = async (req, res) => {
         id
       ]
     );
-    
+
     // Obtener docente actualizado
     const [updatedDocente] = await pool.execute(
       'SELECT * FROM docentes WHERE id_docente = ?',
       [id]
     );
-    
+
+    // Registrar auditoría - Admin actualizó docente
+    try {
+      // Validar que el usuario esté autenticado
+      if (!req.user || !req.user.id_usuario) {
+        console.warn('⚠️ No se pudo registrar auditoría: usuario no autenticado');
+      } else {
+        await registrarAuditoria({
+          tabla_afectada: 'docentes',
+          operacion: 'UPDATE',
+          id_registro: parseInt(id),
+          usuario_id: req.user.id_usuario,
+          datos_anteriores: {
+            id_docente: parseInt(id),
+            identificacion: existingDocente[0].identificacion,
+            nombres: existingDocente[0].nombres,
+            apellidos: existingDocente[0].apellidos,
+            fecha_nacimiento: existingDocente[0].fecha_nacimiento,
+            titulo_profesional: existingDocente[0].titulo_profesional,
+            experiencia_anos: existingDocente[0].experiencia_anos,
+            estado: existingDocente[0].estado
+          },
+          datos_nuevos: {
+            id_docente: parseInt(id),
+            identificacion: identificacion.trim(),
+            nombres: nombres.trim(),
+            apellidos: apellidos.trim(),
+            fecha_nacimiento: fecha_nacimiento || null,
+            titulo_profesional: titulo_profesional.trim(),
+            experiencia_anos: parseInt(experiencia_anos) || 0,
+            estado: estado
+          },
+          ip_address: req.ip || req.connection?.remoteAddress || null,
+          user_agent: req.get('user-agent') || null
+        });
+      }
+    } catch (auditError) {
+      console.error('Error registrando auditoría de actualización de docente (no afecta la actualización):', auditError);
+    }
+
     res.json({
       success: true,
       message: 'Docente actualizado exitosamente',
       docente: updatedDocente[0]
     });
-    
+
   } catch (error) {
     console.error('Error al actualizar docente:', error);
-    
+
     if (error.code === 'ER_DUP_ENTRY') {
       if (error.message.includes('identificacion')) {
         return res.status(400).json({
@@ -548,7 +591,7 @@ exports.updateDocente = async (req, res) => {
         });
       }
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Error interno del servidor',
@@ -560,31 +603,58 @@ exports.updateDocente = async (req, res) => {
 exports.deleteDocente = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     // Verificar que el docente existe
     const [existingDocente] = await pool.execute(
       'SELECT id_docente, nombres, apellidos FROM docentes WHERE id_docente = ?',
       [id]
     );
-    
+
     if (existingDocente.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Docente no encontrado'
       });
     }
-    
+
+    // Registrar auditoría antes de desactivar
+    try {
+      await registrarAuditoria({
+        tabla_afectada: 'docentes',
+        operacion: 'UPDATE',
+        id_registro: parseInt(id),
+        usuario_id: req.user?.id_usuario,
+        datos_anteriores: {
+          id_docente: parseInt(id),
+          nombres: existingDocente[0].nombres,
+          apellidos: existingDocente[0].apellidos,
+          estado: 'activo'
+        },
+        datos_nuevos: {
+          id_docente: parseInt(id),
+          nombres: existingDocente[0].nombres,
+          apellidos: existingDocente[0].apellidos,
+          estado: 'inactivo',
+          accion: 'desactivado'
+        },
+        ip_address: req.ip || req.connection?.remoteAddress || null,
+        user_agent: req.get('user-agent') || null
+      });
+    } catch (auditError) {
+      console.error('Error registrando auditoría de desactivación de docente (no afecta la desactivación):', auditError);
+    }
+
     // En lugar de eliminar, cambiar estado a inactivo
     await pool.execute(
       'UPDATE docentes SET estado = ? WHERE id_docente = ?',
       ['inactivo', id]
     );
-    
+
     res.json({
       success: true,
       message: `Docente "${existingDocente[0].nombres} ${existingDocente[0].apellidos}" desactivado exitosamente`
     });
-    
+
   } catch (error) {
     console.error('Error al desactivar docente:', error);
     res.status(500).json({
@@ -608,12 +678,12 @@ exports.getDocentesStats = async (req, res) => {
       INNER JOIN roles r ON u.id_rol = r.id_rol
       WHERE r.nombre_rol = 'docente'
     `);
-    
+
     res.json({
       success: true,
       stats: stats[0]
     });
-    
+
   } catch (error) {
     console.error('Error al obtener estadísticas:', error);
     res.status(500).json({
@@ -631,21 +701,21 @@ exports.getDocentesStats = async (req, res) => {
 exports.getMisCursos = async (req, res) => {
   try {
     const id_usuario = req.user?.id_usuario;
-    
+
     if (!id_usuario) {
       return res.status(401).json({ error: 'Usuario no autenticado' });
     }
 
     // Verificar que el usuario sea docente
     const isDocente = await DocentesModel.isDocente(id_usuario);
-    
+
     if (!isDocente) {
       return res.status(403).json({ error: 'Acceso denegado. Solo docentes pueden acceder a esta información.' });
     }
 
     // Obtener ID del docente
     const id_docente = await DocentesModel.getDocenteIdByUserId(id_usuario);
-    
+
     if (!id_docente) {
       return res.status(404).json({ error: 'Docente no encontrado' });
     }
@@ -659,21 +729,21 @@ exports.getMisCursos = async (req, res) => {
     // - La fecha de fin NO ha pasado (es hoy o futura)
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0); // Normalizar a medianoche para comparación justa
-    
+
     const cursosActivos = todosCursos.filter(curso => {
       const fechaFin = new Date(curso.fecha_fin);
       fechaFin.setHours(0, 0, 0, 0); // Normalizar a medianoche
-      
+
       // Excluir cursos finalizados o cancelados
       if (curso.estado === 'finalizado' || curso.estado === 'cancelado') {
         return false;
       }
-      
+
       // Excluir cursos cuya fecha de fin ya pasó
       if (fechaFin < hoy) {
         return false;
       }
-      
+
       // Incluir cursos activos o planificados con fecha futura
       return true;
     });
@@ -681,12 +751,12 @@ exports.getMisCursos = async (req, res) => {
     console.log(`Cursos activos - Docente ${id_docente}: ${cursosActivos.length} de ${todosCursos.length} total`);
 
     res.json(cursosActivos);
-    
+
   } catch (error) {
     console.error('Error obteniendo cursos del docente:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -695,21 +765,21 @@ exports.getMisCursos = async (req, res) => {
 exports.getTodosMisCursos = async (req, res) => {
   try {
     const id_usuario = req.user?.id_usuario;
-    
+
     if (!id_usuario) {
       return res.status(401).json({ error: 'Usuario no autenticado' });
     }
 
     // Verificar que el usuario sea docente
     const isDocente = await DocentesModel.isDocente(id_usuario);
-    
+
     if (!isDocente) {
       return res.status(403).json({ error: 'Acceso denegado. Solo docentes pueden acceder a esta información.' });
     }
 
     // Obtener ID del docente
     const id_docente = await DocentesModel.getDocenteIdByUserId(id_usuario);
-    
+
     if (!id_docente) {
       return res.status(404).json({ error: 'Docente no encontrado' });
     }
@@ -720,12 +790,12 @@ exports.getTodosMisCursos = async (req, res) => {
     console.log(`Todos los cursos - Docente ${id_docente}: ${todosCursos.length} total`);
 
     res.json(todosCursos);
-    
+
   } catch (error) {
     console.error('Error obteniendo todos los cursos del docente:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -733,21 +803,21 @@ exports.getTodosMisCursos = async (req, res) => {
 exports.getMisEstudiantes = async (req, res) => {
   try {
     const id_usuario = req.user?.id_usuario;
-    
+
     if (!id_usuario) {
       return res.status(401).json({ error: 'Usuario no autenticado' });
     }
 
     // Verificar que el usuario sea docente
     const isDocente = await DocentesModel.isDocente(id_usuario);
-    
+
     if (!isDocente) {
       return res.status(403).json({ error: 'Acceso denegado. Solo docentes pueden acceder a esta información.' });
     }
 
     // Obtener ID del docente
     const id_docente = await DocentesModel.getDocenteIdByUserId(id_usuario);
-    
+
     if (!id_docente) {
       return res.status(404).json({ error: 'Docente no encontrado' });
     }
@@ -756,12 +826,12 @@ exports.getMisEstudiantes = async (req, res) => {
     const estudiantes = await DocentesModel.getMisEstudiantes(id_docente);
 
     res.json(estudiantes);
-    
+
   } catch (error) {
     console.error('Error obteniendo estudiantes del docente:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -769,21 +839,21 @@ exports.getMisEstudiantes = async (req, res) => {
 exports.getMiHorario = async (req, res) => {
   try {
     const id_usuario = req.user?.id_usuario;
-    
+
     if (!id_usuario) {
       return res.status(401).json({ error: 'Usuario no autenticado' });
     }
 
     // Verificar que el usuario sea docente
     const isDocente = await DocentesModel.isDocente(id_usuario);
-    
+
     if (!isDocente) {
       return res.status(403).json({ error: 'Acceso denegado. Solo docentes pueden acceder a esta información.' });
     }
 
     // Obtener ID del docente
     const id_docente = await DocentesModel.getDocenteIdByUserId(id_usuario);
-    
+
     if (!id_docente) {
       return res.status(404).json({ error: 'Docente no encontrado' });
     }
@@ -792,12 +862,12 @@ exports.getMiHorario = async (req, res) => {
     const horario = await DocentesModel.getMiHorario(id_docente);
 
     res.json(horario);
-    
+
   } catch (error) {
     console.error('Error obteniendo horario del docente:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Error interno del servidor',
-      details: error.message 
+      details: error.message
     });
   }
 };

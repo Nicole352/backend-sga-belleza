@@ -29,6 +29,14 @@ router.get('/stats', auditoriaController.obtenerEstadisticas);
 router.get('/tablas', auditoriaController.obtenerTablasUnicas);
 
 /**
+ * @route   GET /api/auditoria/historial-completo
+ * @desc    Obtener historial COMPLETO del sistema (TODO lo que hacen admins, docentes, estudiantes)
+ * @access  Private (Superadmin)
+ * @query   pagina, limite, tabla, operacion, usuario_id, rol, fecha_inicio, fecha_fin, busqueda
+ */
+router.get('/historial-completo', auditoriaController.obtenerHistorialCompleto);
+
+/**
  * @route   GET /api/auditoria/usuario/:userId/historial-detallado
  * @desc    Obtener historial detallado de acciones de un usuario (administrativas/académicas)
  * @access  Private (Admin)

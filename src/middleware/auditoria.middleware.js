@@ -1,4 +1,5 @@
 const { pool } = require('../config/database');
+const { enriquecerDatosAuditoria } = require('../utils/auditoria-enrichment');
 
 /**
  * Middleware de auditoría para registrar operaciones en la base de datos
@@ -22,9 +23,13 @@ async function registrarAuditoria(req, tabla, operacion, idRegistro, datosAnteri
       return; // No registrar si no hay usuario (puede ser operación del sistema)
     }
 
+    // ENRIQUECER DATOS con información contextual adicional
+    const { datos_nuevos: datosNuevosEnriquecidos, datos_anteriores: datosAnterioresEnriquecidos } =
+      await enriquecerDatosAuditoria(tabla, operacion, idRegistro, datosNuevos, datosAnteriores);
+
     // Preparar datos para JSON
-    const datosAnterioresJSON = datosAnteriores ? JSON.stringify(datosAnteriores) : null;
-    const datosNuevosJSON = datosNuevos ? JSON.stringify(datosNuevos) : null;
+    const datosAnterioresJSON = datosAnterioresEnriquecidos ? JSON.stringify(datosAnterioresEnriquecidos) : null;
+    const datosNuevosJSON = datosNuevosEnriquecidos ? JSON.stringify(datosNuevosEnriquecidos) : null;
 
     // Insertar en tabla de auditoría
     const query = `
@@ -44,13 +49,14 @@ async function registrarAuditoria(req, tabla, operacion, idRegistro, datosAnteri
       userAgent
     ]);
 
-    console.log(`Auditoría registrada: ${operacion} en ${tabla} (ID: ${idRegistro}) por usuario ${usuarioId}`);
+    console.log(`Auditoría registrada: ${operacion} en ${tabla} (ID: ${idRegistro}) por usuario ${usuarioId} `);
   } catch (error) {
     // No lanzar error para no afectar la operación principal
     console.error('Error al registrar auditoría:', error);
     console.error('Detalles:', { tabla, operacion, idRegistro });
   }
 }
+
 
 /**
  * Middleware Express para capturar automáticamente req en el contexto

@@ -2,6 +2,7 @@ const PagosMenualesModel = require('../models/pagos-mensuales.model');
 const { enviarNotificacionPagoEstudiante } = require('../services/emailService');
 const { emitSocketEvent } = require('../services/socket.service');
 const { notificarNuevoPagoPendiente } = require('../utils/notificationHelper');
+const { registrarAuditoria } = require('../utils/auditoria');
 const { pool } = require('../config/database');
 const ExcelJS = require('exceljs');
 const cloudinaryService = require('../services/cloudinary.service');
@@ -179,6 +180,55 @@ exports.pagarCuota = async (req, res) => {
     const resultado = await PagosMenualesModel.procesarPago(id_pago, pagoData, archivoData, id_estudiante);
 
     console.log(' Pago procesado exitosamente:', resultado);
+
+    // Registrar auditoría - Estudiante subió pago
+    try {
+      // Obtener información completa del pago para la auditoría
+      const [pagoCompleto] = await pool.execute(`
+        SELECT
+          pm.id_pago,
+          pm.numero_cuota,
+          pm.monto,
+          pm.metodo_pago,
+          pm.numero_comprobante,
+          u.nombre as estudiante_nombre,
+          u.apellido as estudiante_apellido,
+          c.nombre as curso_nombre,
+          c.codigo_curso
+        FROM pagos_mensuales pm
+        INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
+        INNER JOIN usuarios u ON m.id_estudiante = u.id_usuario
+        INNER JOIN cursos c ON m.id_curso = c.id_curso
+        WHERE pm.id_pago = ?
+      `, [id_pago]);
+
+      if (pagoCompleto.length > 0) {
+        const pago = pagoCompleto[0];
+        await registrarAuditoria({
+          tabla_afectada: 'pagos_mensuales',
+          operacion: 'UPDATE',
+          id_registro: id_pago,
+          usuario_id: id_estudiante,
+          datos_nuevos: {
+            id_pago,
+            numero_cuota: pago.numero_cuota,
+            monto: parseFloat(pago.monto),
+            metodo_pago,
+            numero_comprobante: numero_comprobante || null,
+            banco_comprobante: banco_comprobante || null,
+            fecha_transferencia: fecha_transferencia || null,
+            curso_nombre: pago.curso_nombre,
+            codigo_curso: pago.codigo_curso,
+            tiene_comprobante: archivoData ? true : false,
+            estado: 'pendiente'
+          },
+          ip_address: req.ip || req.connection?.remoteAddress || null,
+          user_agent: req.get('user-agent') || null
+        });
+      }
+    } catch (auditError) {
+      console.error(' Error registrando auditoría de pago (no afecta el pago):', auditError);
+    }
 
     // ENVIAR EMAIL AL ADMIN NOTIFICANDO EL NUEVO PAGO (asíncrono)
     setImmediate(async () => {
