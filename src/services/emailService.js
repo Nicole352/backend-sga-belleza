@@ -1,28 +1,27 @@
 const nodemailer = require('nodemailer');
 const { getActiveAdmins } = require('../models/admins.model');
 
-// Configuración del transporter de nodemailer para iCloud Mail
+// Configuración del transporter de nodemailer para Gmail
 // Con configuraciones anti-spam optimizadas
 const transporter = nodemailer.createTransport({
-  host: 'smtp.mail.me.com',
+  host: 'smtp.gmail.com',
   port: 587,
   secure: false, // true para 465, false para otros puertos
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD,
-    type: 'login'
+    pass: process.env.EMAIL_PASSWORD
   },
   tls: {
     rejectUnauthorized: true,
     minVersion: 'TLSv1.2'
   },
   debug: true, // Habilitar logs para diagnóstico
-  // Configuraciones adicionales para evitar spam y el texto "MAIN DELIVERY SYSTEM"
-  pool: true, // Usar pool de conexiones
+  // Configuraciones adicionales para evitar spam
+  pool: true,
   maxConnections: 5,
   maxMessages: 100,
-  rateDelta: 1000, // Tiempo entre emails (1 segundo)
-  rateLimit: 5, // Máximo 5 emails por segundo
+  rateDelta: 1000,
+  rateLimit: 5,
   headers: {
     'X-Transport-Type': 'Direct',
     'X-Mailer': 'Escuela Jessica Vélez - SGA',
