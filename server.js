@@ -28,6 +28,10 @@ const startServer = async () => {
     require('./src/jobs/cron-temporary-unblock-checker');
     console.log('✓ Cron job de desbloqueos temporales inicializado');
 
+    // Inicializar cron job para reporte financiero automático
+    require('./src/jobs/cron-financial-report');
+    console.log('✓ Cron job de reporte financiero automático inicializado');
+
     if (process.env.ENABLE_UPLOADS_DIR === 'true') {
       const fs = require('fs');
       const path = require('path');
