@@ -39,6 +39,11 @@ const sistemaRoutes = require('./routes/sistema.routes');
 
 const app = express();
 
+// Confiar en proxies (necesario para Railway, Heroku, etc.)
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 // Middlewares de seguridad básica
 app.use(
   helmet({
@@ -50,22 +55,25 @@ app.use(
 app.use(compression());
 
 // Configuración de CORS dinámica
-const allowedOrigins = process.env.NODE_ENV === "production"
-  ? [
-    process.env.FRONTEND_URL,
-    // Agrega aquí otros dominios de frontend si los tienes
-  ].filter(Boolean) // Elimina valores undefined/null
+const allowedOrigins = process.env.NODE_ENV === 'production'
+  ? [process.env.FRONTEND_URL].filter(Boolean)
   : [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:4173"
-  ];
+      process.env.FRONTEND_URL,
+      "http://localhost:3000",
+      "http://localhost:5173",
+      "http://localhost:4173"
+    ].filter(Boolean);
 
 app.use(
   cors({
     origin: (origin, callback) => {
       // Permitir requests sin origin (como mobile apps o curl)
       if (!origin) return callback(null, true);
+
+      // En producción, permitir el dominio principal y subdominios de Vercel
+      if (process.env.NODE_ENV === 'production' && origin.includes('.vercel.app')) {
+        return callback(null, true);
+      }
 
       if (allowedOrigins.indexOf(origin) !== -1) {
         callback(null, true);
