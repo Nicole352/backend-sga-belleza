@@ -114,6 +114,8 @@ class CalificacionesModel {
         t.nota_maxima,
         t.ponderacion,
         t.fecha_limite,
+        cat.nombre as categoria_nombre,
+        cat.ponderacion as categoria_ponderacion,
         m.id_modulo,
         m.nombre as modulo_nombre,
         m.id_modulo as modulo_orden,
@@ -124,6 +126,7 @@ class CalificacionesModel {
         d.apellidos as docente_apellidos
       FROM modulos_curso m
       INNER JOIN tareas_modulo t ON m.id_modulo = t.id_modulo
+      LEFT JOIN categorias_evaluacion cat ON t.id_categoria = cat.id_categoria
       LEFT JOIN entregas_tareas e ON t.id_tarea = e.id_tarea AND e.id_estudiante = ?
       LEFT JOIN calificaciones_tareas c ON e.id_entrega = c.id_entrega
       LEFT JOIN docentes d ON c.calificado_por = d.id_docente
@@ -169,7 +172,7 @@ class CalificacionesModel {
       INNER JOIN entregas_tareas e ON c.id_entrega = e.id_entrega
       INNER JOIN tareas_modulo t ON e.id_tarea = t.id_tarea
       INNER JOIN modulos_curso m ON t.id_modulo = m.id_modulo
-      WHERE e.id_estudiante = ? AND m.id_curso = ?
+      WHERE e.id_estudiante = ? AND m.id_curso = ? AND t.estado = 'activo' AND m.estado != 'inactivo'
     `,
       [id_estudiante, id_curso],
     );
@@ -197,13 +200,13 @@ class CalificacionesModel {
           (COALESCE(SUM((COALESCE(c.nota, 0) / NULLIF(t.nota_maxima, 0)) * t.ponderacion), 0) / 10.0) * (10.0 / (
             SELECT COUNT(*)
             FROM modulos_curso
-            WHERE id_curso = ?
+            WHERE id_curso = ? AND estado != 'inactivo'
           )) as aporte_modulo
         FROM modulos_curso m
         LEFT JOIN tareas_modulo t ON m.id_modulo = t.id_modulo
         LEFT JOIN entregas_tareas e ON t.id_tarea = e.id_tarea AND e.id_estudiante = ?
         LEFT JOIN calificaciones_tareas c ON e.id_entrega = c.id_entrega
-        WHERE m.id_curso = ?
+        WHERE m.id_curso = ? AND m.estado != 'inactivo' AND (t.id_tarea IS NULL OR t.estado = 'activo')
         GROUP BY m.id_modulo
       ) as promedios_por_modulo
     `,
@@ -226,12 +229,12 @@ class CalificacionesModel {
         (COALESCE(SUM((COALESCE(c.nota, 0) / NULLIF(t.nota_maxima, 0)) * t.ponderacion), 0) / 10.0) * (10.0 / (
           SELECT COUNT(*)
           FROM modulos_curso
-          WHERE id_curso = ?
+          WHERE id_curso = ? AND estado != 'inactivo'
         )) as aporte_al_promedio_global,
         (10.0 / (
           SELECT COUNT(*)
           FROM modulos_curso
-          WHERE id_curso = ?
+          WHERE id_curso = ? AND estado != 'inactivo'
         )) as peso_maximo_modulo,
         COUNT(c.id_calificacion) as total_calificaciones,
         COUNT(t.id_tarea) as total_tareas,
@@ -247,7 +250,7 @@ class CalificacionesModel {
       LEFT JOIN tareas_modulo t ON m.id_modulo = t.id_modulo
       LEFT JOIN entregas_tareas e ON t.id_tarea = e.id_tarea AND e.id_estudiante = ?
       LEFT JOIN calificaciones_tareas c ON e.id_entrega = c.id_entrega
-      WHERE m.id_curso = ?
+      WHERE m.id_curso = ? AND m.estado != 'inactivo' AND (t.id_tarea IS NULL OR t.estado = 'activo')
       GROUP BY m.id_modulo, m.nombre, m.descripcion
       ORDER BY m.id_modulo ASC
     `,

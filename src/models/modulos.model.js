@@ -9,7 +9,18 @@ class ModulosModel {
         m.*,
         d.nombres as docente_nombres,
         d.apellidos as docente_apellidos,
-        (SELECT COUNT(*) FROM tareas_modulo WHERE id_modulo = m.id_modulo AND estado = 'activo') as total_tareas
+        (SELECT COUNT(*) FROM tareas_modulo WHERE id_modulo = m.id_modulo AND estado = 'activo') as total_tareas,
+        (
+          SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'id', c.id_categoria,
+              'nombre', c.nombre,
+              'ponderacion', c.ponderacion
+            )
+          )
+          FROM categorias_evaluacion c
+          WHERE c.id_modulo = m.id_modulo
+        ) as categorias
       FROM modulos_curso m
       INNER JOIN docentes d ON m.id_docente = d.id_docente
       WHERE m.id_curso = ?
@@ -40,10 +51,23 @@ class ModulosModel {
       [id_modulo],
     );
 
-    return modulos.length > 0 ? modulos[0] : null;
+    if (modulos.length === 0) return null;
+
+    const modulo = modulos[0];
+
+    // Obtener categorías del módulo
+    const [categorias] = await pool.execute(
+      `SELECT * FROM categorias_evaluacion WHERE id_modulo = ? ORDER BY id_categoria ASC`,
+      [id_modulo]
+    );
+
+    modulo.categorias = categorias;
+
+    return modulo;
   }
 
   // Crear nuevo módulo
+  // Crear nuevo módulo con categorías
   static async create(moduloData) {
     const {
       id_curso,
@@ -53,79 +77,162 @@ class ModulosModel {
       fecha_inicio,
       fecha_fin,
       estado = "activo",
+      categorias = []
     } = moduloData;
 
-    const [result] = await pool.execute(
-      `
-      INSERT INTO modulos_curso (
-        id_curso, id_docente, nombre, descripcion,
-        fecha_inicio, fecha_fin, estado
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `,
-      [
-        id_curso,
-        id_docente,
-        nombre.trim(),
-        descripcion ? descripcion.trim() : null,
-        fecha_inicio || null,
-        fecha_fin || null,
-        estado,
-      ],
-    );
+    const connection = await pool.getConnection();
 
-    return result.insertId;
+    try {
+      await connection.beginTransaction();
+
+      // Validar si ya existe un módulo con el mismo nombre en el curso
+      const [existing] = await connection.execute(
+        "SELECT id_modulo FROM modulos_curso WHERE id_curso = ? AND nombre = ? AND estado != 'inactivo'",
+        [id_curso, nombre.trim()]
+      );
+
+      if (existing.length > 0) {
+        throw new Error('Ya existe un módulo activo con este nombre en el curso');
+      }
+
+      const [result] = await connection.execute(
+        `
+        INSERT INTO modulos_curso (
+          id_curso, id_docente, nombre, descripcion,
+          fecha_inicio, fecha_fin, estado
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+        [
+          id_curso,
+          id_docente,
+          nombre.trim(),
+          descripcion ? descripcion.trim() : null,
+          fecha_inicio || null,
+          fecha_fin || null,
+          estado,
+        ],
+      );
+
+      const id_modulo = result.insertId;
+
+      // Insertar categorías si existen
+      if (categorias && categorias.length > 0) {
+        for (const cat of categorias) {
+          await connection.execute(
+            `INSERT INTO categorias_evaluacion (id_modulo, nombre, ponderacion) VALUES (?, ?, ?)`,
+            [id_modulo, cat.nombre, cat.ponderacion]
+          );
+        }
+      }
+
+      await connection.commit();
+      return id_modulo;
+
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
   }
 
   // Actualizar módulo
   static async update(id_modulo, moduloData) {
-    const { nombre, descripcion, fecha_inicio, fecha_fin, estado } = moduloData;
+    const { nombre, descripcion, fecha_inicio, fecha_fin, estado, categorias } = moduloData;
 
-    // Construir dinámicamente la consulta de actualización
-    const fields = [];
-    const values = [];
+    const connection = await pool.getConnection();
 
-    if (nombre !== undefined) {
-      fields.push("nombre = ?");
-      values.push(nombre.trim());
-    }
+    try {
+      await connection.beginTransaction();
 
-    if (descripcion !== undefined) {
-      fields.push("descripcion = ?");
-      values.push(descripcion ? descripcion.trim() : null);
-    }
+      // Construir dinámicamente la consulta de actualización del módulo
+      const fields = [];
+      const values = [];
 
-    if (fecha_inicio !== undefined) {
-      fields.push("fecha_inicio = ?");
-      values.push(fecha_inicio || null);
-    }
+      if (nombre !== undefined) {
+        fields.push("nombre = ?");
+        values.push(nombre.trim());
+      }
 
-    if (fecha_fin !== undefined) {
-      fields.push("fecha_fin = ?");
-      values.push(fecha_fin || null);
-    }
+      if (descripcion !== undefined) {
+        fields.push("descripcion = ?");
+        values.push(descripcion ? descripcion.trim() : null);
+      }
 
-    if (estado !== undefined) {
-      fields.push("estado = ?");
-      values.push(estado);
-    }
+      if (fecha_inicio !== undefined) {
+        fields.push("fecha_inicio = ?");
+        values.push(fecha_inicio || null);
+      }
 
-    // Si no hay campos para actualizar, retornar true (no hay cambios necesarios)
-    if (fields.length === 0) {
+      if (fecha_fin !== undefined) {
+        fields.push("fecha_fin = ?");
+        values.push(fecha_fin || null);
+      }
+
+      if (estado !== undefined) {
+        fields.push("estado = ?");
+        values.push(estado);
+      }
+
+      // Actualizar módulo si hay campos para actualizar
+      if (fields.length > 0) {
+        values.push(id_modulo);
+        const query = `
+          UPDATE modulos_curso
+          SET ${fields.join(", ")}
+          WHERE id_modulo = ?
+        `;
+        await connection.execute(query, values);
+      }
+
+      // Actualizar categorías si se proporcionaron
+      if (categorias !== undefined && Array.isArray(categorias)) {
+        // Verificar si alguna categoría existente tiene tareas asignadas
+        const [existingCategories] = await connection.execute(
+          `SELECT id_categoria FROM categorias_evaluacion WHERE id_modulo = ?`,
+          [id_modulo]
+        );
+
+        // Verificar si hay tareas asignadas a las categorías existentes
+        if (existingCategories.length > 0) {
+          const categoryIds = existingCategories.map(c => c.id_categoria);
+          const [tasksWithCategories] = await connection.execute(
+            `SELECT COUNT(*) as count FROM tareas_modulo 
+             WHERE id_categoria IN (${categoryIds.map(() => '?').join(',')})`,
+            categoryIds
+          );
+
+          if (tasksWithCategories[0].count > 0) {
+            throw new Error('No se pueden modificar las categorías porque ya tienen tareas asignadas');
+          }
+        }
+
+        // Eliminar categorías antiguas (solo si no tienen tareas)
+        await connection.execute(
+          `DELETE FROM categorias_evaluacion WHERE id_modulo = ?`,
+          [id_modulo]
+        );
+
+        // Insertar nuevas categorías
+        if (categorias.length > 0) {
+          for (const cat of categorias) {
+            await connection.execute(
+              `INSERT INTO categorias_evaluacion (id_modulo, nombre, ponderacion) VALUES (?, ?, ?)`,
+              [id_modulo, cat.nombre, cat.ponderacion]
+            );
+          }
+        }
+      }
+
+      await connection.commit();
       return true;
+
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
     }
-
-    // Agregar el ID del módulo al final de los valores
-    values.push(id_modulo);
-
-    const query = `
-      UPDATE modulos_curso
-      SET ${fields.join(", ")}
-      WHERE id_modulo = ?
-    `;
-
-    const [result] = await pool.execute(query, values);
-
-    return result.affectedRows > 0;
   }
 
   // Eliminar módulo
