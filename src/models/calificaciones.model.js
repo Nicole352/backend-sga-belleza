@@ -193,17 +193,44 @@ class CalificacionesModel {
         MAX(promedio_modulo) as promedio_maximo,
         (10.0 / COUNT(id_modulo)) as peso_por_modulo
       FROM (
-               SELECT
+        SELECT
           m.id_modulo,
-          -- CÁLCULO PONDERADO: Suma( (Nota/Maxima) * Ponderacion )
-          COALESCE(SUM((COALESCE(c.nota, 0) / NULLIF(t.nota_maxima, 0)) * t.ponderacion), 0) as promedio_modulo,
-          (COALESCE(SUM((COALESCE(c.nota, 0) / NULLIF(t.nota_maxima, 0)) * t.ponderacion), 0) / 10.0) * (10.0 / (
+          -- CÁLCULO PONDERADO con peso individual por tarea
+          COALESCE(SUM(
+            (COALESCE(c.nota, 0) / NULLIF(t.nota_maxima, 0)) * 
+            CASE 
+              WHEN t.id_categoria IS NOT NULL THEN 
+                (cat.ponderacion / NULLIF((
+                  SELECT COUNT(*) 
+                  FROM tareas_modulo t2 
+                  WHERE t2.id_modulo = t.id_modulo 
+                    AND t2.id_categoria = t.id_categoria 
+                    AND t2.estado = 'activo'
+                ), 0))
+              ELSE t.ponderacion
+            END
+          ), 0) as promedio_modulo,
+          (COALESCE(SUM(
+            (COALESCE(c.nota, 0) / NULLIF(t.nota_maxima, 0)) * 
+            CASE 
+              WHEN t.id_categoria IS NOT NULL THEN 
+                (cat.ponderacion / NULLIF((
+                  SELECT COUNT(*) 
+                  FROM tareas_modulo t2 
+                  WHERE t2.id_modulo = t.id_modulo 
+                    AND t2.id_categoria = t.id_categoria 
+                    AND t2.estado = 'activo'
+                ), 0))
+              ELSE t.ponderacion
+            END
+          ), 0) / 10.0) * (10.0 / (
             SELECT COUNT(*)
             FROM modulos_curso
             WHERE id_curso = ? AND estado != 'inactivo'
           )) as aporte_modulo
         FROM modulos_curso m
         LEFT JOIN tareas_modulo t ON m.id_modulo = t.id_modulo
+        LEFT JOIN categorias_evaluacion cat ON t.id_categoria = cat.id_categoria
         LEFT JOIN entregas_tareas e ON t.id_tarea = e.id_tarea AND e.id_estudiante = ?
         LEFT JOIN calificaciones_tareas c ON e.id_entrega = c.id_entrega
         WHERE m.id_curso = ? AND m.estado != 'inactivo' AND (t.id_tarea IS NULL OR t.estado = 'activo')
@@ -224,9 +251,35 @@ class CalificacionesModel {
         m.id_modulo,
         m.nombre as nombre_modulo,
         m.descripcion as descripcion_modulo,
-        -- CÁLCULO PONDERADO: Suma( (Nota/Maxima) * Ponderacion )
-        COALESCE(SUM((COALESCE(c.nota, 0) / NULLIF(t.nota_maxima, 0)) * t.ponderacion), 0) as promedio_modulo_sobre_10,
-        (COALESCE(SUM((COALESCE(c.nota, 0) / NULLIF(t.nota_maxima, 0)) * t.ponderacion), 0) / 10.0) * (10.0 / (
+        -- CÁLCULO PONDERADO con peso individual por tarea
+        COALESCE(SUM(
+          (COALESCE(c.nota, 0) / NULLIF(t.nota_maxima, 0)) * 
+          CASE 
+            WHEN t.id_categoria IS NOT NULL THEN 
+              (cat.ponderacion / NULLIF((
+                SELECT COUNT(*) 
+                FROM tareas_modulo t2 
+                WHERE t2.id_modulo = t.id_modulo 
+                  AND t2.id_categoria = t.id_categoria 
+                  AND t2.estado = 'activo'
+              ), 0))
+            ELSE t.ponderacion
+          END
+        ), 0) as promedio_modulo_sobre_10,
+        (COALESCE(SUM(
+          (COALESCE(c.nota, 0) / NULLIF(t.nota_maxima, 0)) * 
+          CASE 
+            WHEN t.id_categoria IS NOT NULL THEN 
+              (cat.ponderacion / NULLIF((
+                SELECT COUNT(*) 
+                FROM tareas_modulo t2 
+                WHERE t2.id_modulo = t.id_modulo 
+                  AND t2.id_categoria = t.id_categoria 
+                  AND t2.estado = 'activo'
+              ), 0))
+            ELSE t.ponderacion
+          END
+        ), 0) / 10.0) * (10.0 / (
           SELECT COUNT(*)
           FROM modulos_curso
           WHERE id_curso = ? AND estado != 'inactivo'
@@ -243,11 +296,25 @@ class CalificacionesModel {
         MIN(c.nota) as nota_minima,
         MAX(c.nota) as nota_maxima,
         CASE
-          WHEN COALESCE(SUM((COALESCE(c.nota, 0) / NULLIF(t.nota_maxima, 0)) * t.ponderacion), 0) >= 7 THEN 'aprobado'
+          WHEN COALESCE(SUM(
+            (COALESCE(c.nota, 0) / NULLIF(t.nota_maxima, 0)) * 
+            CASE 
+              WHEN t.id_categoria IS NOT NULL THEN 
+                (cat.ponderacion / NULLIF((
+                  SELECT COUNT(*) 
+                  FROM tareas_modulo t2 
+                  WHERE t2.id_modulo = t.id_modulo 
+                    AND t2.id_categoria = t.id_categoria 
+                    AND t2.estado = 'activo'
+                ), 0))
+              ELSE t.ponderacion
+            END
+          ), 0) >= 7 THEN 'aprobado'
           ELSE 'reprobado'
         END as estado_modulo
       FROM modulos_curso m
       LEFT JOIN tareas_modulo t ON m.id_modulo = t.id_modulo
+      LEFT JOIN categorias_evaluacion cat ON t.id_categoria = cat.id_categoria
       LEFT JOIN entregas_tareas e ON t.id_tarea = e.id_tarea AND e.id_estudiante = ?
       LEFT JOIN calificaciones_tareas c ON e.id_entrega = c.id_entrega
       WHERE m.id_curso = ? AND m.estado != 'inactivo' AND (t.id_tarea IS NULL OR t.estado = 'activo')
