@@ -187,40 +187,95 @@ class ModulosModel {
 
       // Actualizar categorías si se proporcionaron
       if (categorias !== undefined && Array.isArray(categorias)) {
-        // Verificar si alguna categoría existente tiene tareas asignadas
-        const [existingCategories] = await connection.execute(
-          `SELECT id_categoria FROM categorias_evaluacion WHERE id_modulo = ?`,
+        // 1. Obtener categorías actuales de la base de datos
+        const [existingCategoriesDB] = await connection.execute(
+          `SELECT id_categoria, nombre, ponderacion FROM categorias_evaluacion WHERE id_modulo = ?`,
           [id_modulo]
         );
 
-        // Verificar si hay tareas asignadas a las categorías existentes
-        if (existingCategories.length > 0) {
-          const categoryIds = existingCategories.map(c => c.id_categoria);
-          const [tasksWithCategories] = await connection.execute(
-            `SELECT COUNT(*) as count FROM tareas_modulo 
-             WHERE id_categoria IN (${categoryIds.map(() => '?').join(',')})`,
-            categoryIds
-          );
+        const existingIds = existingCategoriesDB.map(c => Number(c.id_categoria));
 
-          if (tasksWithCategories[0].count > 0) {
-            throw new Error('No se pueden modificar las categorías porque ya tienen tareas asignadas');
-          }
+        console.log('--- DEBUG UPDATE MÓDULO ---');
+        console.log('ID Módulo:', id_modulo);
+        console.log('Categorías recibidas (payload):', JSON.stringify(categorias, null, 2));
+        console.log('IDs existentes en BD:', existingIds);
+
+        // Identificar IDs entrantes que son numéricos (categorías existentes)
+        const incomingIds = categorias
+          .map(c => c.id || c.id_categoria) // Aceptar ambos formatos
+          .filter(id => id !== undefined && id !== null && !String(id).includes('-'))
+          .map(id => Number(id));
+
+        console.log('Incoming IDs procesados:', incomingIds);
+
+        // 2. Identificar categorías a ACTUALIZAR
+        // Son las que vienen en el payload y su ID (convertido a número) existe en la DB
+        const categoriesToUpdate = categorias.filter(c => {
+          const id = c.id || c.id_categoria;
+          if (!id || String(id).includes('-')) return false;
+          const idNum = Number(id);
+          const exists = existingIds.includes(idNum);
+          if (exists) console.log(`Categoría para actualizar encontrada: ID ${idNum}`);
+          return exists;
+        });
+
+        // 3. Identificar categorías a INSERTAR
+        // Son las que no tienen ID, tienen ID temporal (guión), o su ID numérico no está en la DB
+        const categoriesToInsert = categorias.filter(c => {
+          const id = c.id || c.id_categoria;
+          return !id ||
+            String(id).includes('-') ||
+            !existingIds.includes(Number(id));
+        });
+
+        // 4. Identificar categorías a ELIMINAR
+        // Son IDs que están en la DB pero NO están en los incomingIds
+        const categoriesToDelete = existingIds.filter(id =>
+          !incomingIds.includes(id)
+        );
+
+        console.log('Categorías a ACTUALIZAR:', categoriesToUpdate.map(c => c.id));
+        console.log('Categorías a INSERTAR:', categoriesToInsert.length);
+        console.log('Categorías a ELIMINAR (IDs):', categoriesToDelete);
+        console.log('--- FIN DEBUG ---');
+
+        // --- EJECUTAR ACCIONES ---
+
+        // A. Actualizar existentes
+        for (const cat of categoriesToUpdate) {
+          const catId = cat.id || cat.id_categoria;
+          await connection.execute(
+            `UPDATE categorias_evaluacion SET nombre = ?, ponderacion = ? WHERE id_categoria = ?`,
+            [cat.nombre, cat.ponderacion, catId]
+          );
         }
 
-        // Eliminar categorías antiguas (solo si no tienen tareas)
-        await connection.execute(
-          `DELETE FROM categorias_evaluacion WHERE id_modulo = ?`,
-          [id_modulo]
-        );
+        // B. Insertar nuevas
+        for (const cat of categoriesToInsert) {
+          await connection.execute(
+            `INSERT INTO categorias_evaluacion (id_modulo, nombre, ponderacion) VALUES (?, ?, ?)`,
+            [id_modulo, cat.nombre, cat.ponderacion]
+          );
+        }
 
-        // Insertar nuevas categorías
-        if (categorias.length > 0) {
-          for (const cat of categorias) {
-            await connection.execute(
-              `INSERT INTO categorias_evaluacion (id_modulo, nombre, ponderacion) VALUES (?, ?, ?)`,
-              [id_modulo, cat.nombre, cat.ponderacion]
-            );
+        // C. Eliminar removidas (Solo si no tienen tareas asignadas, de lo contrario fallará por FK, lo cual es correcto)
+        if (categoriesToDelete.length > 0) {
+          // Opcional: Verificar tareas antes de borrar para dar un error más amigable
+          const placeholders = categoriesToDelete.map(() => '?').join(',');
+          const [tasksCount] = await connection.execute(
+            `SELECT COUNT(*) as count FROM tareas_modulo WHERE id_categoria IN (${placeholders})`,
+            categoriesToDelete
+          );
+
+          if (tasksCount[0].count > 0) {
+            console.error(`INTENTO DE ELIMINAR CATEGORÍAS CON TAREAS: ${categoriesToDelete}`);
+            throw new Error('No se pueden eliminar categorías que ya tienen tareas asignadas. Solo puedes editarlas.');
           }
+
+          await connection.execute(
+            `DELETE FROM categorias_evaluacion WHERE id_categoria IN (${placeholders})`,
+            categoriesToDelete
+          );
         }
       }
 
