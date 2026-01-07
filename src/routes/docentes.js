@@ -6,6 +6,9 @@ const router = express.Router();
 // GET /api/docentes - Obtener docentes con paginación y filtros
 router.get('/', docentesController.getDocentes);
 
+// GET /api/docentes/reporte/excel - Generar reporte Excel de docentes
+router.get('/reporte/excel', authMiddleware, docentesController.generarReporteExcel);
+
 // GET /api/docentes/stats/general - Estadísticas de docentes (ANTES de /:id)
 router.get('/stats/general', docentesController.getDocentesStats);
 

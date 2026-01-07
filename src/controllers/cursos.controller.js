@@ -462,7 +462,17 @@ module.exports = {
       // ==================== HOJA 1: CURSOS DETALLADOS ====================
       const sheet1 = workbook.addWorksheet('Cursos Detallados', {
         properties: { tabColor: { argb: 'FFDC2626' } },
-        pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 } // A4 horizontal
+        pageSetup: {
+          orientation: 'landscape',
+          fitToPage: true,
+          fitToWidth: 1,
+          fitToHeight: 0,
+          paperSize: 9, // A4 horizontal
+          printTitlesRow: '1:1'
+        },
+        headerFooter: {
+          oddFooter: `&L&"-,Bold"&16Escuela de Belleza Jessica Vélez&"-,Regular"&12&RDescargado: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })} — Pág. &P de &N`
+        }
       });
 
       // Configurar columnas - REORDENADAS Y OPTIMIZADAS

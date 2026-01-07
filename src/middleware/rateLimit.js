@@ -3,7 +3,7 @@ const rateLimit = require('express-rate-limit');
 // Rate limiting para APIs generales
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100, // máximo 100 requests por ventana de tiempo por IP
+  max: 2000, // 2000 solicitudes por ventana de tiempo por IP
   message: {
     error: 'Demasiadas solicitudes, intenta de nuevo en 15 minutos'
   },
@@ -14,7 +14,7 @@ const generalLimiter = rateLimit({
 // Rate limiting más estricto para endpoints específicos
 const strictLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minuto
-  max: 30, // máximo 30 requests por minuto por IP
+  max: 100, // aumentado de 30 a 100 requests por minuto por IP
   message: {
     error: 'Demasiadas solicitudes, intenta de nuevo en 1 minuto'
   },
@@ -25,7 +25,7 @@ const strictLimiter = rateLimit({
 // Rate limiting para polling (MÁS ESTRICTO - evita colapso)
 const pollingLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minuto
-  max: 10, // máximo 10 requests por minuto (1 cada 6 segundos)
+  max: 120, // aumentado de 10 a 120 requests por minuto (2 cada segundo)
   message: {
     error: 'Demasiadas solicitudes de polling, reduce la frecuencia'
   },

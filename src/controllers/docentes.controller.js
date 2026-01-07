@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const DocentesModel = require('../models/docentes.model');
 const { registrarAuditoria } = require('../utils/auditoria');
 const { enviarEmailBienvenidaDocente } = require('../services/emailService');
+const ExcelJS = require('exceljs');
 
 // =====================================================
 // FUNCIONES AUXILIARES PARA GENERACIÓN DE USERNAME
@@ -689,6 +690,263 @@ exports.getDocentesStats = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error interno del servidor',
+      error: error.message
+    });
+  }
+};
+
+// Generar reporte Excel de docentes
+exports.generarReporteExcel = async (req, res) => {
+  try {
+    // Obtener filtros de la query
+    const { search = '', estado = '' } = req.query;
+
+    console.log('📊 Generando Excel Docentes | Filtros:', { search, estado });
+
+    // Construir consulta dinámica
+    let baseSql = `
+      SELECT 
+        d.id_docente,
+        d.identificacion,
+        d.nombres,
+        d.apellidos,
+        d.titulo_profesional,
+        d.experiencia_anos,
+        d.estado,
+        d.fecha_creacion,
+        u.email,
+        u.telefono,
+        u.username,
+        u.fecha_nacimiento,
+        u.direccion,
+        u.genero,
+        u.fecha_registro
+      FROM docentes d
+      LEFT JOIN usuarios u ON u.cedula = d.identificacion 
+        AND u.id_rol = (SELECT id_rol FROM roles WHERE nombre_rol = 'docente')
+      WHERE 1=1
+    `;
+
+    const params = [];
+
+    if (estado && estado !== 'todos') {
+      baseSql += ` AND d.estado = ?`;
+      params.push(estado);
+    }
+
+    if (search) {
+      baseSql += ` AND (d.nombres LIKE ? OR d.apellidos LIKE ? OR d.identificacion LIKE ? OR u.email LIKE ?)`;
+      const searchParam = `%${search}%`;
+      params.push(searchParam, searchParam, searchParam, searchParam);
+    }
+
+    baseSql += ` ORDER BY d.apellidos ASC, d.nombres ASC`;
+
+    // 1. Obtener docentes filtrados
+    const [docentes] = await pool.execute(baseSql, params);
+
+    // 2. Obtener cursos asignados (activos) para todos los docentes
+    const [asignaciones] = await pool.execute(`
+      SELECT 
+        aa.id_docente,
+        c.nombre as curso_nombre,
+        c.codigo_curso,
+        c.horario,
+        a.nombre as aula_nombre,
+        aa.dias,
+        aa.hora_inicio,
+        aa.hora_fin
+      FROM asignaciones_aulas aa
+      INNER JOIN cursos c ON aa.id_curso = c.id_curso
+      LEFT JOIN aulas a ON aa.id_aula = a.id_aula
+      WHERE aa.estado = 'activa' 
+        AND c.estado IN ('activo', 'planificado')
+    `);
+
+    // Mapear cursos por docente
+    const cursosMap = {};
+    asignaciones.forEach(asig => {
+      if (!cursosMap[asig.id_docente]) {
+        cursosMap[asig.id_docente] = [];
+      }
+      cursosMap[asig.id_docente].push(asig);
+    });
+
+    // Crear workbook
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'SGA Belleza';
+    workbook.created = new Date();
+
+    // ========== HOJA 1: LISTADO DE DOCENTES ==========
+    const sheet1 = workbook.addWorksheet('Docentes', {
+      properties: { tabColor: { argb: 'FFDC2626' } },
+      pageSetup: {
+        orientation: 'landscape',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        paperSize: 9, // A4 horizontal
+        margins: {
+          left: 0.25, right: 0.25,
+          top: 0.4, bottom: 0.4,
+          header: 0.2, footer: 0.2
+        },
+        printTitlesRow: '1:1'
+      },
+      headerFooter: {
+        oddFooter: `&L&"-,Bold"&16Escuela de Belleza Jessica Vélez&"-,Regular"&12&RDescargado: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })} — Pág. &P de &N`
+      }
+    });
+
+    // Encabezados
+    sheet1.columns = [
+      { header: '#', key: 'numero', width: 5, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Identificación', key: 'cedula', width: 13, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Apellidos', key: 'apellidos', width: 18, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Nombres', key: 'nombres', width: 18, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Título Profesional', key: 'titulo', width: 20, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Email', key: 'email', width: 25, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Teléfono', key: 'telefono', width: 12, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Exp.', key: 'experiencia', width: 6, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Curso Asignado', key: 'curso', width: 22, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Horario', key: 'horario', width: 15, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Username', key: 'username', width: 14, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'left' } } },
+      { header: 'Estado', key: 'estado', width: 10, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
+      { header: 'Fecha Registro', key: 'fecha_reg', width: 15, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } }
+    ];
+
+    // Estilo del encabezado
+    sheet1.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+    sheet1.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFDC2626' }
+    };
+    sheet1.getRow(1).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    sheet1.getRow(1).height = 45;
+
+    // Preparar datos planos
+    const datosPlanos = [];
+    docentes.forEach(doc => {
+      const cursos = cursosMap[doc.id_docente] || [];
+
+      if (cursos.length > 0) {
+        cursos.forEach(cur => {
+          datosPlanos.push({
+            ...doc,
+            curso_nombre: cur.curso_nombre,
+            curso_horario: cur.horario ? cur.horario.toUpperCase() : 'N/A', // O usar cur.dias + ' ' + cur.hora_inicio
+            tiene_curso: true
+          });
+        });
+      } else {
+        datosPlanos.push({
+          ...doc,
+          curso_nombre: 'Sin asignación',
+          curso_horario: 'N/A',
+          tiene_curso: false
+        });
+      }
+    });
+
+    // Renderizar filas
+    let docenteAnterior = null;
+    let numeroDocente = 0;
+    let filaInicioDocente = 2;
+    let currentRow = 2;
+
+    datosPlanos.forEach((dato, index) => {
+      const esNuevoDocente = docenteAnterior !== dato.id_docente;
+      const esUltimoRegistro = index === datosPlanos.length - 1;
+      const siguienteEsDiferente = esUltimoRegistro || datosPlanos[index + 1].id_docente !== dato.id_docente;
+
+      if (esNuevoDocente) {
+        numeroDocente++;
+        filaInicioDocente = currentRow;
+      }
+
+      const row = sheet1.addRow({
+        numero: esNuevoDocente ? numeroDocente : '',
+        cedula: esNuevoDocente ? dato.identificacion : '',
+        apellidos: esNuevoDocente ? dato.apellidos : '',
+        nombres: esNuevoDocente ? dato.nombres : '',
+        titulo: esNuevoDocente ? dato.titulo_profesional : '',
+        email: esNuevoDocente ? (dato.email || 'N/A') : '',
+        telefono: esNuevoDocente ? (dato.telefono || 'N/A') : '',
+        experiencia: esNuevoDocente ? (dato.experiencia_anos || 0) : '',
+        curso: dato.curso_nombre,
+        horario: dato.curso_horario,
+        username: esNuevoDocente ? (dato.username || 'N/A') : '',
+        estado: esNuevoDocente ? (dato.estado.charAt(0).toUpperCase() + dato.estado.slice(1)) : '',
+        fecha_reg: esNuevoDocente ? (dato.fecha_creacion ? new Date(dato.fecha_creacion) : new Date()) : ''
+      });
+
+      // Formato para nuevo docente
+      if (esNuevoDocente) {
+        row.getCell('numero').alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('cedula').alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('experiencia').alignment = { horizontal: 'center', vertical: 'middle' };
+        row.getCell('estado').alignment = { horizontal: 'center', vertical: 'middle' };
+
+        row.getCell('fecha_reg').numFmt = 'dd/mm/yyyy';
+        row.getCell('fecha_reg').alignment = { horizontal: 'center', vertical: 'middle' };
+      }
+
+      row.getCell('horario').alignment = { horizontal: 'center', vertical: 'middle' };
+
+      // Merge de celdas
+      if (siguienteEsDiferente && currentRow > filaInicioDocente) {
+        // Columnas a combinar: A(#), B(ID), C(Apell), D(Nom), E(Tit), F(Email), G(Tel), H(Exp), K(User), L(Est), M(Fec)
+        const columnasMerge = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'K', 'L', 'M'];
+        columnasMerge.forEach(col => {
+          try {
+            sheet1.mergeCells(`${col}${filaInicioDocente}:${col}${currentRow}`);
+            const cell = sheet1.getCell(`${col}${filaInicioDocente}`);
+            cell.alignment = {
+              horizontal: cell.alignment?.horizontal || 'left',
+              vertical: 'middle',
+              wrapText: true
+            };
+          } catch (e) { }
+        });
+      }
+
+      docenteAnterior = dato.id_docente;
+      currentRow++;
+    });
+
+    // Bordes y alternancia
+    sheet1.eachRow((row, rowNumber) => {
+      row.eachCell(cell => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+          right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
+        };
+      });
+
+      if (rowNumber > 1 && rowNumber % 2 === 0) {
+        row.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFF9FAFB' }
+        };
+      }
+    });
+
+    // Generar buffer
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=Docentes_${Date.now()}.xlsx`);
+
+    await workbook.xlsx.write(res);
+    res.end();
+
+  } catch (error) {
+    console.error('Error generando Excel docentes:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error generando reporte',
       error: error.message
     });
   }

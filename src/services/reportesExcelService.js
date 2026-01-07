@@ -56,7 +56,11 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
           bottom: 0.4,
           header: 0.3,
           footer: 0.3
-        }
+        },
+        printTitlesRow: '1:1'
+      },
+      headerFooter: {
+        oddFooter: `&L&"-,Bold"&16Escuela de Belleza Jessica Vélez&"-,Regular"&12&RDescargado: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })} — Pág. &P de &N`
       }
     });
 
@@ -319,7 +323,11 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
           bottom: 0.4,
           header: 0.3,
           footer: 0.3
-        }
+        },
+        printTitlesRow: '1:1'
+      },
+      headerFooter: {
+        oddFooter: `&L&"-,Bold"&16Escuela de Belleza Jessica Vélez&"-,Regular"&12&RDescargado: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })} — Pág. &P de &N`
       }
     });
 
@@ -454,27 +462,27 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
       while (i < pagosEstudiante.length) {
         const pagoActual = pagosEstudiante[i];
         const comprobanteActual = pagoActual.numero_comprobante;
-        
+
         // Solo combinar si tiene comprobante válido
         if (comprobanteActual && comprobanteActual !== 'N/A' && comprobanteActual.trim() !== '') {
           let j = i + 1;
-          
+
           // Buscar cuántos pagos consecutivos tienen el mismo comprobante
           while (j < pagosEstudiante.length && pagosEstudiante[j].numero_comprobante === comprobanteActual) {
             j++;
           }
-          
+
           // Si hay más de un pago con el mismo comprobante, combinar celdas
           if (j - i > 1) {
             const rowInicio = startRow + i;
             const rowFin = startRow + j - 1;
-            
+
             // Combinar: Método de Pago (J), Recibido Por (K), Número Comprobante (L)
             hojaDatos.mergeCells(`J${rowInicio}:J${rowFin}`); // metodo_pago
             hojaDatos.mergeCells(`K${rowInicio}:K${rowFin}`); // recibido_por
             hojaDatos.mergeCells(`L${rowInicio}:L${rowFin}`); // numero_comprobante
           }
-          
+
           i = j;
         } else {
           i++;
@@ -759,7 +767,11 @@ async function generarExcelCursos(datos, filtros, estadisticas) {
           bottom: 0.4,
           header: 0.3,
           footer: 0.3
-        }
+        },
+        printTitlesRow: '1:1'
+      },
+      headerFooter: {
+        oddFooter: `&L&"-,Bold"&16Escuela de Belleza Jessica Vélez&"-,Regular"&12&RDescargado: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })} — Pág. &P de &N`
       }
     });
 

@@ -722,12 +722,12 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         operacion: 'UPDATE',
         id_registro: id_solicitud,
         usuario_id: aprobado_por,
-        datos_anteriores: { 
+        datos_anteriores: {
           estado: 'pendiente',
           codigo_solicitud: solicitud.codigo_solicitud
         },
-        datos_nuevos: { 
-          estado: 'aprobado', 
+        datos_nuevos: {
+          estado: 'aprobado',
           verificado_por: aprobado_por,
           codigo_solicitud: solicitud.codigo_solicitud,
           nombre_solicitante: solicitud.nombre_solicitante,
@@ -1486,7 +1486,17 @@ exports.generarReporteExcel = async (req, res) => {
     // ========== HOJA 1: LISTADO DE ESTUDIANTES ==========
     const sheet1 = workbook.addWorksheet('Estudiantes', {
       properties: { tabColor: { argb: 'FFDC2626' } },
-      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 } // A4 horizontal
+      pageSetup: {
+        orientation: 'landscape',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        paperSize: 9, // A4 horizontal
+        printTitlesRow: '1:1'
+      },
+      headerFooter: {
+        oddFooter: `&L&"-,Bold"&16Escuela de Belleza Jessica Vélez&"-,Regular"&12&RDescargado: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })} — Pág. &P de &N`
+      }
     });
 
     // Encabezados - REORDENADOS: #, Identificación, Apellidos, Nombres, Email, Teléfono...
@@ -1644,7 +1654,17 @@ exports.generarReporteExcel = async (req, res) => {
     // ========== HOJA 2: RESUMEN ESTADÍSTICO ==========
     const sheet2 = workbook.addWorksheet('Resumen Estadístico', {
       properties: { tabColor: { argb: 'FF10B981' } },
-      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 } // A4 horizontal
+      pageSetup: {
+        orientation: 'landscape',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        paperSize: 9, // A4 horizontal
+        printTitlesRow: '1:1'
+      },
+      headerFooter: {
+        oddFooter: `&L&"-,Bold"&16Escuela de Belleza Jessica Vélez&"-,Regular"&12&RDescargado: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })} — Pág. &P de &N`
+      }
     });
 
     // Título principal

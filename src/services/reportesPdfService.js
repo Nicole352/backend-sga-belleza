@@ -65,32 +65,30 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
       // Descargar logo
       const logoBuffer = await descargarLogo();
 
-      // ========================================
       // HEADER CON LOGO CENTRADO
-      // ========================================
       if (logoBuffer) {
-        doc.image(logoBuffer, (doc.page.width - 100) / 2, 40, { width: 100 });
+        doc.image(logoBuffer, (doc.page.width - 100) / 2, 10, { width: 100 });
       }
 
-      doc.moveDown(6);
+      doc.moveDown(3.8);
 
       // Nombre de la institución
-      doc.fontSize(20)
+      doc.fontSize(10)
         .fillColor(colors.dark)
         .font('Helvetica-Bold')
         .text('ESCUELA DE BELLEZA JESSICA VÉLEZ', { align: 'center' });
 
-      doc.moveDown(0.5);
+      doc.moveDown(0.3);
 
       // Título del reporte
-      doc.fontSize(16)
+      doc.fontSize(14)
         .fillColor(colors.primary)
         .text('REPORTE DE ESTUDIANTES', { align: 'center' });
 
-      doc.moveDown(0.3);
+      doc.moveDown(0.2);
 
       // Fecha de generación
-      doc.fontSize(10)
+      doc.fontSize(9)
         .fillColor(colors.textGray)
         .font('Helvetica')
         .text(`Generado el: ${formatearFecha(new Date())}`, { align: 'center' });
@@ -142,91 +140,147 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
 
       doc.moveDown(0.5);
 
-      // Encabezados de tabla
       const tableTop = doc.y;
       const colWidths = {
+        indice: 25,
         cedula: 80,
-        nombre: 140,
-        curso: 120,
-        fecha: 80,
-        estado: 70
+        nombre: 135,
+        curso: 110,
+        fecha: 85,
+        estado: 80 // Se ajustará
       };
+      colWidths.estado = (doc.page.width - 80) - (colWidths.indice + colWidths.cedula + colWidths.nombre + colWidths.curso + colWidths.fecha);
 
-      // Función para dibujar encabezado
       const dibujarEncabezadoTabla = (y) => {
         let x = 40;
-        doc.rect(40, y, doc.page.width - 80, 25)
-          .fillAndStroke(colors.primary, colors.primary);
+        doc.rect(40, y, doc.page.width - 80, 25).fillAndStroke(colors.primary, colors.primary);
+        doc.fontSize(8).fillColor(colors.dark).font('Helvetica-Bold');
 
-        doc.fontSize(9).fillColor(colors.dark).font('Helvetica-Bold');
-        doc.text('CÉDULA', x + 5, y + 8, { width: colWidths.cedula });
+        doc.text('#', x, y + 8, { width: colWidths.indice, align: 'center' });
+        x += colWidths.indice;
+        doc.text('CÉDULA', x, y + 8, { width: colWidths.cedula, align: 'center' });
         x += colWidths.cedula;
-        doc.text('NOMBRE COMPLETO', x + 5, y + 8, { width: colWidths.nombre });
+        doc.text('NOMBRE COMPLETO', x, y + 8, { width: colWidths.nombre, align: 'center' });
         x += colWidths.nombre;
-        doc.text('CURSO', x + 5, y + 8, { width: colWidths.curso });
+        doc.text('CURSO', x, y + 8, { width: colWidths.curso, align: 'center' });
         x += colWidths.curso;
-        doc.text('FECHA INSC.', x + 5, y + 8, { width: colWidths.fecha });
+        doc.text('FECHA INSC.', x, y + 8, { width: colWidths.fecha, align: 'center' });
         x += colWidths.fecha;
-        doc.text('ESTADO', x + 5, y + 8, { width: colWidths.estado });
+        doc.text('ESTADO', x, y + 8, { width: colWidths.estado, align: 'center' });
       };
 
       // Dibujar primer encabezado
       dibujarEncabezadoTabla(tableTop);
 
+      // Agrupar por estudiante (en caso de que uno esté en varios cursos)
+      const estudiantesAgrupados = {};
+      datos.forEach(est => {
+        const key = est.cedula || `${est.nombre}_${est.apellido}`;
+        if (!estudiantesAgrupados[key]) estudiantesAgrupados[key] = [];
+        estudiantesAgrupados[key].push(est);
+      });
+
+      const idsOrdenados = Object.keys(estudiantesAgrupados).sort((a, b) => {
+        const apA = estudiantesAgrupados[a][0].apellido || '';
+        const apB = estudiantesAgrupados[b][0].apellido || '';
+        return apA.localeCompare(apB);
+      });
+
       let yPos = tableTop + 30;
+      let indiceGlobal = 1;
 
-      // Filas de datos
-      datos.forEach((estudiante, index) => {
-        // Verificar si necesitamos nueva página
-        if (yPos > doc.page.height - 120) {
-          doc.addPage();
-          yPos = 40;
-          dibujarEncabezadoTabla(yPos);
-          yPos += 30;
+      idsOrdenados.forEach((id) => {
+        const todosLosCursosEst = estudiantesAgrupados[id];
+        let cursosRestantes = [...todosLosCursosEst];
+
+        while (cursosRestantes.length > 0) {
+          // Determinar cuántos cursos caben en la página actual
+          let yEspacioDisponible = doc.page.height - 100 - yPos;
+          let numCursosQueCaben = Math.floor(yEspacioDisponible / 20);
+
+          if (numCursosQueCaben <= 0) {
+            doc.addPage();
+            yPos = 50;
+            dibujarEncabezadoTabla(yPos);
+            yPos += 30;
+            yEspacioDisponible = doc.page.height - 100 - yPos;
+            numCursosQueCaben = Math.floor(yEspacioDisponible / 20);
+          }
+
+          const cursosEnEstaPagina = cursosRestantes.splice(0, Math.min(numCursosQueCaben, cursosRestantes.length));
+          const alturaBloque = cursosEnEstaPagina.length * 20;
+          const yInicioBloque = yPos;
+
+          // 1. Dibujar filas de cursos (columnas derecha)
+          cursosEnEstaPagina.forEach((estudiante, cIdx) => {
+            // Fondo alternado por estudiante
+            if (indiceGlobal % 2 === 0) {
+              doc.rect(40, yPos - 5, doc.page.width - 80, 20).fillColor('#f9f9f9').fill();
+            }
+
+            // Bordes de columnas de curso (siempre por fila)
+            doc.lineWidth(0.5).strokeColor(colors.border);
+            let xTmp = 40 + colWidths.indice + colWidths.cedula + colWidths.nombre;
+            [colWidths.curso, colWidths.fecha, colWidths.estado].forEach(width => {
+              doc.rect(xTmp, yPos - 5, width, 20).stroke();
+              xTmp += width;
+            });
+
+            const xContenidoCurso = 40 + colWidths.indice + colWidths.cedula + colWidths.nombre;
+            let currentX = xContenidoCurso;
+            doc.fontSize(7.5).fillColor(colors.text).font('Helvetica');
+
+            // Curso
+            doc.text(estudiante.nombre_curso || 'N/A', currentX, yPos + 4, { width: colWidths.curso, align: 'center' });
+            currentX += colWidths.curso;
+
+            // Fecha inscripción
+            const fechaInsc = estudiante.fecha_inscripcion ? new Date(estudiante.fecha_inscripcion).toLocaleDateString('es-ES') : 'N/A';
+            doc.text(fechaInsc, currentX, yPos + 4, { width: colWidths.fecha, align: 'center' });
+            currentX += colWidths.fecha;
+
+            // Estado con color
+            let estadoColor = colors.text;
+            if (estudiante.estado_academico === 'aprobado') estadoColor = colors.success;
+            if (estudiante.estado_academico === 'reprobado') estadoColor = colors.error;
+            if (estudiante.estado_academico === 'retirado') estadoColor = '#f59e0b';
+
+            doc.fillColor(estadoColor).font('Helvetica-Bold')
+              .text(estudiante.estado_academico ? estudiante.estado_academico.toUpperCase() : 'N/A', currentX, yPos + 4, { width: colWidths.estado, align: 'center' });
+
+            yPos += 20;
+          });
+
+          // 2. Dibujar celdas "combinadas" (columnas izquierda)
+          doc.lineWidth(0.5).strokeColor(colors.border);
+          let xEst = 40;
+          [colWidths.indice, colWidths.cedula, colWidths.nombre].forEach(width => {
+            doc.rect(xEst, yInicioBloque - 5, width, alturaBloque).stroke();
+            xEst += width;
+          });
+
+          // Contenido centrado verticalmente
+          const primerEst = cursosEnEstaPagina[0];
+          const yCentro = yInicioBloque - 5 + (alturaBloque / 2);
+
+          let xCont = 40;
+          doc.fillColor(colors.text);
+
+          // #
+          doc.font('Helvetica-Bold').fontSize(8)
+            .text(indiceGlobal.toString(), xCont, yCentro - 4, { width: colWidths.indice, align: 'center' });
+          xCont += colWidths.indice;
+
+          // Cédula
+          doc.font('Helvetica').fontSize(7.5)
+            .text(primerEst.cedula || 'N/A', xCont, yCentro - 4, { width: colWidths.cedula, align: 'center' });
+          xCont += colWidths.cedula;
+
+          // Nombre completo
+          doc.font('Helvetica-Bold').fontSize(7.5)
+            .text(`${primerEst.nombre} ${primerEst.apellido}`, xCont, yCentro - 4, { width: colWidths.nombre, align: 'center' });
         }
-
-        // Fondo alternado
-        if (index % 2 === 0) {
-          doc.rect(40, yPos - 5, doc.page.width - 80, 20)
-            .fillColor('#f9f9f9')
-            .fill();
-        }
-
-        xPos = 40;
-
-        doc.fontSize(8)
-          .fillColor(colors.text)
-          .font('Helvetica');
-
-        // Cédula
-        doc.text(estudiante.cedula || 'N/A', xPos + 5, yPos, { width: colWidths.cedula });
-        xPos += colWidths.cedula;
-
-        // Nombre completo
-        const nombreCompleto = `${estudiante.nombre} ${estudiante.apellido}`;
-        doc.text(nombreCompleto, xPos + 5, yPos, { width: colWidths.nombre });
-        xPos += colWidths.nombre;
-
-        // Curso
-        doc.text(estudiante.nombre_curso || 'N/A', xPos + 5, yPos, { width: colWidths.curso });
-        xPos += colWidths.curso;
-
-        // Fecha inscripción
-        const fechaInsc = new Date(estudiante.fecha_inscripcion).toLocaleDateString('es-ES');
-        doc.text(fechaInsc, xPos + 5, yPos, { width: colWidths.fecha });
-        xPos += colWidths.fecha;
-
-        // Estado con color
-        let estadoColor = colors.text;
-        if (estudiante.estado_academico === 'aprobado') estadoColor = colors.success;
-        if (estudiante.estado_academico === 'reprobado') estadoColor = colors.error;
-        if (estudiante.estado_academico === 'retirado') estadoColor = '#f59e0b';
-
-        doc.fillColor(estadoColor)
-          .font('Helvetica-Bold')
-          .text(estudiante.estado_academico.toUpperCase(), xPos + 5, yPos, { width: colWidths.estado });
-
-        yPos += 20;
+        indiceGlobal++;
       });
 
       // ========================================
@@ -383,7 +437,6 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
     try {
       const doc = new PDFDocument({
         size: 'A4',
-        layout: 'landscape',
         margins: { top: 40, bottom: 0, left: 40, right: 40 },
         bufferPages: true
       });
@@ -407,25 +460,25 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
 
       // HEADER
       if (logoBuffer) {
-        doc.image(logoBuffer, (doc.page.width - 100) / 2, 40, { width: 100 });
+        doc.image(logoBuffer, (doc.page.width - 100) / 2, 10, { width: 100 });
       }
 
-      doc.moveDown(6);
+      doc.moveDown(3.8);
 
-      doc.fontSize(20)
+      doc.fontSize(10)
         .fillColor(colors.dark)
         .font('Helvetica-Bold')
         .text('ESCUELA DE BELLEZA JESSICA VÉLEZ', { align: 'center' });
 
-      doc.moveDown(0.5);
+      doc.moveDown(0.3);
 
-      doc.fontSize(16)
+      doc.fontSize(14)
         .fillColor(colors.primary)
         .text('REPORTE FINANCIERO', { align: 'center' });
 
-      doc.moveDown(0.3);
+      doc.moveDown(0.2);
 
-      doc.fontSize(10)
+      doc.fontSize(9)
         .fillColor(colors.textGray)
         .font('Helvetica')
         .text(`Generado el: ${formatearFecha(new Date())}`, { align: 'center' });
@@ -465,119 +518,177 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
       doc.moveDown(0.5);
 
       const tableTop = doc.y;
-      // Anchos optimizados para orientación horizontal (landscape)
       const colWidths = {
-        cedula: 95,
-        nombre: 160,
-        curso: 130,
-        monto: 70,
-        fecha: 90,
-        metodo: 110,
-        estado: 90
+        indice: 25,
+        cedula: 75,
+        nombre: 115,
+        curso: 95,
+        monto: 50,
+        fecha: 55,
+        metodo: 60,
+        estado: 40 // Se ajustará
       };
+      colWidths.estado = (doc.page.width - 80) - (colWidths.indice + colWidths.cedula + colWidths.nombre + colWidths.curso + colWidths.monto + colWidths.fecha + colWidths.metodo);
 
-      // Función para dibujar encabezado
       const dibujarEncabezadoTabla = (y) => {
-        let x = 30;
-        doc.rect(30, y, doc.page.width - 60, 28)
-          .fillAndStroke(colors.primary, colors.primary);
+        let x = 40;
+        doc.rect(40, y, doc.page.width - 80, 28).fillAndStroke(colors.primary, colors.primary);
+        doc.fontSize(8).fillColor('#000000').font('Helvetica-Bold');
 
-        doc.fontSize(10).fillColor('#000000').font('Helvetica-Bold');
-        doc.text('IDENTIFICACIÓN', x + 5, y + 9, { width: colWidths.cedula, align: 'left' });
+        doc.text('#', x, y + 9, { width: colWidths.indice, align: 'center' });
+        x += colWidths.indice;
+        doc.text('ID', x, y + 9, { width: colWidths.cedula, align: 'center' });
         x += colWidths.cedula;
-        doc.text('NOMBRE', x + 5, y + 9, { width: colWidths.nombre, align: 'left' });
+        doc.text('NOMBRE', x, y + 9, { width: colWidths.nombre, align: 'center' });
         x += colWidths.nombre;
-        doc.text('CURSO', x + 5, y + 9, { width: colWidths.curso, align: 'left' });
+        doc.text('CURSO', x, y + 9, { width: colWidths.curso, align: 'center' });
         x += colWidths.curso;
-        doc.text('MONTO', x + 5, y + 9, { width: colWidths.monto, align: 'right' });
+        doc.text('MONTO', x, y + 9, { width: colWidths.monto, align: 'center' });
         x += colWidths.monto;
-        doc.text('FECHA', x + 5, y + 9, { width: colWidths.fecha, align: 'center' });
+        doc.text('FECHA', x, y + 9, { width: colWidths.fecha, align: 'center' });
         x += colWidths.fecha;
-        doc.text('MÉTODO', x + 5, y + 9, { width: colWidths.metodo, align: 'left' });
+        doc.text('MÉT.', x, y + 9, { width: colWidths.metodo, align: 'center' });
         x += colWidths.metodo;
-        doc.text('ESTADO', x + 5, y + 9, { width: colWidths.estado, align: 'center' });
+        doc.text('EST.', x, y + 9, { width: colWidths.estado, align: 'center' });
       };
 
       // Dibujar primer encabezado
       dibujarEncabezadoTabla(tableTop);
 
+      // Agrupar pagos por estudiante para que el reporte sea coherente (igual que en Excel)
+      const pagosAgrupados = {};
+      datos.forEach(pago => {
+        const key = pago.cedula_estudiante || pago.nombre_estudiante || 'SIN_ID';
+        if (!pagosAgrupados[key]) {
+          pagosAgrupados[key] = [];
+        }
+        pagosAgrupados[key].push(pago);
+      });
+
+      // Ordenar estudiantes por apellido (consistencia con Excel)
+      const identificacionesOrdenadas = Object.keys(pagosAgrupados).sort((a, b) => {
+        const apA = pagosAgrupados[a][0].apellido_estudiante || '';
+        const apB = pagosAgrupados[b][0].apellido_estudiante || '';
+        return apA.localeCompare(apB);
+      });
+
       let yPos = tableTop + 33;
+      let indiceGlobal = 1;
 
-      // Filas con mejor espaciado
-      datos.forEach((pago, index) => {
-        if (yPos > doc.page.height - 120) {
-          doc.addPage();
-          yPos = 50;
-          dibujarEncabezadoTabla(yPos);
-          yPos += 35;
+      identificacionesOrdenadas.forEach((id) => {
+        const todosLosPagosEstudiante = pagosAgrupados[id];
+        let pagosRestantes = [...todosLosPagosEstudiante];
+
+        while (pagosRestantes.length > 0) {
+          // Determinar cuántos pagos del estudiante caben en la página actual
+          let yEspacioDisponible = doc.page.height - 100 - yPos;
+          let numPagosQueCaben = Math.floor(yEspacioDisponible / 32);
+
+          if (numPagosQueCaben <= 0) {
+            doc.addPage();
+            yPos = 50;
+            dibujarEncabezadoTabla(yPos);
+            yPos += 35;
+            yEspacioDisponible = doc.page.height - 100 - yPos;
+            numPagosQueCaben = Math.floor(yEspacioDisponible / 32);
+          }
+
+          const pagosEnEstaPagina = pagosRestantes.splice(0, Math.min(numPagosQueCaben, pagosRestantes.length));
+          const alturaBloque = pagosEnEstaPagina.length * 32;
+          const yInicioBloque = yPos;
+
+          // 1. Dibujar filas de pagos (columnas de la derecha)
+          pagosEnEstaPagina.forEach((pago, pIdx) => {
+            // Fondo alternado por estudiante
+            if (indiceGlobal % 2 === 0) {
+              doc.rect(40, yPos - 6, doc.page.width - 80, 32)
+                .fillColor('#f9f9f9')
+                .fill();
+            }
+
+            // Bordes de las columnas de PAGO (siempre se dibujan por fila)
+            doc.lineWidth(0.5).strokeColor(colors.border);
+            let xTmp = 40 + colWidths.indice + colWidths.cedula + colWidths.nombre;
+            [colWidths.curso, colWidths.monto, colWidths.fecha, colWidths.metodo, colWidths.estado].forEach(width => {
+              doc.rect(xTmp, yPos - 6, width, 32).stroke();
+              xTmp += width;
+            });
+
+            const xContenidoPago = 40 + colWidths.indice + colWidths.cedula + colWidths.nombre;
+            let currentX = xContenidoPago;
+
+            doc.fontSize(7.5).fillColor(colors.text).font('Helvetica');
+
+            // Curso
+            const cursoNombre = pago.nombre_curso || 'N/A';
+            const cursoCorto = cursoNombre.length > 20 ? cursoNombre.substring(0, 18) + '...' : cursoNombre;
+            doc.text(cursoCorto, currentX, yPos + 6, { width: colWidths.curso, align: 'center' });
+            currentX += colWidths.curso;
+
+            // Monto
+            doc.text(formatearMoneda(pago.monto), currentX, yPos + 6, { width: colWidths.monto, align: 'center' });
+            currentX += colWidths.monto;
+
+            // Fecha
+            let fechaMostrar = 'N/A';
+            if (pago.fecha_pago) {
+              fechaMostrar = new Date(pago.fecha_pago).toLocaleDateString('es-ES');
+            } else if (pago.fecha_vencimiento) {
+              fechaMostrar = new Date(pago.fecha_vencimiento).toLocaleDateString('es-ES');
+            }
+            doc.text(fechaMostrar, currentX, yPos + 6, { width: colWidths.fecha, align: 'center' });
+            currentX += colWidths.fecha;
+
+            // Método
+            const metodoPago = (pago.estado_pago === 'verificado' || pago.estado_pago === 'pagado') && pago.metodo_pago
+              ? (pago.metodo_pago.length > 10 ? (pago.metodo_pago.substring(0, 8) + '.').toUpperCase() : pago.metodo_pago.toUpperCase())
+              : 'PEND.';
+            doc.text(metodoPago, currentX, yPos + 6, { width: colWidths.metodo, align: 'center' });
+            currentX += colWidths.metodo;
+
+            // Estado
+            let estadoColor = colors.text;
+            if (pago.estado_pago === 'verificado') estadoColor = colors.success;
+            if (pago.estado_pago === 'pendiente') estadoColor = colors.error;
+            doc.fillColor(estadoColor).font('Helvetica-Bold')
+              .text(pago.estado_pago.substring(0, 3).toUpperCase() + '.', currentX, yPos + 6, { width: colWidths.estado, align: 'center' });
+
+            yPos += 32;
+          });
+
+          // 2. Dibujar celdas "combinadas" (columnas de la izquierda)
+          doc.lineWidth(0.5).strokeColor(colors.border);
+          let xEst = 40;
+
+          // Bordes de bloque para #, Cédula, Nombre
+          [colWidths.indice, colWidths.cedula, colWidths.nombre].forEach(width => {
+            doc.rect(xEst, yInicioBloque - 6, width, alturaBloque).stroke();
+            xEst += width;
+          });
+
+          // Contenido centrado verticalmente
+          const primerPago = pagosEnEstaPagina[0];
+          const yCentro = yInicioBloque - 6 + (alturaBloque / 2);
+
+          let xCont = 40;
+          doc.fillColor(colors.text);
+
+          // #
+          doc.font('Helvetica-Bold').fontSize(8)
+            .text(indiceGlobal.toString(), xCont, yCentro - 4, { width: colWidths.indice, align: 'center' });
+          xCont += colWidths.indice;
+
+          // Cédula
+          doc.font('Helvetica').fontSize(7.5)
+            .text(primerPago.cedula_estudiante || 'N/A', xCont, yCentro - 4, { width: colWidths.cedula, align: 'center' });
+          xCont += colWidths.cedula;
+
+          // Nombre (Nombre + Apellido)
+          const nombreText = `${primerPago.nombre_estudiante}\n${primerPago.apellido_estudiante || ''}`;
+          doc.font('Helvetica-Bold').fontSize(7)
+            .text(nombreText, xCont, yCentro - 6, { width: colWidths.nombre, align: 'center' });
         }
-
-        // Fondo alternado para mejor legibilidad (altura aumentada para 2 líneas)
-        if (index % 2 === 0) {
-          doc.rect(30, yPos - 6, doc.page.width - 60, 32)
-            .fillColor('#f5f5f5')
-            .fill();
-        }
-
-        xPos = 30;
-
-        doc.fontSize(9)
-          .fillColor(colors.text)
-          .font('Helvetica');
-
-        // Cédula
-        doc.text(pago.cedula_estudiante || 'N/A', xPos + 5, yPos + 6, { width: colWidths.cedula, align: 'left' });
-        xPos += colWidths.cedula;
-
-        // Nombre en dos líneas (nombre arriba, apellido abajo)
-        doc.fontSize(8)
-          .font('Helvetica-Bold')
-          .text(pago.nombre_estudiante || 'N/A', xPos + 5, yPos + 2, { width: colWidths.nombre, align: 'left' });
-        doc.fontSize(8)
-          .font('Helvetica')
-          .text(pago.apellido_estudiante || '', xPos + 5, yPos + 12, { width: colWidths.nombre, align: 'left' });
-        xPos += colWidths.nombre;
-
-        // Curso (centrado verticalmente)
-        doc.fontSize(9)
-          .fillColor(colors.text)
-          .font('Helvetica');
-        const cursoNombre = pago.nombre_curso || 'N/A';
-        const cursoCorto = cursoNombre.length > 18 ? cursoNombre.substring(0, 15) + '...' : cursoNombre;
-        doc.text(cursoCorto, xPos + 5, yPos + 6, { width: colWidths.curso, align: 'left' });
-        xPos += colWidths.curso;
-
-        // Monto (alineado a la derecha, centrado verticalmente)
-        doc.text(formatearMoneda(pago.monto), xPos + 5, yPos + 6, { width: colWidths.monto - 10, align: 'right' });
-        xPos += colWidths.monto;
-
-        // Fecha (centrado verticalmente)
-        let fechaMostrar = 'N/A';
-        if (pago.fecha_pago) {
-          fechaMostrar = new Date(pago.fecha_pago).toLocaleDateString('es-ES');
-        } else if (pago.fecha_vencimiento) {
-          fechaMostrar = new Date(pago.fecha_vencimiento).toLocaleDateString('es-ES');
-        }
-        doc.text(fechaMostrar, xPos, yPos + 6, { width: colWidths.fecha, align: 'center' });
-        xPos += colWidths.fecha;
-
-        // Método (centrado verticalmente) - Solo mostrar si ya pagó
-        const metodoPago = (pago.estado_pago === 'verificado' || pago.estado_pago === 'pagado') && pago.metodo_pago
-          ? pago.metodo_pago.toUpperCase()
-          : 'PENDIENTE';
-        doc.text(metodoPago, xPos + 5, yPos + 6, { width: colWidths.metodo, align: 'left' });
-        xPos += colWidths.metodo;
-
-        // Estado con color (centrado verticalmente)
-        let estadoColor = colors.text;
-        if (pago.estado_pago === 'verificado') estadoColor = colors.success;
-        if (pago.estado_pago === 'pendiente') estadoColor = colors.error;
-
-        doc.fillColor(estadoColor)
-          .font('Helvetica-Bold')
-          .text(pago.estado_pago.toUpperCase(), xPos, yPos + 6, { width: colWidths.estado, align: 'center' });
-
-        yPos += 32;
+        indiceGlobal++;
       });
 
       // FOOTER
@@ -754,25 +865,25 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
 
       // HEADER
       if (logoBuffer) {
-        doc.image(logoBuffer, (doc.page.width - 100) / 2, 40, { width: 100 });
+        doc.image(logoBuffer, (doc.page.width - 100) / 2, 10, { width: 100 });
       }
 
-      doc.moveDown(6);
+      doc.moveDown(3.8);
 
-      doc.fontSize(20)
+      doc.fontSize(10)
         .fillColor(colors.dark)
         .font('Helvetica-Bold')
         .text('ESCUELA DE BELLEZA JESSICA VÉLEZ', { align: 'center' });
 
-      doc.moveDown(0.5);
+      doc.moveDown(0.3);
 
-      doc.fontSize(16)
+      doc.fontSize(14)
         .fillColor(colors.primary)
         .text('REPORTE DE CURSOS', { align: 'center' });
 
-      doc.moveDown(0.3);
+      doc.moveDown(0.2);
 
-      doc.fontSize(10)
+      doc.fontSize(9)
         .fillColor(colors.textGray)
         .font('Helvetica')
         .text(`Generado el: ${formatearFecha(new Date())}`, { align: 'center' });
@@ -798,32 +909,34 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
       // Encabezados de tabla
       const tableTop = doc.y;
       const colWidths = {
-        codigo: 60,
-        nombre: 120,
-        horario: 70,
-        capacidad: 70,
-        docente: 120,
-        aula: 70
+        indice: 30,
+        codigo: 55,
+        nombre: 125,
+        horario: 75,
+        capacidad: 65,
+        docente: 85,
+        aula: 80 // Se ajustará
       };
+      colWidths.aula = (doc.page.width - 80) - (colWidths.indice + colWidths.codigo + colWidths.nombre + colWidths.horario + colWidths.capacidad + colWidths.docente);
 
-      // Función para dibujar encabezado
       const dibujarEncabezadoTabla = (y) => {
         let x = 40;
-        doc.rect(40, y, doc.page.width - 80, 25)
-          .fillAndStroke(colors.primary, colors.primary);
+        doc.rect(40, y, doc.page.width - 80, 25).fillAndStroke(colors.primary, colors.primary);
+        doc.fontSize(8).fillColor(colors.dark).font('Helvetica-Bold');
 
-        doc.fontSize(9).fillColor(colors.dark).font('Helvetica-Bold');
-        doc.text('CÓDIGO', x + 5, y + 8, { width: colWidths.codigo });
+        doc.text('#', x, y + 8, { width: colWidths.indice, align: 'center' });
+        x += colWidths.indice;
+        doc.text('CÓD.', x, y + 8, { width: colWidths.codigo, align: 'center' });
         x += colWidths.codigo;
-        doc.text('NOMBRE CURSO', x + 5, y + 8, { width: colWidths.nombre });
+        doc.text('NOMBRE CURSO', x, y + 8, { width: colWidths.nombre, align: 'center' });
         x += colWidths.nombre;
-        doc.text('HORARIO', x + 5, y + 8, { width: colWidths.horario });
+        doc.text('HORARIO', x, y + 8, { width: colWidths.horario, align: 'center' });
         x += colWidths.horario;
-        doc.text('CAPACIDAD', x + 5, y + 8, { width: colWidths.capacidad });
+        doc.text('CAPACIDAD', x, y + 8, { width: colWidths.capacidad, align: 'center' });
         x += colWidths.capacidad;
-        doc.text('DOCENTE', x + 5, y + 8, { width: colWidths.docente });
+        doc.text('DOCENTE', x, y + 8, { width: colWidths.docente, align: 'center' });
         x += colWidths.docente;
-        doc.text('AULA', x + 5, y + 8, { width: colWidths.aula });
+        doc.text('AULA', x, y + 8, { width: colWidths.aula, align: 'center' });
       };
 
       // Dibujar primer encabezado
@@ -848,36 +961,49 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
             .fill();
         }
 
+        // Bordes de celda
+        doc.lineWidth(0.5).strokeColor(colors.border);
+        let xTmp = 40;
+        Object.values(colWidths).forEach(width => {
+          doc.rect(xTmp, yPos - 5, width, 20).stroke();
+          xTmp += width;
+        });
+
         xPos = 40;
 
-        doc.fontSize(8)
+        doc.fontSize(7.5)
           .fillColor(colors.text)
           .font('Helvetica');
 
+        // Índice (#)
+        doc.text((index + 1).toString(), xPos, yPos, { width: colWidths.indice, align: 'center' });
+        xPos += colWidths.indice;
+
         // Código
-        doc.text(curso.codigo_curso || 'N/A', xPos + 5, yPos, { width: colWidths.codigo });
+        doc.font('Helvetica').text(curso.codigo_curso || 'N/A', xPos, yPos, { width: colWidths.codigo, align: 'center' });
         xPos += colWidths.codigo;
 
         // Nombre del curso
-        doc.text(curso.nombre_curso, xPos + 5, yPos, { width: colWidths.nombre });
+        doc.text(curso.nombre_curso, xPos, yPos, { width: colWidths.nombre, align: 'center' });
         xPos += colWidths.nombre;
 
         // Horario
-        doc.text(curso.horario || 'N/A', xPos + 5, yPos, { width: colWidths.horario });
+        const horarioTexto = (curso.horario || 'N/A').toUpperCase();
+        doc.text(horarioTexto, xPos, yPos, { width: colWidths.horario, align: 'center' });
         xPos += colWidths.horario;
 
         // Capacidad
         const capacidad = `${curso.total_estudiantes}/${curso.capacidad_maxima}`;
-        doc.text(capacidad, xPos + 5, yPos, { width: colWidths.capacidad });
+        doc.text(capacidad, xPos, yPos, { width: colWidths.capacidad, align: 'center' });
         xPos += colWidths.capacidad;
 
         // Docente
         const docente = curso.docente_nombres ? `${curso.docente_nombres} ${curso.docente_apellidos || ''}` : 'N/A';
-        doc.text(docente, xPos + 5, yPos, { width: colWidths.docente });
+        doc.text(docente, xPos, yPos, { width: colWidths.docente, align: 'center' });
         xPos += colWidths.docente;
 
         // Aula
-        doc.text(curso.aula_nombre || 'N/A', xPos + 5, yPos, { width: colWidths.aula });
+        doc.text(curso.aula_nombre || 'N/A', xPos, yPos, { width: colWidths.aula, align: 'center' });
 
         yPos += 20;
       });
