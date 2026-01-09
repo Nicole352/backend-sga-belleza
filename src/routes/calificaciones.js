@@ -12,6 +12,12 @@ router.get(
   calificacionesController.getCalificacionesByEstudianteCurso,
 );
 
+// GET /api/calificaciones/reporte-estudiante/:id_curso - Generar reporte Excel notas
+router.get(
+  "/reporte-estudiante/:id_curso",
+  calificacionesController.generarReporteNotasEstudiante
+);
+
 // GET /api/calificaciones/promedio/modulo/:id_modulo - Obtener promedio de un módulo
 router.get(
   "/promedio/modulo/:id_modulo",

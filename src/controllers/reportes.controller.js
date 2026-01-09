@@ -32,7 +32,10 @@ const ReportesController = {
       // Obtener estadísticas
       const estadisticas = await ReportesModel.getEstadisticasEstudiantes({
         fechaInicio,
-        fechaFin
+        fechaFin,
+        estado: estado || 'todos',
+        idCurso: idCurso || null,
+        horario: horario || 'todos'
       });
 
       // Obtener nombre del curso si se filtró
@@ -94,7 +97,10 @@ const ReportesController = {
 
       const estadisticas = await ReportesModel.getEstadisticasEstudiantes({
         fechaInicio,
-        fechaFin
+        fechaFin,
+        estado: estado || 'todos',
+        idCurso: idCurso || null,
+        horario: horario || 'todos'
       });
 
       // Obtener nombre del curso
@@ -157,13 +163,16 @@ const ReportesController = {
 
       const estadisticas = await ReportesModel.getEstadisticasEstudiantes({
         fechaInicio,
-        fechaFin
+        fechaFin,
+        estado: estado || 'todos',
+        idCurso: idCurso || null,
+        horario: horario || 'todos'
       });
 
       // Obtener nombre del curso y fechas reales
       let nombreCurso = null;
       let fechasParaEncabezado = { fechaInicio, fechaFin };
-      
+
       if (idCurso && datos.length > 0) {
         const cursoEncontrado = datos.find(d => d.id_curso == idCurso);
         if (cursoEncontrado) {
@@ -180,11 +189,11 @@ const ReportesController = {
           inicio: d.fecha_inicio,
           fin: d.fecha_fin
         }));
-        const fechaMasAntiguaInicio = fechasReales.reduce((min, d) => 
+        const fechaMasAntiguaInicio = fechasReales.reduce((min, d) =>
           d.inicio < min ? d.inicio : min, fechasReales[0].inicio);
-        const fechaMasTardiaFin = fechasReales.reduce((max, d) => 
+        const fechaMasTardiaFin = fechasReales.reduce((max, d) =>
           d.fin > max ? d.fin : max, fechasReales[0].fin);
-        
+
         fechasParaEncabezado = {
           fechaInicio: fechaMasAntiguaInicio?.split('T')[0] || fechaInicio,
           fechaFin: fechaMasTardiaFin?.split('T')[0] || fechaFin
@@ -250,8 +259,8 @@ const ReportesController = {
         horario: horario || 'todos'
       });
 
-      // Obtener estadísticas
-      const estadisticas = await ReportesModel.getEstadisticasFinancieras({
+      // Obtener estadísticas financieras
+      const estadisticasFinancieras = await ReportesModel.getEstadisticasFinancieras({
         fechaInicio,
         fechaFin,
         tipoPago: tipoPago || 'todos',
@@ -261,6 +270,21 @@ const ReportesController = {
         metodoPago: metodoPago || 'todos',
         horario: horario || 'todos'
       });
+
+      // Obtener estadísticas de cursos (para el resumen detallado)
+      const estadisticasCursos = await ReportesModel.getEstadisticasCursos({
+        fechaInicio,
+        fechaFin,
+        idCurso: idCurso || null,
+        estado: estadoCurso || 'todos',
+        horario: horario || 'todos'
+      });
+
+      // Combinar estadísticas
+      const estadisticas = {
+        ...estadisticasFinancieras,
+        ...estadisticasCursos
+      };
 
       res.json({
         success: true,
@@ -317,7 +341,7 @@ const ReportesController = {
         horario: horario || 'todos'
       });
 
-      const estadisticas = await ReportesModel.getEstadisticasFinancieras({
+      const estadisticasFinancieras = await ReportesModel.getEstadisticasFinancieras({
         fechaInicio,
         fechaFin,
         tipoPago: tipoPago || 'todos',
@@ -327,6 +351,19 @@ const ReportesController = {
         metodoPago: metodoPago || 'todos',
         horario: horario || 'todos'
       });
+
+      const estadisticasCursos = await ReportesModel.getEstadisticasCursos({
+        fechaInicio,
+        fechaFin,
+        idCurso: idCurso || null,
+        estado: estadoCurso || 'todos',
+        horario: horario || 'todos'
+      });
+
+      const estadisticas = {
+        ...estadisticasFinancieras,
+        ...estadisticasCursos
+      };
 
       // Generar PDF
       const pdfBuffer = await generarPDFFinanciero(datos, {
@@ -411,33 +448,33 @@ const ReportesController = {
 
       // Determinar fechas para el encabezado
       let fechasParaEncabezado = { fechaInicio, fechaFin };
-      
+
       console.log('🔍 DEBUG Financiero - idCurso recibido:', idCurso);
       console.log('🔍 DEBUG Financiero - Total datos:', datos.length);
-      
+
       if (idCurso && datos.length > 0) {
         // Si hay filtro de curso, usar las fechas del curso
         const cursoEncontrado = datos.find(d => d.id_curso == idCurso);
         console.log('🔍 DEBUG Financiero - Curso encontrado:', cursoEncontrado ? 'SÍ' : 'NO');
-        
+
         if (cursoEncontrado) {
           console.log('🔍 DEBUG Financiero - Fecha inicio curso:', cursoEncontrado.fecha_inicio);
           console.log('🔍 DEBUG Financiero - Fecha fin curso:', cursoEncontrado.fecha_fin);
-          
+
           // Convertir Date a string YYYY-MM-DD
-          const fechaInicioStr = cursoEncontrado.fecha_inicio instanceof Date 
+          const fechaInicioStr = cursoEncontrado.fecha_inicio instanceof Date
             ? cursoEncontrado.fecha_inicio.toISOString().split('T')[0]
             : (typeof cursoEncontrado.fecha_inicio === 'string' ? cursoEncontrado.fecha_inicio.split('T')[0] : fechaInicio);
-            
+
           const fechaFinStr = cursoEncontrado.fecha_fin instanceof Date
             ? cursoEncontrado.fecha_fin.toISOString().split('T')[0]
             : (typeof cursoEncontrado.fecha_fin === 'string' ? cursoEncontrado.fecha_fin.split('T')[0] : fechaFin);
-          
+
           fechasParaEncabezado = {
             fechaInicio: fechaInicioStr,
             fechaFin: fechaFinStr
           };
-          
+
           console.log('✅ Fechas actualizadas para encabezado:', fechasParaEncabezado);
         }
       } else if (datos.length > 0) {
@@ -451,21 +488,21 @@ const ReportesController = {
             });
           }
         });
-        
+
         if (cursosUnicos.size > 0) {
           const fechasReales = Array.from(cursosUnicos.values());
-          const fechaMasAntiguaInicio = fechasReales.reduce((min, d) => 
+          const fechaMasAntiguaInicio = fechasReales.reduce((min, d) =>
             d.inicio < min ? d.inicio : min, fechasReales[0].inicio);
-          const fechaMasTardiaFin = fechasReales.reduce((max, d) => 
+          const fechaMasTardiaFin = fechasReales.reduce((max, d) =>
             d.fin > max ? d.fin : max, fechasReales[0].fin);
-          
+
           fechasParaEncabezado = {
             fechaInicio: fechaMasAntiguaInicio.toISOString().split('T')[0],
             fechaFin: fechaMasTardiaFin.toISOString().split('T')[0]
           };
         }
       }
-      
+
       console.log('📊 Fechas finales para Excel:', fechasParaEncabezado);
 
       // Generar Excel: datos filtrados para "Pagos Detallados", datos completos para "Estado de Cuenta"
@@ -520,7 +557,10 @@ const ReportesController = {
       // Obtener estadísticas
       const estadisticas = await ReportesModel.getEstadisticasCursos({
         fechaInicio,
-        fechaFin
+        fechaFin,
+        estado: estado || 'todos',
+        horario: horario || 'todos',
+        ocupacion: ocupacion || 'todos'
       });
 
       res.json({
@@ -590,7 +630,13 @@ const ReportesController = {
         ocupacion: ocupacion || 'todos',
         horario: horario || 'todos'
       });
-      const estadisticas = await ReportesModel.getEstadisticasCursos({ fechaInicio, fechaFin });
+      const estadisticas = await ReportesModel.getEstadisticasCursos({
+        fechaInicio,
+        fechaFin,
+        estado: estado || 'todos',
+        horario: horario || 'todos',
+        ocupacion: ocupacion || 'todos'
+      });
 
       // Generar PDF
       const pdfBuffer = await generarPDFCursos(datos, {
@@ -642,7 +688,13 @@ const ReportesController = {
         ocupacion: ocupacion || 'todos',
         horario: horario || 'todos'
       });
-      const estadisticas = await ReportesModel.getEstadisticasCursos({ fechaInicio, fechaFin });
+      const estadisticas = await ReportesModel.getEstadisticasCursos({
+        fechaInicio,
+        fechaFin,
+        estado: estado || 'todos',
+        horario: horario || 'todos',
+        ocupacion: ocupacion || 'todos'
+      });
 
       // Si hay datos y es un solo curso, usar sus fechas para el encabezado
       let fechasParaEncabezado = { fechaInicio, fechaFin };
@@ -652,11 +704,11 @@ const ReportesController = {
           inicio: c.fecha_inicio,
           fin: c.fecha_fin
         }));
-        const fechaMasAntiguaInicio = fechasReales.reduce((min, c) => 
+        const fechaMasAntiguaInicio = fechasReales.reduce((min, c) =>
           c.inicio < min ? c.inicio : min, fechasReales[0].inicio);
-        const fechaMasTardiaFin = fechasReales.reduce((max, c) => 
+        const fechaMasTardiaFin = fechasReales.reduce((max, c) =>
           c.fin > max ? c.fin : max, fechasReales[0].fin);
-        
+
         fechasParaEncabezado = {
           fechaInicio: fechaMasAntiguaInicio?.split('T')[0] || fechaInicio,
           fechaFin: fechaMasTardiaFin?.split('T')[0] || fechaFin
@@ -786,7 +838,10 @@ const ReportesController = {
       const datos = await ReportesModel.getReporteEstudiantes(parametros);
       const estadisticas = await ReportesModel.getEstadisticasEstudiantes({
         fechaInicio,
-        fechaFin
+        fechaFin,
+        estado: estado || 'todos',
+        idCurso: idCurso || null,
+        horario: horario || 'todos'
       });
 
       // Obtener nombre del curso
@@ -883,33 +938,33 @@ const ReportesController = {
 
       // Determinar fechas para el encabezado
       let fechasParaEncabezado = { fechaInicio, fechaFin };
-      
+
       console.log('🔍 DEBUG FinancieroV2 - idCurso recibido:', idCurso);
       console.log('🔍 DEBUG FinancieroV2 - Total datos:', datos.length);
-      
+
       if (idCurso && datos.length > 0) {
         // Si hay filtro de curso, usar las fechas del curso
         const cursoEncontrado = datos.find(d => d.id_curso == idCurso);
         console.log('🔍 DEBUG FinancieroV2 - Curso encontrado:', cursoEncontrado ? 'SÍ' : 'NO');
-        
+
         if (cursoEncontrado) {
           console.log('🔍 DEBUG FinancieroV2 - Fecha inicio curso:', cursoEncontrado.fecha_inicio);
           console.log('🔍 DEBUG FinancieroV2 - Fecha fin curso:', cursoEncontrado.fecha_fin);
-          
+
           // Convertir Date a string YYYY-MM-DD
-          const fechaInicioStr = cursoEncontrado.fecha_inicio instanceof Date 
+          const fechaInicioStr = cursoEncontrado.fecha_inicio instanceof Date
             ? cursoEncontrado.fecha_inicio.toISOString().split('T')[0]
             : (typeof cursoEncontrado.fecha_inicio === 'string' ? cursoEncontrado.fecha_inicio.split('T')[0] : fechaInicio);
-            
+
           const fechaFinStr = cursoEncontrado.fecha_fin instanceof Date
             ? cursoEncontrado.fecha_fin.toISOString().split('T')[0]
             : (typeof cursoEncontrado.fecha_fin === 'string' ? cursoEncontrado.fecha_fin.split('T')[0] : fechaFin);
-          
+
           fechasParaEncabezado = {
             fechaInicio: fechaInicioStr,
             fechaFin: fechaFinStr
           };
-          
+
           console.log('✅ Fechas actualizadas para encabezado:', fechasParaEncabezado);
         }
       } else if (datos.length > 0) {
@@ -923,21 +978,21 @@ const ReportesController = {
             });
           }
         });
-        
+
         if (cursosUnicos.size > 0) {
           const fechasReales = Array.from(cursosUnicos.values());
-          const fechaMasAntiguaInicio = fechasReales.reduce((min, d) => 
+          const fechaMasAntiguaInicio = fechasReales.reduce((min, d) =>
             d.inicio < min ? d.inicio : min, fechasReales[0].inicio);
-          const fechaMasTardiaFin = fechasReales.reduce((max, d) => 
+          const fechaMasTardiaFin = fechasReales.reduce((max, d) =>
             d.fin > max ? d.fin : max, fechasReales[0].fin);
-          
+
           fechasParaEncabezado = {
             fechaInicio: fechaMasAntiguaInicio.toISOString().split('T')[0],
             fechaFin: fechaMasTardiaFin.toISOString().split('T')[0]
           };
         }
       }
-      
+
       console.log('📊 Fechas finales para Excel:', fechasParaEncabezado);
 
       // Generar Excel con datos filtrados y datos sin filtro de estado
@@ -949,7 +1004,7 @@ const ReportesController = {
       // Nombre del archivo usando las fechas del encabezado (con timestamp para evitar caché)
       const timestamp = new Date().getTime();
       const nombreArchivo = `Reporte_Financiero_${fechasParaEncabezado.fechaInicio}_${fechasParaEncabezado.fechaFin}_${timestamp}.xlsx`;
-      
+
       console.log('📥 Nombre del archivo a descargar:', nombreArchivo);
 
       // SNAPSHOT: Calcular resumen para el historial
@@ -1011,7 +1066,7 @@ const ReportesController = {
 
       // Obtener datos
       const datos = await ReportesModel.getReporteCursos(parametros);
-      const estadisticas = await ReportesModel.getEstadisticasCursos({ fechaInicio, fechaFin });
+      const estadisticas = await ReportesModel.getEstadisticasCursos(parametros);
 
       // Generar Excel
       const excelBuffer = await generarExcelCursos(datos, parametros, estadisticas);

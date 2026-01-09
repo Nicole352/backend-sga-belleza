@@ -461,209 +461,234 @@ module.exports = {
 
       // ==================== HOJA 1: CURSOS DETALLADOS ====================
       const sheet1 = workbook.addWorksheet('Cursos Detallados', {
-        properties: { tabColor: { argb: 'FFDC2626' } },
         pageSetup: {
           orientation: 'landscape',
           fitToPage: true,
           fitToWidth: 1,
           fitToHeight: 0,
           paperSize: 9, // A4 horizontal
-          printTitlesRow: '1:1'
+          margins: { left: 0.25, right: 0.25, top: 0.3, bottom: 0.75, header: 0.1, footer: 0.3 },
+          printTitlesRow: '1:4'
         },
         headerFooter: {
           oddFooter: `&L&"-,Bold"&16Escuela de Belleza Jessica Vélez&"-,Regular"&12&RDescargado: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })} — Pág. &P de &N`
         }
       });
 
-      // Configurar columnas - REORDENADAS Y OPTIMIZADAS
-      sheet1.columns = [
-        { header: '#', key: 'numero', width: 6, style: { alignment: { vertical: 'middle', horizontal: 'center' } } },
-        { header: 'Código', key: 'codigo', width: 16, style: { alignment: { vertical: 'middle', horizontal: 'center' } } },
-        { header: 'Nombre del Curso', key: 'nombre', width: 38, style: { alignment: { vertical: 'middle', horizontal: 'left' } } },
-        { header: 'Horario', key: 'horario', width: 14, style: { alignment: { vertical: 'middle', horizontal: 'center' } } },
-        { header: 'Capacidad', key: 'capacidad', width: 13, style: { alignment: { vertical: 'middle', horizontal: 'center' } } },
-        { header: 'Matriculados', key: 'matriculados', width: 14, style: { alignment: { vertical: 'middle', horizontal: 'center' } } },
-        { header: 'Cupos Disp.', key: 'cupos', width: 13, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
-        { header: 'Fecha Inicio', key: 'fecha_inicio', width: 14, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
-        { header: 'Fecha Fin', key: 'fecha_fin', width: 14, style: { alignment: { wrapText: true, vertical: 'middle', horizontal: 'center' } } },
-        { header: 'Estado', key: 'estado', width: 13, style: { alignment: { vertical: 'middle', horizontal: 'center' } } }
-      ];
+      // Título Dinámico (Fila 1)
+      sheet1.mergeCells(1, 1, 1, 10);
+      const titleCell1 = sheet1.getCell(1, 1);
+      titleCell1.value = 'REPORTE DE CURSOS';
+      titleCell1.font = { bold: true, size: 12, color: { argb: 'FF000000' }, name: 'Calibri' };
+      titleCell1.alignment = { horizontal: 'center', vertical: 'middle' };
+      sheet1.getRow(1).height = 25;
 
-      // Estilo del encabezado
-      sheet1.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-      sheet1.getRow(1).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFDC2626' }
-      };
-      sheet1.getRow(1).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-      sheet1.getRow(1).height = 45;
+      // Info Dinámica (Fila 2)
+      sheet1.mergeCells(2, 1, 2, 10);
+      const infoCell1 = sheet1.getCell(2, 1);
+      const infoText1 = `Estado: Todos los cursos | Total Cursos: ${cursos.length}`;
+      infoCell1.value = infoText1.toUpperCase();
+      infoCell1.font = { size: 10, color: { argb: 'FF000000' }, name: 'Calibri' };
+      infoCell1.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      sheet1.getRow(2).height = 35;
+
+      // Definir Encabezados de Tabla en la Fila 4
+      const headers = ['#', 'CÓDIGO', 'NOMBRE DEL CURSO', 'HORARIO', 'CAPACIDAD', 'MATRICULADOS', 'CUPOS DISP.', 'FECHA INICIO', 'FECHA FIN', 'ESTADO'];
+      const headerRow1 = sheet1.getRow(4);
+      headerRow1.height = 35;
+
+      headers.forEach((h, i) => {
+        const cell = headerRow1.getCell(i + 1);
+        cell.value = h;
+        cell.font = { bold: true, color: { argb: 'FF000000' }, size: 10 };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'thin', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } }
+        };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      });
+
+      // Configurar anchos de columna manualmente (ya que no usaremos sheet1.columns para el header)
+      const columnWidths = [6, 16, 38, 14, 13, 14, 13, 14, 14, 13];
+      columnWidths.forEach((w, i) => {
+        sheet1.getColumn(i + 1).width = w;
+      });
 
       // Agregar datos con formatos correctos
       cursos.forEach((curso, index) => {
-        const row = sheet1.addRow({
-          numero: index + 1,
-          codigo: curso.codigo_curso,
-          nombre: curso.curso_nombre,
-          horario: curso.horario.charAt(0).toUpperCase() + curso.horario.slice(1),
-          capacidad: curso.capacidad_maxima,
-          matriculados: curso.estudiantes_matriculados,
-          cupos: curso.cupos_disponibles,
-          fecha_inicio: new Date(curso.fecha_inicio),
-          fecha_fin: new Date(curso.fecha_fin),
-          estado: curso.estado.charAt(0).toUpperCase() + curso.estado.slice(1)
-        });
+        const rowValues = [
+          index + 1,
+          (curso.codigo_curso ? curso.codigo_curso.toUpperCase() : null),
+          (curso.curso_nombre ? curso.curso_nombre.toUpperCase() : null),
+          (curso.horario ? curso.horario.toUpperCase() : 'N/A'),
+          curso.capacidad_maxima,
+          curso.estudiantes_matriculados,
+          curso.cupos_disponibles,
+          new Date(curso.fecha_inicio),
+          new Date(curso.fecha_fin),
+          (curso.estado ? curso.estado.toUpperCase() : 'N/A')
+        ];
+        const row = sheet1.addRow(rowValues);
 
-        // Aplicar formatos específicos a cada celda
-        // Número
-        row.getCell('numero').numFmt = '0';
-        row.getCell('numero').alignment = { horizontal: 'center', vertical: 'middle' };
+        // Estilos para cada celda de datos
+        row.eachCell((cell, colNumber) => {
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FF000000' } },
+            left: { style: 'thin', color: { argb: 'FF000000' } },
+            bottom: { style: 'thin', color: { argb: 'FF000000' } },
+            right: { style: 'thin', color: { argb: 'FF000000' } }
+          };
+          cell.font = { size: 10, color: { argb: 'FF000000' } };
+          cell.alignment = { vertical: 'middle', horizontal: colNumber === 1 ? 'center' : (colNumber === 3 ? 'left' : 'center') };
 
-        // Números enteros (capacidad, matriculados, cupos)
-        row.getCell('capacidad').numFmt = '0'; // Formato número entero
-        row.getCell('capacidad').alignment = { horizontal: 'center', vertical: 'middle' };
-
-        row.getCell('matriculados').numFmt = '0';
-        row.getCell('matriculados').alignment = { horizontal: 'center', vertical: 'middle' };
-
-        row.getCell('cupos').numFmt = '0';
-        row.getCell('cupos').alignment = { horizontal: 'center', vertical: 'middle' };
-
-        // Fechas con formato dd/mm/yyyy
-        row.getCell('fecha_inicio').numFmt = 'dd/mm/yyyy';
-        row.getCell('fecha_inicio').alignment = { horizontal: 'center', vertical: 'middle' };
-
-        row.getCell('fecha_fin').numFmt = 'dd/mm/yyyy';
-        row.getCell('fecha_fin').alignment = { horizontal: 'center', vertical: 'middle' };
-
-        // Alineación para texto
-        row.getCell('codigo').alignment = { horizontal: 'center', vertical: 'middle' };
-        row.getCell('horario').alignment = { horizontal: 'center', vertical: 'middle' };
-        row.getCell('estado').alignment = { horizontal: 'center', vertical: 'middle' };
-        row.getCell('nombre').alignment = { horizontal: 'left', vertical: 'middle' };
-      });
-
-      // Aplicar bordes y colores alternados
-      sheet1.eachRow((row, rowNumber) => {
-        if (rowNumber > 1) {
-          row.eachCell((cell) => {
-            cell.border = {
-              top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-              left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-              bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-              right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
-            };
-          });
-
-          if (rowNumber % 2 === 0) {
-            row.fill = {
-              type: 'pattern',
-              pattern: 'solid',
-              fgColor: { argb: 'FFF9FAFB' }
-            };
+          // Formatos numéricos específicos por columna
+          // 1:#, 5:Capacidad, 6:Matriculados, 7:Cupos
+          if ([1, 5, 6, 7].includes(colNumber)) {
+            cell.numFmt = '0';
           }
-        }
+          // 8:Fecha Inicio, 9:Fecha Fin
+          else if ([8, 9].includes(colNumber)) {
+            cell.numFmt = 'dd/mm/yyyy';
+          }
+        });
       });
 
       // ==================== HOJA 2: ESTADÍSTICAS ====================
       const sheet2 = workbook.addWorksheet('Estadísticas', {
-        properties: { tabColor: { argb: 'FF10B981' } },
-        pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 } // A4 horizontal
+        pageSetup: {
+          orientation: 'landscape',
+          fitToPage: true,
+          fitToWidth: 1,
+          fitToHeight: 0,
+          paperSize: 9,
+          margins: { left: 0.25, right: 0.25, top: 0.3, bottom: 0.75, header: 0.1, footer: 0.3 },
+          printTitlesRow: '1:4'
+        } // A4 horizontal
       });
       sheet2.properties.defaultColWidth = 25;
 
+      // Insertar filas para encabezado informativo
+      sheet2.spliceRows(1, 0, [], [], []);
+
       const stats = estadisticas[0];
 
-      // Título principal
+      // Título principal (Fila 1)
       sheet2.mergeCells('A1:B1');
-      sheet2.getCell('A1').value = '📊 ESTADÍSTICAS GENERALES DE CURSOS';
-      sheet2.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FFDC2626' } };
-      sheet2.getCell('A1').fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFFEF2F2' }
-      };
-      sheet2.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
-      sheet2.getRow(1).height = 30;
+      const titleCell2 = sheet2.getCell('A1');
+      titleCell2.value = 'ESTADÍSTICAS GENERALES DE CURSOS';
+      titleCell2.font = { bold: true, size: 12, color: { argb: 'FF000000' }, name: 'Calibri' };
+      titleCell2.alignment = { horizontal: 'center', vertical: 'middle' };
+      sheet2.getRow(1).height = 25;
 
-      // Estadísticas generales
-      const startRow = 3;
+      // Info (Fila 2)
+      sheet2.mergeCells('A2:B2');
+      const infoCell2 = sheet2.getCell('A2');
+      const infoText2 = `Reporte generado el ${new Date().toLocaleDateString('es-EC')}`;
+      infoCell2.value = infoText2.toUpperCase();
+      infoCell2.font = { size: 10, color: { argb: 'FF000000' }, name: 'Calibri' };
+      infoCell2.alignment = { horizontal: 'center', vertical: 'middle' };
+      sheet2.getRow(2).height = 30;
+
+      // Estadísticas generales - EMPIEZAN EN FILA 4
+      const startRow = 4;
       const statsData = [
-        ['Total de Cursos', stats.total_cursos],
-        ['Cursos Activos', stats.activos],
-        ['Cursos Planificados', stats.planificados],
-        ['Cursos Finalizados', stats.finalizados],
-        ['Cursos Cancelados', stats.cancelados],
-        ['Capacidad Total', stats.capacidad_total],
-        ['Cupos Disponibles', stats.cupos_disponibles_total],
-        ['Estudiantes Matriculados', stats.estudiantes_totales]
+        ['MÉTRICA', 'VALOR'],
+        ['TOTAL DE CURSOS', stats.total_cursos],
+        ['CURSOS ACTIVOS', stats.activos],
+        ['CURSOS PLANIFICADOS', stats.planificados],
+        ['CURSOS FINALIZADOS', stats.finalizados],
+        ['CURSOS CANCELADOS', stats.cancelados],
+        ['CAPACIDAD TOTAL', stats.capacidad_total],
+        ['CUPOS DISPONIBLES', stats.cupos_disponibles_total],
+        ['ESTUDIANTES MATRICULADOS', stats.estudiantes_totales]
       ];
 
       statsData.forEach((data, index) => {
-        const row = startRow + index;
-        sheet2.getCell(`A${row}`).value = data[0];
-        sheet2.getCell(`B${row}`).value = data[1];
+        const rowIdx = startRow + index;
+        const cellA = sheet2.getCell(`A${rowIdx}`);
+        const cellB = sheet2.getCell(`B${rowIdx}`);
 
-        sheet2.getCell(`A${row}`).font = { bold: true, size: 11 };
-        sheet2.getCell(`B${row}`).font = { size: 11, color: { argb: 'FFDC2626' }, bold: true };
-        sheet2.getCell(`B${row}`).alignment = { horizontal: 'center' };
-        sheet2.getCell(`B${row}`).numFmt = '0'; // Formato número entero
+        cellA.value = data[0];
+        cellB.value = data[1];
+
+        // Bordes
+        [cellA, cellB].forEach(cell => {
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FF000000' } },
+            left: { style: 'thin', color: { argb: 'FF000000' } },
+            bottom: { style: 'thin', color: { argb: 'FF000000' } },
+            right: { style: 'thin', color: { argb: 'FF000000' } }
+          };
+          cell.font = { size: 10, color: { argb: 'FF000000' } };
+          cell.alignment = { vertical: 'middle' };
+        });
+
+        if (index === 0) {
+          // Header de estadísticas
+          cellA.font = { bold: true, size: 10, color: { argb: 'FF000000' } };
+          cellB.font = { bold: true, size: 10, color: { argb: 'FF000000' } };
+          cellA.alignment.horizontal = 'left';
+          cellB.alignment.horizontal = 'center';
+        } else {
+          cellA.font.bold = true;
+          cellB.alignment.horizontal = 'center';
+          if (typeof data[1] === 'number') {
+            cellB.numFmt = '0';
+          }
+        }
       });
 
       // Sección: Resumen por Tipo de Curso
-      const tipoRow = startRow + statsData.length + 2;
-      sheet2.mergeCells(`A${tipoRow}:D${tipoRow}`);
-      sheet2.getCell(`A${tipoRow}`).value = '📚 RESUMEN POR TIPO DE CURSO';
-      sheet2.getCell(`A${tipoRow}`).font = { bold: true, size: 12, color: { argb: 'FF2563EB' } };
-      sheet2.getCell(`A${tipoRow}`).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFDBEAFE' }
-      };
-      sheet2.getCell(`A${tipoRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
-      sheet2.getRow(tipoRow).height = 25;
+      const tipoRowStart = startRow + statsData.length + 2;
+      sheet2.mergeCells(`A${tipoRowStart}:D${tipoRowStart}`);
+      const sectionInfoCell = sheet2.getCell(`A${tipoRowStart}`);
+      sectionInfoCell.value = 'RESUMEN POR TIPO DE CURSO';
+      sectionInfoCell.font = { bold: true, size: 11, color: { argb: 'FF000000' } };
+      sectionInfoCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      sheet2.getRow(tipoRowStart).height = 25;
 
       // Encabezados tabla resumen
-      const headerRow = tipoRow + 2;
-      sheet2.getCell(`A${headerRow}`).value = 'Tipo de Curso';
-      sheet2.getCell(`B${headerRow}`).value = 'Total Cursos';
-      sheet2.getCell(`C${headerRow}`).value = 'Capacidad Total';
-      sheet2.getCell(`D${headerRow}`).value = 'Matriculados';
-
-      ['A', 'B', 'C', 'D'].forEach(col => {
-        sheet2.getCell(`${col}${headerRow}`).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-        sheet2.getCell(`${col}${headerRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
-        sheet2.getCell(`${col}${headerRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
+      const headerRowIdx = tipoRowStart + 2;
+      const resumenHeaders = ['TIPO DE CURSO', 'TOTAL CURSOS', 'CAPACIDAD TOTAL', 'MATRICULADOS'];
+      resumenHeaders.forEach((text, i) => {
+        const cell = sheet2.getCell(`${String.fromCharCode(65 + i)}${headerRowIdx}`);
+        cell.value = text;
+        cell.font = { bold: true, color: { argb: 'FF000000' }, size: 10 };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'thin', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } }
+        };
       });
+      sheet2.getRow(headerRowIdx).height = 30;
 
       // Datos resumen por tipo
-      let dataRow = headerRow + 1;
-      resumenPorTipo.forEach((tipo, index) => {
-        sheet2.getCell(`A${dataRow}`).value = tipo.tipo_curso;
-        sheet2.getCell(`B${dataRow}`).value = tipo.total_cursos;
-        sheet2.getCell(`C${dataRow}`).value = tipo.capacidad_total;
-        sheet2.getCell(`D${dataRow}`).value = tipo.estudiantes_matriculados;
-
-        // Formatos numéricos
-        sheet2.getCell(`B${dataRow}`).numFmt = '0'; // Entero
-        sheet2.getCell(`C${dataRow}`).numFmt = '0'; // Entero
-        sheet2.getCell(`D${dataRow}`).numFmt = '0'; // Entero
-
-        sheet2.getCell(`B${dataRow}`).alignment = { horizontal: 'center' };
-        sheet2.getCell(`C${dataRow}`).alignment = { horizontal: 'center' };
-        sheet2.getCell(`D${dataRow}`).alignment = { horizontal: 'center' };
-
-        if (index % 2 === 0) {
-          ['A', 'B', 'C', 'D'].forEach(col => {
-            sheet2.getCell(`${col}${dataRow}`).fill = {
-              type: 'pattern',
-              pattern: 'solid',
-              fgColor: { argb: 'FFF9FAFB' }
-            };
-          });
-        }
-
-        dataRow++;
+      let dataRowIdx = headerRowIdx + 1;
+      resumenPorTipo.forEach((tipo) => {
+        const rowData = [
+          (tipo.tipo_curso ? tipo.tipo_curso.toUpperCase() : 'N/A'),
+          tipo.total_cursos,
+          tipo.capacidad_total,
+          tipo.estudiantes_matriculados
+        ];
+        rowData.forEach((val, i) => {
+          const cell = sheet2.getCell(`${String.fromCharCode(65 + i)}${dataRowIdx}`);
+          cell.value = val;
+          cell.font = { size: 10, color: { argb: 'FF000000' } };
+          cell.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'center' };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FF000000' } },
+            left: { style: 'thin', color: { argb: 'FF000000' } },
+            bottom: { style: 'thin', color: { argb: 'FF000000' } },
+            right: { style: 'thin', color: { argb: 'FF000000' } }
+          };
+          if (i > 0) cell.numFmt = '0';
+        });
+        dataRowIdx++;
       });
 
       // Generar el archivo

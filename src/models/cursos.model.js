@@ -78,10 +78,14 @@ async function getCursoById(id) {
            WHERE s.id_curso = c.id_curso 
            AND s.estado = 'pendiente'), 0
         )
-      )) AS cupos_disponibles
+      )) AS cupos_disponibles,
+      aa.hora_inicio,
+      aa.hora_fin
     FROM cursos c
     JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
+    LEFT JOIN asignaciones_aulas aa ON c.id_curso = aa.id_curso AND aa.estado = 'activa'
     WHERE c.id_curso = ?
+    LIMIT 1
     `,
     [id]
   );

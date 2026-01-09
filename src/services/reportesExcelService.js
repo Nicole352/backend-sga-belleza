@@ -42,7 +42,6 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
 
     // HOJA 1: DATOS DETALLADOS
     const hojaDatos = workbook.addWorksheet('Estudiantes', {
-      properties: { tabColor: { argb: 'FFFBBF24' } },
       pageSetup: {
         paperSize: 9, // A4
         orientation: 'landscape',
@@ -50,14 +49,14 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
         fitToWidth: 1,
         fitToHeight: 0, // 0 significa automático
         margins: {
-          left: 0.2,
-          right: 0.2,
-          top: 0.4,
-          bottom: 0.4,
-          header: 0.3,
+          left: 0.25,
+          right: 0.25,
+          top: 0.3,
+          bottom: 0.75,
+          header: 0.1,
           footer: 0.3
         },
-        printTitlesRow: '1:1'
+        printTitlesRow: '1:4'
       },
       headerFooter: {
         oddFooter: `&L&"-,Bold"&16Escuela de Belleza Jessica Vélez&"-,Regular"&12&RDescargado: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })} — Pág. &P de &N`
@@ -66,32 +65,50 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
 
     // Configurar columnas con anchos optimizados para impresión
     hojaDatos.columns = [
-      { header: '#', key: 'indice', width: 4 },
-      { header: 'APELLIDOS', key: 'apellido', width: 15 },
-      { header: 'NOMBRES', key: 'nombre', width: 15 },
-      { header: 'CÉDULA', key: 'cedula', width: 12 },
-      { header: 'EMAIL', key: 'email', width: 25 },
-      { header: 'TELÉFONO', key: 'telefono', width: 12 },
-      { header: 'GÉNERO', key: 'genero', width: 10 },
-      { header: 'FECHA NAC.', key: 'fecha_nacimiento', width: 12 },
-      { header: 'DIRECCIÓN', key: 'direccion', width: 25 },
-      { header: 'CURSO', key: 'nombre_curso', width: 20 },
-      { header: 'HORARIO', key: 'horario_curso', width: 10 },
-      { header: 'FECHA INS.', key: 'fecha_inscripcion', width: 12 },
-      { header: 'ESTADO', key: 'estado_academico', width: 12 },
+      { header: '#', key: 'indice', width: 6 },
+      { header: 'IDENTIFICACIÓN', key: 'cedula', width: 20 },
+      { header: 'APELLIDOS', key: 'apellido', width: 25 },
+      { header: 'NOMBRES', key: 'nombre', width: 25 },
+      { header: 'EMAIL', key: 'email', width: 35 },
+      { header: 'TELÉFONO', key: 'telefono', width: 15 },
+      { header: 'GÉNERO', key: 'genero', width: 12 },
+      { header: 'FECHA NAC.', key: 'fecha_nacimiento', width: 15 },
+      { header: 'TEL. EMERGENCIA', key: 'telefono_emergencia', width: 20 },
+      { header: 'CURSO', key: 'nombre_curso', width: 30 },
+      { header: 'HORARIO', key: 'horario_curso', width: 15 },
+      { header: 'FECHA INS.', key: 'fecha_inscripcion', width: 15 },
+      { header: 'ESTADO', key: 'estado_academico', width: 15 },
       { header: 'ESTADO FINAL', key: 'nota_final', width: 15 },
-      { header: 'MATRÍCULA', key: 'monto_matricula', width: 12 }
+      { header: 'MATRÍCULA', key: 'monto_matricula', width: 15 }
     ];
 
-    // Estilo del header
-    hojaDatos.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
-    hojaDatos.getRow(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFFBBF24' }
-    };
-    hojaDatos.getRow(1).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    hojaDatos.getRow(1).height = 35;
+    // Insertar 3 filas al inicio para encabezados institucionales
+    hojaDatos.spliceRows(1, 0, [], [], []);
+
+    // 1. Título del Reporte (Fila 1)
+    hojaDatos.mergeCells('A1:O1');
+    const titleCell = hojaDatos.getCell('A1');
+    titleCell.value = 'REPORTE DE ESTUDIANTES';
+    titleCell.font = { bold: true, size: 12, color: { argb: 'FF000000' }, name: 'Calibri' };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    hojaDatos.getRow(1).height = 25;
+
+    // 2. Info Dinámica (Fila 2)
+    hojaDatos.mergeCells('A2:O2');
+    const infoCell = hojaDatos.getCell('A2');
+    const infoText = `FILTROS: ${filtros.estado ? filtros.estado.toUpperCase() : 'TODOS'} | FECHA INICIO: ${filtros.fechaInicio ? new Date(filtros.fechaInicio).toLocaleDateString() : 'N/A'} | FECHA FIN: ${filtros.fechaFin ? new Date(filtros.fechaFin).toLocaleDateString() : 'N/A'} | GENERADO EL: ${new Date().toLocaleString('es-EC')}`;
+    infoCell.value = infoText.toUpperCase();
+    infoCell.font = { size: 10, color: { argb: 'FF000000' }, name: 'Calibri' };
+    infoCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    hojaDatos.getRow(2).height = 35;
+
+    // Fila 3 vacía
+
+    // 4. Encabezados de Tabla (Ahora en Fila 4)
+    hojaDatos.getRow(4).font = { bold: true, color: { argb: 'FF000000' }, size: 10, name: 'Calibri' };
+    hojaDatos.getRow(4).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    hojaDatos.getRow(4).height = 35;
+    // Re-aplicar valores de cabecera si se perdieron o para asegurar (opcional, splice mantiene valores)
 
     // Agrupar estudiantes por cédula para combinar celdas
     const estudiantesAgrupados = {};
@@ -110,7 +127,7 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
       return apellidoA.localeCompare(apellidoB);
     });
 
-    let currentRowIndex = 2; // Empezar después del header
+    let currentRowIndex = 5; // Empezar después del header (Fila 4)
     let indiceEstudiante = 1;
 
     cedulasOrdenadas.forEach(cedula => {
@@ -135,16 +152,16 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
 
         const row = hojaDatos.addRow({
           indice: indiceEstudiante,
-          apellido: estudiante.apellido,
-          nombre: estudiante.nombre,
+          apellido: estudiante.apellido ? estudiante.apellido.toUpperCase() : '',
+          nombre: estudiante.nombre ? estudiante.nombre.toUpperCase() : '',
           cedula: estudiante.cedula,
-          email: estudiante.email,
-          telefono: estudiante.telefono,
-          genero: estudiante.genero,
+          email: estudiante.email ? estudiante.email.toLowerCase() : '',
+          telefono: estudiante.telefono ? estudiante.telefono.toString() : 'N/A',
+          genero: estudiante.genero ? estudiante.genero.toUpperCase() : '',
           fecha_nacimiento: estudiante.fecha_nacimiento ? new Date(estudiante.fecha_nacimiento) : null,
-          direccion: estudiante.direccion || 'N/A',
-          nombre_curso: estudiante.nombre_curso,
-          horario_curso: estudiante.horario_curso,
+          telefono_emergencia: estudiante.telefono_emergencia ? estudiante.telefono_emergencia.toString().toUpperCase() : 'N/A',
+          nombre_curso: estudiante.nombre_curso ? estudiante.nombre_curso.toUpperCase() : '',
+          horario_curso: estudiante.horario_curso ? estudiante.horario_curso.toUpperCase() : '',
           fecha_inscripcion: estudiante.fecha_inscripcion ? new Date(estudiante.fecha_inscripcion) : null,
           estado_academico: estudiante.estado_academico?.toUpperCase(),
           nota_final: estadoFinal,
@@ -157,18 +174,12 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
         row.getCell('fecha_inscripcion').numFmt = 'dd/mm/yyyy';
         row.getCell('monto_matricula').numFmt = '$#,##0.00';
 
-        // Aplicar color al estado final
-        row.getCell('nota_final').font = { color: { argb: colorEstado }, bold: true };
+        // Aplicar color al estado final (Todo Negro)
+        row.getCell('nota_final').font = { color: { argb: 'FF000000' }, bold: true, name: 'Calibri', size: 10 };
 
-        // Color según estado
+        // Color según estado (Todo Negro)
         const estadoCell = row.getCell('estado_academico');
-        if (estudiante.estado_academico === 'aprobado') {
-          estadoCell.font = { color: { argb: 'FF10B981' }, bold: true };
-        } else if (estudiante.estado_academico === 'reprobado') {
-          estadoCell.font = { color: { argb: 'FFEF4444' }, bold: true };
-        } else if (estudiante.estado_academico === 'retirado') {
-          estadoCell.font = { color: { argb: 'FFF59E0B' }, bold: true };
-        }
+        estadoCell.font = { color: { argb: 'FF000000' }, bold: true, name: 'Calibri', size: 10 };
 
         currentRowIndex++;
       });
@@ -185,7 +196,7 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
       // Alinear verticalmente al centro y activar ajuste de texto
       for (let r = startRow; r < currentRowIndex; r++) {
         const row = hojaDatos.getRow(r);
-        ['indice', 'apellido', 'nombre', 'cedula', 'email', 'telefono', 'genero', 'fecha_nacimiento', 'direccion', 'nombre_curso', 'horario_curso', 'fecha_inscripcion', 'estado_academico', 'nota_final', 'monto_matricula'].forEach(key => {
+        ['indice', 'apellido', 'nombre', 'cedula', 'email', 'telefono', 'genero', 'fecha_nacimiento', 'telefono_emergencia', 'nombre_curso', 'horario_curso', 'fecha_inscripcion', 'estado_academico', 'nota_final', 'monto_matricula'].forEach(key => {
           // Alineación general
           let alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
 
@@ -194,78 +205,93 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
             alignment.horizontal = 'center';
           }
 
-          row.getCell(key).alignment = alignment;
+          if (row.getCell(key)) {
+            row.getCell(key).alignment = alignment;
+          }
         });
       }
 
       indiceEstudiante++;
     });
 
-    // Bordes a todas las celdas
+    // Bordes solo en columnas A-O (15 columnas)
     hojaDatos.eachRow((row, rowNumber) => {
-      row.eachCell((cell) => {
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FFE5E5E5' } },
-          left: { style: 'thin', color: { argb: 'FFE5E5E5' } },
-          bottom: { style: 'thin', color: { argb: 'FFE5E5E5' } },
-          right: { style: 'thin', color: { argb: 'FFE5E5E5' } }
-        };
-      });
+      if (rowNumber >= 4) {
+        for (let i = 1; i <= 15; i++) {
+          const cell = row.getCell(i);
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FF000000' } },
+            left: { style: 'thin', color: { argb: 'FF000000' } },
+            bottom: { style: 'thin', color: { argb: 'FF000000' } },
+            right: { style: 'thin', color: { argb: 'FF000000' } }
+          };
+        }
+      }
     });
 
-    // Filtros automáticos
-    hojaDatos.autoFilter = {
-      from: 'A1',
-      to: 'O1'
-    };
+
 
 
     // HOJA 2: RESUMEN ESTADÍSTICO
     const hojaResumen = workbook.addWorksheet('Resumen', {
-      properties: { tabColor: { argb: 'FF10B981' } }
+      pageSetup: {
+        paperSize: 9,
+        orientation: 'landscape',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        margins: { left: 0.25, right: 0.25, top: 0.3, bottom: 0.75, header: 0.1, footer: 0.3 },
+        printTitlesRow: '1:4'
+      },
+      headerFooter: {
+        oddFooter: `&L&"-,Bold"&16Escuela de Belleza Jessica Vélez&"-,Regular"&12&RDescargado: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })} — Pág. &P de &N`
+      }
     });
 
     // Título
     hojaResumen.mergeCells('A1:D1');
     const tituloCell = hojaResumen.getCell('A1');
-    tituloCell.value = 'REPORTE DE ESTUDIANTES - RESUMEN';
-    tituloCell.font = { bold: true, size: 16, color: { argb: 'FF000000' } };
+    tituloCell.value = 'REPORTE ESTADÍSTICO DE ESTUDIANTES';
+    tituloCell.font = { bold: true, size: 12, color: { argb: 'FF000000' }, name: 'Calibri' };
     tituloCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    tituloCell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFFBBF24' }
-    };
-    hojaResumen.getRow(1).height = 30;
+    hojaResumen.getRow(1).height = 25;
+
+    // Subtítulo (Generado el)
+    hojaResumen.mergeCells('A2:D2');
+    const infoCellResumen = hojaResumen.getCell('A2');
+    const infoTextResumen = `GENERADO EL: ${new Date().toLocaleString('es-EC').toUpperCase()}`;
+    infoCellResumen.value = infoTextResumen;
+    infoCellResumen.font = { size: 10, color: { argb: 'FF000000' }, name: 'Calibri' };
+    infoCellResumen.alignment = { horizontal: 'center', vertical: 'middle' };
+    hojaResumen.getRow(2).height = 35;
 
     // Información del período
-    hojaResumen.addRow([]);
     hojaResumen.addRow(['PERÍODO DEL REPORTE']);
     hojaResumen.getCell('A3').font = { bold: true, size: 12 };
 
-    const rowDesde = hojaResumen.addRow(['Desde:', filtros.fechaInicio ? new Date(filtros.fechaInicio) : 'N/A']);
+    const rowDesde = hojaResumen.addRow(['DESDE:', filtros.fechaInicio ? new Date(filtros.fechaInicio) : 'N/A']);
     if (filtros.fechaInicio) rowDesde.getCell(2).numFmt = 'dd/mm/yyyy';
 
-    const rowHasta = hojaResumen.addRow(['Hasta:', filtros.fechaFin ? new Date(filtros.fechaFin) : 'N/A']);
+    const rowHasta = hojaResumen.addRow(['HASTA:', filtros.fechaFin ? new Date(filtros.fechaFin) : 'N/A']);
     if (filtros.fechaFin) rowHasta.getCell(2).numFmt = 'dd/mm/yyyy';
 
     if (filtros.estado && filtros.estado !== 'todos') {
-      hojaResumen.addRow(['Estado:', filtros.estado.toUpperCase()]);
+      hojaResumen.addRow(['ESTADO:', filtros.estado.toUpperCase()]);
     }
 
     // Estadísticas
     hojaResumen.addRow([]);
-    hojaResumen.addRow(['ESTADÍSTICAS GENERALES']);
+    hojaResumen.addRow(['RESUMEN GENERAL DE ESTUDIANTES']);
     hojaResumen.getCell('A8').font = { bold: true, size: 12 };
 
     const stats = [
-      ['Total de Estudiantes', parseInt(estadisticas.total_estudiantes) || 0],
-      ['Estudiantes Activos', parseInt(estadisticas.activos) || 0],
-      ['Estudiantes Aprobados', parseInt(estadisticas.aprobados) || 0],
-      ['Estudiantes Reprobados', parseInt(estadisticas.reprobados) || 0],
-      ['Estudiantes Retirados', parseInt(estadisticas.retirados) || 0],
-      ['Estudiantes Graduados', parseInt(estadisticas.graduados) || 0],
-      ['Promedio de Notas', estadisticas.promedio_notas ? parseFloat(estadisticas.promedio_notas) : 0]
+      ['TOTAL DE ESTUDIANTES', parseInt(estadisticas.total_estudiantes) || 0],
+      ['ESTUDIANTES ACTIVOS', parseInt(estadisticas.activos) || 0],
+      ['ESTUDIANTES APROBADOS', parseInt(estadisticas.aprobados) || 0],
+      ['ESTUDIANTES REPROBADOS', parseInt(estadisticas.reprobados) || 0],
+      ['ESTUDIANTES RETIRADOS', parseInt(estadisticas.retirados) || 0],
+      ['ESTUDIANTES GRADUADOS', parseInt(estadisticas.graduados) || 0],
+      ['PROMEDIO DE NOTAS', estadisticas.promedio_notas ? parseFloat(estadisticas.promedio_notas) : 0]
     ];
 
     stats.forEach(([label, valor]) => {
@@ -273,20 +299,24 @@ async function generarExcelEstudiantes(datos, filtros, estadisticas) {
       row.getCell(1).font = { bold: true };
       row.getCell(2).alignment = { horizontal: 'center' };
 
-      if (label === 'Promedio de Notas') {
+      if (label === 'PROMEDIO DE NOTAS') {
         row.getCell(2).numFmt = '0.00';
       } else {
         row.getCell(2).numFmt = '0';
       }
 
-      // Color según tipo
-      if (label.includes('Aprobados')) {
-        row.getCell(2).font = { color: { argb: 'FF10B981' }, bold: true };
-      } else if (label.includes('Reprobados')) {
-        row.getCell(2).font = { color: { argb: 'FFEF4444' }, bold: true };
-      } else if (label.includes('Retirados')) {
-        row.getCell(2).font = { color: { argb: 'FFF59E0B' }, bold: true };
-      }
+      // Color según tipo (Todo Negro)
+      row.getCell(2).font = { color: { argb: 'FF000000' }, bold: true, name: 'Calibri', size: 10 };
+
+      // Bordes
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'thin', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } }
+        };
+      });
     });
 
     // Ajustar anchos
@@ -309,7 +339,6 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
 
     // HOJA 1: DATOS DETALLADOS DE PAGOS (con filtros aplicados)
     const hojaDatos = workbook.addWorksheet('Pagos Detallados', {
-      properties: { tabColor: { argb: 'FF10B981' } },
       pageSetup: {
         paperSize: 9, // A4
         orientation: 'landscape',
@@ -317,14 +346,14 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
         fitToWidth: 1,
         fitToHeight: 0,
         margins: {
-          left: 0.2,
-          right: 0.2,
-          top: 0.4,
-          bottom: 0.4,
-          header: 0.3,
+          left: 0.25,
+          right: 0.25,
+          top: 0.3,
+          bottom: 0.75,
+          header: 0.1,
           footer: 0.3
         },
-        printTitlesRow: '1:1'
+        printTitlesRow: '1:4'
       },
       headerFooter: {
         oddFooter: `&L&"-,Bold"&16Escuela de Belleza Jessica Vélez&"-,Regular"&12&RDescargado: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })} — Pág. &P de &N`
@@ -333,31 +362,49 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
 
     // Configurar columnas optimizadas
     hojaDatos.columns = [
-      { header: '#', key: 'indice', width: 5 },
-      { header: 'CÉDULA', key: 'cedula_estudiante', width: 13 },
-      { header: 'APELLIDOS', key: 'apellidos', width: 18 },
-      { header: 'NOMBRES', key: 'nombres', width: 18 },
-      { header: 'CURSO', key: 'nombre_curso', width: 25 },
-      { header: 'N° CUOTA', key: 'numero_cuota', width: 10 },
+      { header: '#', key: 'indice', width: 6 },
+      { header: 'IDENTIFICACIÓN', key: 'cedula_estudiante', width: 20 },
+      { header: 'APELLIDOS', key: 'apellidos', width: 25 },
+      { header: 'NOMBRES', key: 'nombres', width: 25 },
+      { header: 'CURSO', key: 'nombre_curso', width: 30 },
+      { header: 'N° CUOTA', key: 'numero_cuota', width: 12 },
       { header: 'MONTO', key: 'monto', width: 12 },
-      { header: 'F. PAGO', key: 'fecha_pago', width: 12 },
-      { header: 'F. VENC.', key: 'fecha_vencimiento', width: 12 },
-      { header: 'MÉTODO', key: 'metodo_pago', width: 13 },
-      { header: 'RECIBIDO POR', key: 'recibido_por', width: 25 },
-      { header: 'N° COMPROBANTE', key: 'numero_comprobante', width: 17 },
-      { header: 'ESTADO', key: 'estado_pago', width: 13 },
-      { header: 'VERIFICADO POR', key: 'verificado_por', width: 25 }
+      { header: 'F. PAGO', key: 'fecha_pago', width: 15 },
+      { header: 'F. VENC.', key: 'fecha_vencimiento', width: 15 },
+      { header: 'MÉTODO', key: 'metodo_pago', width: 15 },
+      { header: 'RECIBIDO POR', key: 'recibido_por', width: 30 },
+      { header: 'N° COMPROBANTE', key: 'numero_comprobante', width: 20 },
+      { header: 'ESTADO', key: 'estado_pago', width: 15 },
+      { header: 'VERIFICADO POR', key: 'verificado_por', width: 30 }
     ];
 
     // Estilo del header
-    hojaDatos.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
-    hojaDatos.getRow(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF10B981' }
-    };
+    hojaDatos.getRow(1).font = { bold: true, color: { argb: 'FF000000' }, size: 10, name: 'Calibri' };
     hojaDatos.getRow(1).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    hojaDatos.getRow(1).height = 30;
+    // Insertar 3 filas al inicio
+    hojaDatos.spliceRows(1, 0, [], [], []);
+
+    // 1. Título del Reporte (Fila 1)
+    hojaDatos.mergeCells('A1:N1');
+    const titleCell = hojaDatos.getCell('A1');
+    titleCell.value = 'REPORTE FINANCIERO DE PAGOS';
+    titleCell.font = { bold: true, size: 12, color: { argb: 'FF000000' }, name: 'Calibri' };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    hojaDatos.getRow(1).height = 25;
+
+    // 2. Info Dinámica (Fila 2)
+    hojaDatos.mergeCells('A2:N2');
+    const infoCell = hojaDatos.getCell('A2');
+    const infoText = `FILTROS: ${filtros.estado ? filtros.estado.toUpperCase() : 'TODOS'} | FECHA INICIO: ${filtros.fechaInicio ? new Date(filtros.fechaInicio).toLocaleDateString() : 'N/A'} | FECHA FIN: ${filtros.fechaFin ? new Date(filtros.fechaFin).toLocaleDateString() : 'N/A'} | GENERADO EL: ${new Date().toLocaleString('es-EC')}`;
+    infoCell.value = infoText.toUpperCase();
+    infoCell.font = { size: 10, color: { argb: 'FF000000' }, name: 'Calibri' };
+    infoCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    hojaDatos.getRow(2).height = 35;
+
+    // Fila 4: Encabezados
+    hojaDatos.getRow(4).font = { bold: true, color: { argb: 'FF000000' }, size: 10, name: 'Calibri' };
+    hojaDatos.getRow(4).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    hojaDatos.getRow(4).height = 35;
 
     // Agrupar pagos por cédula
     const pagosAgrupados = {};
@@ -376,7 +423,7 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
       return apellidoA.localeCompare(apellidoB);
     });
 
-    let currentRowIndex = 2;
+    let currentRowIndex = 5; // Empezar después del header (Fila 4)
     let indice = 1;
 
     cedulasOrdenadas.forEach(cedula => {
@@ -392,9 +439,9 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
         const row = hojaDatos.addRow({
           indice: indice,
           cedula_estudiante: pago.cedula_estudiante || 'N/A',
-          apellidos: pago.apellido_estudiante || 'N/A',
-          nombres: pago.nombre_estudiante || 'N/A',
-          nombre_curso: pago.nombre_curso,
+          apellidos: pago.apellido_estudiante ? pago.apellido_estudiante.toUpperCase() : 'N/A',
+          nombres: pago.nombre_estudiante ? pago.nombre_estudiante.toUpperCase() : 'N/A',
+          nombre_curso: pago.nombre_curso ? pago.nombre_curso.toUpperCase() : '',
           numero_cuota: parseInt(pago.numero_cuota) || 0,
           monto: parseFloat(pago.monto) || 0,
           fecha_pago: pago.fecha_pago ? new Date(pago.fecha_pago) : null,
@@ -402,10 +449,10 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
           metodo_pago: (pago.estado_pago === 'verificado' || pago.estado_pago === 'pagado') && pago.metodo_pago
             ? pago.metodo_pago.toUpperCase()
             : 'N/A',
-          recibido_por: pago.recibido_por || 'N/A',
+          recibido_por: pago.recibido_por ? pago.recibido_por.toUpperCase() : 'N/A',
           numero_comprobante: pago.numero_comprobante || 'N/A',
           estado_pago: pago.estado_pago?.toUpperCase() || 'PENDIENTE',
-          verificado_por: verificadoPor
+          verificado_por: verificadoPor ? verificadoPor.toUpperCase() : 'N/A'
         });
 
         // Formatos de celda
@@ -423,15 +470,9 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
           row.getCell('fecha_vencimiento').numFmt = 'dd/mm/yyyy';
         }
 
-        // Color según estado
+        // Color según estado (Todo Negro)
         const estadoCell = row.getCell('estado_pago');
-        if (pago.estado_pago === 'verificado') {
-          estadoCell.font = { color: { argb: 'FF10B981' }, bold: true };
-        } else if (pago.estado_pago === 'pendiente' || pago.estado_pago === 'vencido') {
-          estadoCell.font = { color: { argb: 'FFEF4444' }, bold: true };
-        } else if (pago.estado_pago === 'pagado') {
-          estadoCell.font = { color: { argb: 'FF3B82F6' }, bold: true };
-        }
+        estadoCell.font = { color: { argb: 'FF000000' }, bold: true, name: 'Calibri', size: 10 };
 
         // Alineación y text wrapping
         ['indice', 'cedula_estudiante', 'apellidos', 'nombres', 'nombre_curso', 'numero_cuota', 'monto', 'fecha_pago', 'fecha_vencimiento', 'metodo_pago', 'recibido_por', 'numero_comprobante', 'estado_pago', 'verificado_por'].forEach(key => {
@@ -442,6 +483,9 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
           }
 
           row.getCell(key).alignment = alignment;
+
+          // Estilo base negro
+          row.getCell(key).font = { color: { argb: 'FF000000' }, name: 'Calibri', size: 10 };
         });
 
         currentRowIndex++;
@@ -492,32 +536,50 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
       indice++;
     });
 
-    // Bordes a todas las celdas
-    hojaDatos.eachRow((row) => {
-      row.eachCell((cell) => {
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FFE5E5E5' } },
-          left: { style: 'thin', color: { argb: 'FFE5E5E5' } },
-          bottom: { style: 'thin', color: { argb: 'FFE5E5E5' } },
-          right: { style: 'thin', color: { argb: 'FFE5E5E5' } }
-        };
-      });
+    // Bordes solo en columnas A-N (14 columnas)
+    hojaDatos.eachRow((row, rowNumber) => {
+      if (rowNumber >= 4) {
+        for (let i = 1; i <= 14; i++) {
+          const cell = row.getCell(i);
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FF000000' } },
+            left: { style: 'thin', color: { argb: 'FF000000' } },
+            bottom: { style: 'thin', color: { argb: 'FF000000' } },
+            right: { style: 'thin', color: { argb: 'FF000000' } }
+          };
+        }
+      }
     });
 
-    hojaDatos.autoFilter = {
-      from: 'A1',
-      to: 'N1'
-    };
+
 
 
     // HOJA 2: ESTADO DE CUENTA POR ESTUDIANTE (con TODOS los datos, sin filtro de estado)
     const hojaEstadoCuenta = workbook.addWorksheet('Estado de Cuenta', {
-      properties: { tabColor: { argb: 'FF3B82F6' } }
+      pageSetup: {
+        paperSize: 9, // A4
+        orientation: 'landscape',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        margins: {
+          left: 0.2,
+          right: 0.2,
+          top: 0.4,
+          bottom: 0.4,
+          header: 0.3,
+          footer: 0.3
+        },
+        printTitlesRow: '1:4'
+      },
+      headerFooter: {
+        oddFooter: `&L&"-,Bold"&16Escuela de Belleza Jessica Vélez&"-,Regular"&12&RDescargado: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })} — Pág. &P de &N`
+      }
     });
 
     hojaEstadoCuenta.columns = [
       { header: '#', key: 'indice', width: 5 },
-      { header: 'CÉDULA', key: 'cedula', width: 13 },
+      { header: 'IDENTIFICACIÓN', key: 'cedula', width: 20 },
       { header: 'APELLIDOS', key: 'apellidos', width: 18 },
       { header: 'NOMBRES', key: 'nombres', width: 18 },
       { header: 'CURSO', key: 'curso', width: 25 },
@@ -531,14 +593,30 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
       { header: 'ESTADO', key: 'estado', width: 13 }
     ];
 
-    hojaEstadoCuenta.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
-    hojaEstadoCuenta.getRow(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF3B82F6' }
-    };
-    hojaEstadoCuenta.getRow(1).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    // Insertar 3 filas al inicio para encabezados institucionales
+    hojaEstadoCuenta.spliceRows(1, 0, [], [], []);
+
+    // 1. Título del Reporte (Fila 1)
+    hojaEstadoCuenta.mergeCells('A1:M1');
+    const titleCellEC = hojaEstadoCuenta.getCell('A1');
+    titleCellEC.value = 'ESTADO DE CUENTA POR ESTUDIANTE';
+    titleCellEC.font = { bold: true, size: 14, color: { argb: 'FF000000' }, name: 'Calibri' };
+    titleCellEC.alignment = { horizontal: 'center', vertical: 'middle' };
     hojaEstadoCuenta.getRow(1).height = 30;
+
+    // 2. Info Dinámica (Fila 2)
+    hojaEstadoCuenta.mergeCells('A2:M2');
+    const infoCellEC = hojaEstadoCuenta.getCell('A2');
+    const infoTextEC = `FILTROS: ${filtros.fechaInicio ? new Date(filtros.fechaInicio).toLocaleDateString() : 'N/A'} - ${filtros.fechaFin ? new Date(filtros.fechaFin).toLocaleDateString() : 'N/A'} | GENERADO EL: ${new Date().toLocaleString('es-EC')}`;
+    infoCellEC.value = infoTextEC;
+    infoCellEC.font = { size: 10, color: { argb: 'FF000000' }, name: 'Calibri' };
+    infoCellEC.alignment = { horizontal: 'center', vertical: 'middle' };
+    hojaEstadoCuenta.getRow(2).height = 30;
+
+    // Fila 4: Encabezados (Estilos)
+    hojaEstadoCuenta.getRow(4).font = { bold: true, color: { argb: 'FF000000' }, size: 10, name: 'Calibri' };
+    hojaEstadoCuenta.getRow(4).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    hojaEstadoCuenta.getRow(4).height = 35;
 
     // Agrupar datos SIN FILTRO DE ESTADO por estudiante
     const estudiantesPorCedula = {};
@@ -558,6 +636,8 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
 
     // Procesar cada estudiante
     let indiceEstadoCuenta = 1;
+    let currentRowEC = 5; // Empezar después del header (Fila 4)
+
     Object.values(estudiantesPorCedula).forEach(estudiante => {
       const totalPagos = estudiante.pagos.length;
       const cuotasVerificadas = estudiante.pagos.filter(p => p.estado_pago === 'verificado').length;
@@ -587,12 +667,13 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
         }
       }
 
-      const row = hojaEstadoCuenta.addRow({
+      const row = hojaEstadoCuenta.getRow(currentRowEC);
+      row.values = {
         indice: indiceEstadoCuenta++,
         cedula: estudiante.cedula || 'N/A',
         apellidos: estudiante.apellidos || 'N/A',
         nombres: estudiante.nombres || 'N/A',
-        curso: estudiante.curso,
+        curso: estudiante.curso ? estudiante.curso.toUpperCase() : 'N/A',
         total: totalAPagar,
         verificadas: cuotasVerificadas,
         pagadas: cuotasPagadas,
@@ -601,7 +682,8 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
         saldo: saldoPendiente,
         porcentaje: porcentajePagado,
         estado: estado
-      });
+      };
+      currentRowEC++;
 
       // Formatos de celda
       row.getCell('indice').numFmt = '0';
@@ -624,85 +706,88 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
         row.getCell(key).alignment = alignment;
       });
 
-      // Colores según estado
+      // Colores según estado (Todo Negro)
       const estadoCell = row.getCell('estado');
-      if (estado === 'AL DÍA') {
-        estadoCell.font = { color: { argb: 'FF10B981' }, bold: true };
-      } else if (estado === 'VENCIDO') {
-        estadoCell.font = { color: { argb: 'FFEF4444' }, bold: true };
-      } else if (estado === 'PENDIENTE') {
-        estadoCell.font = { color: { argb: 'FFF59E0B' }, bold: true };
-      }
+      estadoCell.font = { color: { argb: 'FF000000' }, bold: true, name: 'Calibri', size: 10 };
 
       const porcentajeCell = row.getCell('porcentaje');
-      if (porcentajePagado >= 100) {
-        porcentajeCell.font = { color: { argb: 'FF10B981' }, bold: true };
-      } else if (porcentajePagado >= 50) {
-        porcentajeCell.font = { color: { argb: 'FFF59E0B' }, bold: true };
-      } else {
-        porcentajeCell.font = { color: { argb: 'FFEF4444' }, bold: true };
+      porcentajeCell.font = { color: { argb: 'FF000000' }, bold: true, name: 'Calibri', size: 10 };
+    });
+
+    // Bordes solo en columnas A-M (13 columnas)
+    hojaEstadoCuenta.eachRow((row, rowNumber) => {
+      if (rowNumber >= 4) {
+        for (let i = 1; i <= 13; i++) {
+          const cell = row.getCell(i);
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FF000000' } },
+            left: { style: 'thin', color: { argb: 'FF000000' } },
+            bottom: { style: 'thin', color: { argb: 'FF000000' } },
+            right: { style: 'thin', color: { argb: 'FF000000' } }
+          };
+        }
       }
     });
 
-    hojaEstadoCuenta.eachRow((row) => {
-      row.eachCell((cell) => {
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FFE5E5E5' } },
-          left: { style: 'thin', color: { argb: 'FFE5E5E5' } },
-          bottom: { style: 'thin', color: { argb: 'FFE5E5E5' } },
-          right: { style: 'thin', color: { argb: 'FFE5E5E5' } }
-        };
-      });
-    });
 
-    hojaEstadoCuenta.autoFilter = {
-      from: 'A1',
-      to: 'M1'
-    };
 
 
     // HOJA 3: RESUMEN FINANCIERO
     const hojaResumen = workbook.addWorksheet('Resumen Financiero', {
-      properties: { tabColor: { argb: 'FFFBBF24' } }
+      pageSetup: {
+        paperSize: 9,
+        orientation: 'landscape',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        margins: { left: 0.25, right: 0.25, top: 0.3, bottom: 0.75, header: 0.1, footer: 0.3 },
+        printTitlesRow: '1:4'
+      },
+      headerFooter: {
+        oddFooter: `&L&"-,Bold"&16Escuela de Belleza Jessica Vélez&"-,Regular"&12&RDescargado: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })} — Pág. &P de &N`
+      }
     });
 
     hojaResumen.mergeCells('A1:D1');
     const tituloCell = hojaResumen.getCell('A1');
-    tituloCell.value = 'REPORTE FINANCIERO - RESUMEN';
-    tituloCell.font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
+    tituloCell.value = 'REPORTE ESTADÍSTICO FINANCIERO';
+    tituloCell.font = { bold: true, size: 12, color: { argb: 'FF000000' }, name: 'Calibri' };
     tituloCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    tituloCell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF10B981' }
-    };
-    hojaResumen.getRow(1).height = 30;
+    hojaResumen.getRow(1).height = 25;
 
-    hojaResumen.addRow([]);
+    // Subtítulo (Generado el)
+    hojaResumen.mergeCells('A2:D2');
+    const infoCellResumenFin = hojaResumen.getCell('A2');
+    const infoTextResumenFin = `GENERADO EL: ${new Date().toLocaleString('es-EC').toUpperCase()}`;
+    infoCellResumenFin.value = infoTextResumenFin;
+    infoCellResumenFin.font = { size: 10, color: { argb: 'FF000000' }, name: 'Calibri' };
+    infoCellResumenFin.alignment = { horizontal: 'center', vertical: 'middle' };
+    hojaResumen.getRow(2).height = 35;
+
     hojaResumen.addRow(['PERÍODO DEL REPORTE']);
     hojaResumen.getCell('A3').font = { bold: true, size: 12 };
 
-    const rowDesde = hojaResumen.addRow(['Desde:', filtros.fechaInicio ? new Date(filtros.fechaInicio) : 'N/A']);
+    const rowDesde = hojaResumen.addRow(['DESDE:', filtros.fechaInicio ? new Date(filtros.fechaInicio) : 'N/A']);
     if (filtros.fechaInicio) rowDesde.getCell(2).numFmt = 'dd/mm/yyyy';
 
-    const rowHasta = hojaResumen.addRow(['Hasta:', filtros.fechaFin ? new Date(filtros.fechaFin) : 'N/A']);
+    const rowHasta = hojaResumen.addRow(['HASTA:', filtros.fechaFin ? new Date(filtros.fechaFin) : 'N/A']);
     if (filtros.fechaFin) rowHasta.getCell(2).numFmt = 'dd/mm/yyyy';
 
     hojaResumen.addRow([]);
-    hojaResumen.addRow(['ESTADÍSTICAS FINANCIERAS']);
+    hojaResumen.addRow(['RESUMEN GENERAL FINANCIERO']);
     hojaResumen.getCell('A7').font = { bold: true, size: 12 };
 
     const stats = [
-      ['Total de Pagos', parseInt(estadisticas.total_pagos) || 0],
-      ['Pagos Realizados', parseInt(estadisticas.pagos_realizados) || 0],
-      ['Pagos Verificados', parseInt(estadisticas.pagos_verificados) || 0],
-      ['Pagos Pendientes', parseInt(estadisticas.pagos_pendientes) || 0],
-      ['Pagos Vencidos', parseInt(estadisticas.pagos_vencidos) || 0],
-      ['Ingresos Totales', parseFloat(estadisticas.ingresos_totales) || 0],
-      ['Ingresos Pendientes', parseFloat(estadisticas.ingresos_pendientes) || 0],
-      ['Promedio por Pago', parseFloat(estadisticas.promedio_pago) || 0],
-      ['Matrículas Pagadas', parseInt(estadisticas.matriculas_pagadas) || 0],
-      ['Estudiantes con Saldo', Object.values(estudiantesPorCedula).filter(e => {
+      ['TOTAL DE PAGOS', parseInt(estadisticas.total_pagos) || 0],
+      ['PAGOS REALIZADOS', parseInt(estadisticas.pagos_realizados) || 0],
+      ['PAGOS VERIFICADOS', parseInt(estadisticas.pagos_verificados) || 0],
+      ['PAGOS PENDIENTES', parseInt(estadisticas.pagos_pendientes) || 0],
+      ['PAGOS VENCIDOS', parseInt(estadisticas.pagos_vencidos) || 0],
+      ['INGRESOS TOTALES', parseFloat(estadisticas.ingresos_totales) || 0],
+      ['INGRESOS PENDIENTES', parseFloat(estadisticas.ingresos_pendientes) || 0],
+      ['PROMEDIO POR PAGO', parseFloat(estadisticas.promedio_pago) || 0],
+      ['MATRÍCULAS PAGADAS', parseInt(estadisticas.matriculas_pagadas) || 0],
+      ['ESTUDIANTES CON SALDO', Object.values(estudiantesPorCedula).filter(e => {
         const saldo = e.pagos.reduce((sum, p) => sum + parseFloat(p.monto || 0), 0) -
           e.pagos.filter(p => p.estado_pago === 'verificado').reduce((sum, p) => sum + parseFloat(p.monto || 0), 0);
         return saldo > 0;
@@ -715,17 +800,27 @@ async function generarExcelFinanciero(datos, datosSinFiltroEstado, filtros, esta
       row.getCell(2).alignment = { horizontal: 'center' };
 
       // Aplicar formatos según el tipo de dato
-      if (label.includes('Ingresos') || label.includes('Promedio')) {
+      if (label.includes('INGRESOS') || label.includes('PROMEDIO')) {
         row.getCell(2).numFmt = '$#,##0.00';
       } else {
         row.getCell(2).numFmt = '0';
       }
 
-      if (label.includes('Ingresos Totales')) {
-        row.getCell(2).font = { color: { argb: 'FF10B981' }, bold: true, size: 14 };
-      } else if (label.includes('Pendientes') || label.includes('Vencidos')) {
-        row.getCell(2).font = { color: { argb: 'FFEF4444' }, bold: true };
+      if (label.includes('INGRESOS TOTALES')) {
+        row.getCell(2).font = { color: { argb: 'FF000000' }, bold: true, size: 14, name: 'Calibri' };
+      } else {
+        row.getCell(2).font = { color: { argb: 'FF000000' }, bold: true, size: 10, name: 'Calibri' };
       }
+
+      // Bordes
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'thin', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } }
+        };
+      });
     });
 
     hojaResumen.getColumn(1).width = 30;
@@ -753,7 +848,6 @@ async function generarExcelCursos(datos, filtros, estadisticas) {
 
     // HOJA 1: CURSOS DETALLADOS
     const hojaCursos = workbook.addWorksheet('Cursos', {
-      properties: { tabColor: { argb: 'FF10B981' } },
       pageSetup: {
         paperSize: 9, // A4
         orientation: 'landscape',
@@ -768,7 +862,7 @@ async function generarExcelCursos(datos, filtros, estadisticas) {
           header: 0.3,
           footer: 0.3
         },
-        printTitlesRow: '1:1'
+        printTitlesRow: '1:4'
       },
       headerFooter: {
         oddFooter: `&L&"-,Bold"&16Escuela de Belleza Jessica Vélez&"-,Regular"&12&RDescargado: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })} — Pág. &P de &N`
@@ -778,28 +872,59 @@ async function generarExcelCursos(datos, filtros, estadisticas) {
     // Configurar columnas optimizadas para impresión (con índice)
     hojaCursos.columns = [
       { header: '#', key: 'indice', width: 7 },
-      { header: 'CÓDIGO', key: 'codigo', width: 12 },
-      { header: 'NOMBRE CURSO', key: 'nombre', width: 30 },
-      { header: 'DOCENTE', key: 'docente', width: 30 },
-      { header: 'HORARIO', key: 'horario', width: 14 },
+      { header: 'CÓDIGO', key: 'codigo', width: 15 },
+      { header: 'NOMBRE CURSO', key: 'nombre', width: 35 },
+      { header: 'ID DOCENTE', key: 'docente_identificacion', width: 20 },
+      { header: 'DOCENTE', key: 'docente', width: 35 },
+      { header: 'HORARIO', key: 'turno', width: 15 }, // Será sobrescrito por merge
+      { header: '', key: 'intervalo', width: 15 },    // Será sobrescrito por merge
       { header: 'CAPACIDAD', key: 'capacidad', width: 12 },
       { header: 'INSCRITOS', key: 'inscritos', width: 12 },
-      { header: 'OCUPACIÓN %', key: 'ocupacion', width: 14 },
-      { header: 'ESTADO', key: 'estado', width: 13 },
-      { header: 'AULA', key: 'aula', width: 13 },
-      { header: 'FECHA INICIO', key: 'fechaInicio', width: 14 },
-      { header: 'FECHA FIN', key: 'fechaFin', width: 14 }
+      { header: 'OCUPACIÓN %', key: 'ocupacion', width: 15 },
+      { header: 'ESTADO', key: 'estado', width: 15 },
+      { header: 'AULA', key: 'aula', width: 15 },
+      { header: 'FECHA INICIO', key: 'fechaInicio', width: 15 },
+      { header: 'FECHA FIN', key: 'fechaFin', width: 15 }
     ];
 
-    // Estilo del header
-    hojaCursos.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
-    hojaCursos.getRow(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF10B981' }
+    // Insertar 3 filas al inicio
+    hojaCursos.spliceRows(1, 0, [], [], []);
+
+    // 1. Título del Reporte (Fila 1)
+    hojaCursos.mergeCells('A1:N1');
+    const titleCell = hojaCursos.getCell('A1');
+    titleCell.value = 'REPORTE DE CURSOS';
+    titleCell.font = { bold: true, size: 12, color: { argb: 'FF000000' }, name: 'Calibri' };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    hojaCursos.getRow(1).height = 25;
+
+    // 2. Info Dinámica (Fila 2)
+    hojaCursos.mergeCells('A2:N2');
+    const infoCell = hojaCursos.getCell('A2');
+    const infoText = `FILTROS: ${filtros.estado ? filtros.estado.toUpperCase() : 'TODOS'} | FECHA INICIO: ${filtros.fechaInicio ? new Date(filtros.fechaInicio).toLocaleDateString() : 'N/A'} | FECHA FIN: ${filtros.fechaFin ? new Date(filtros.fechaFin).toLocaleDateString() : 'N/A'} | GENERADO EL: ${new Date().toLocaleString('es-EC')}`;
+    infoCell.value = infoText.toUpperCase();
+    infoCell.font = { size: 10, color: { argb: 'FF000000' }, name: 'Calibri' };
+    infoCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    hojaCursos.getRow(2).height = 35;
+
+    // Fila 4: Encabezados
+    hojaCursos.getRow(4).font = { bold: true, color: { argb: 'FF000000' }, size: 10, name: 'Calibri' };
+    hojaCursos.getRow(4).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    hojaCursos.getRow(4).height = 35;
+
+    // Fusionar encabezados de Horario (F4:G4) - Movido una columna a la derecha por la nueva columna de docente_identificacion
+    // El título "HORARIO" quedará centrado sobre las columnas de Turno e Intervalo
+    hojaCursos.mergeCells('F4:G4');
+    const horarioHeader = hojaCursos.getCell('F4');
+    horarioHeader.value = 'HORARIO';
+    horarioHeader.alignment = { vertical: 'middle', horizontal: 'center' };
+    horarioHeader.font = { bold: true, color: { argb: 'FF000000' }, size: 10, name: 'Calibri' };
+    horarioHeader.border = {
+      top: { style: 'thin', color: { argb: 'FF000000' } },
+      left: { style: 'thin', color: { argb: 'FF000000' } },
+      bottom: { style: 'thin', color: { argb: 'FF000000' } },
+      right: { style: 'thin', color: { argb: 'FF000000' } }
     };
-    hojaCursos.getRow(1).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    hojaCursos.getRow(1).height = 30;
 
     // Agregar datos
     let indice = 1;
@@ -809,17 +934,28 @@ async function generarExcelCursos(datos, filtros, estadisticas) {
         ? `${curso.docente_apellidos}, ${curso.docente_nombres}`
         : curso.docente_nombres || curso.docente_apellidos || 'N/A';
 
+      // Formatear Intervalo: "08:00 - 12:00"
+      let intervaloTexto = 'N/A';
+      if (curso.hora_inicio && curso.hora_fin) {
+        // Asumiendo formato HH:MM:SS, tomamos los primeros 5 caracteres
+        const inicio = curso.hora_inicio.toString().substring(0, 5);
+        const fin = curso.hora_fin.toString().substring(0, 5);
+        intervaloTexto = `${inicio} - ${fin}`;
+      }
+
       const row = hojaCursos.addRow({
         indice: indice++,
-        codigo: curso.codigo_curso,
-        nombre: curso.nombre_curso,
-        docente: docenteNombre,
-        horario: curso.horario,
+        codigo: curso.codigo_curso ? curso.codigo_curso.toString().toUpperCase() : 'N/A',
+        nombre: curso.nombre_curso ? curso.nombre_curso.toUpperCase() : '',
+        docente_identificacion: curso.docente_identificacion || 'N/A',
+        docente: docenteNombre ? docenteNombre.toUpperCase() : 'N/A',
+        turno: curso.horario ? curso.horario.toUpperCase() : 'N/A',
+        intervalo: intervaloTexto,
         capacidad: parseInt(curso.capacidad_maxima) || 0,
         inscritos: parseInt(curso.total_estudiantes) || 0,
         ocupacion: parseFloat(curso.porcentaje_ocupacion) || 0,
-        estado: curso.estado?.toUpperCase() || 'ACTIVO',
-        aula: curso.aula_nombre || 'N/A',
+        estado: curso.estado ? curso.estado.toUpperCase() : 'ACTIVO',
+        aula: curso.aula_nombre ? curso.aula_nombre.toUpperCase() : 'N/A',
         fechaInicio: curso.fecha_inicio ? new Date(curso.fecha_inicio) : null,
         fechaFin: curso.fecha_fin ? new Date(curso.fecha_fin) : null
       });
@@ -837,31 +973,21 @@ async function generarExcelCursos(datos, filtros, estadisticas) {
         row.getCell('fechaFin').numFmt = 'dd/mm/yyyy';
       }
 
-      // Color según ocupación
+      // Color según ocupación (Todo Negro)
       const ocupacionCell = row.getCell('ocupacion');
-      const ocupacion = parseFloat(curso.porcentaje_ocupacion) || 0;
-      if (ocupacion >= 80) {
-        ocupacionCell.font = { color: { argb: 'FF10B981' }, bold: true };
-      } else if (ocupacion >= 50) {
-        ocupacionCell.font = { color: { argb: 'FFF59E0B' }, bold: true };
-      } else {
-        ocupacionCell.font = { color: { argb: 'FFEF4444' }, bold: true };
-      }
+      ocupacionCell.font = { color: { argb: 'FF000000' }, bold: true, name: 'Calibri', size: 10 };
 
-      // Color según estado
+      // Color según estado (Todo Negro)
       const estadoCell = row.getCell('estado');
-      if (curso.estado === 'activo') {
-        estadoCell.font = { color: { argb: 'FF10B981' }, bold: true };
-      } else if (curso.estado === 'inactivo') {
-        estadoCell.font = { color: { argb: 'FFEF4444' }, bold: true };
-      }
+      estadoCell.font = { color: { argb: 'FF000000' }, bold: true, name: 'Calibri', size: 10 };
 
       // Alineación y text wrapping
-      ['indice', 'codigo', 'nombre', 'docente', 'horario', 'capacidad', 'inscritos', 'ocupacion', 'estado', 'aula', 'fechaInicio', 'fechaFin'].forEach(key => {
+      ['indice', 'codigo', 'nombre', 'docente_identificacion', 'docente', 'turno', 'intervalo', 'capacidad', 'inscritos', 'ocupacion', 'estado', 'aula', 'fechaInicio', 'fechaFin'].forEach(key => {
+        // Alineación general
         let alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
 
         // Centrar columnas específicas
-        if (['indice', 'codigo', 'capacidad', 'inscritos', 'ocupacion', 'horario', 'fechaInicio', 'fechaFin', 'estado', 'aula'].includes(key)) {
+        if (['indice', 'codigo', 'docente_identificacion', 'capacidad', 'inscritos', 'ocupacion', 'estado', 'aula', 'fechaInicio', 'fechaFin', 'turno', 'intervalo'].includes(key)) {
           alignment.horizontal = 'center';
         }
 
@@ -869,54 +995,67 @@ async function generarExcelCursos(datos, filtros, estadisticas) {
       });
     });
 
-    // Bordes a todas las celdas
+    // Bordes a todas las celdas de la tabla (solo columnas A-N)
     hojaCursos.eachRow((row, rowNumber) => {
-      row.eachCell(cell => {
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FFE5E5E5' } },
-          left: { style: 'thin', color: { argb: 'FFE5E5E5' } },
-          bottom: { style: 'thin', color: { argb: 'FFE5E5E5' } },
-          right: { style: 'thin', color: { argb: 'FFE5E5E5' } }
-        };
-      });
+      if (rowNumber >= 4) {
+        for (let i = 1; i <= 14; i++) { // Hasta columna N
+          const cell = row.getCell(i);
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FF000000' } },
+            left: { style: 'thin', color: { argb: 'FF000000' } },
+            bottom: { style: 'thin', color: { argb: 'FF000000' } },
+            right: { style: 'thin', color: { argb: 'FF000000' } }
+          };
+        }
+      }
     });
 
-    // Filtros automáticos
-    hojaCursos.autoFilter = {
-      from: 'A1',
-      to: 'L1'
-    };
+
 
     // HOJA 2: ESTADÍSTICAS
     const hojaStats = workbook.addWorksheet('Estadísticas', {
-      properties: { tabColor: { argb: 'FF3B82F6' } }
+      pageSetup: {
+        paperSize: 9,
+        orientation: 'landscape',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        margins: { left: 0.25, right: 0.25, top: 0.3, bottom: 0.75, header: 0.1, footer: 0.3 },
+        printTitlesRow: '1:4'
+      },
+      headerFooter: {
+        oddFooter: `&L&"-,Bold"&16Escuela de Belleza Jessica Vélez&"-,Regular"&12&RDescargado: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })} — Pág. &P de &N`
+      }
     });
 
     // Título
     hojaStats.mergeCells('A1:D1');
     const tituloCell = hojaStats.getCell('A1');
     tituloCell.value = 'REPORTE DE CURSOS - ESTADÍSTICAS';
-    tituloCell.font = { bold: true, size: 16, color: { argb: 'FF000000' } };
+    tituloCell.font = { bold: true, size: 12, color: { argb: 'FF000000' }, name: 'Calibri' };
     tituloCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    tituloCell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF10B981' }
-    };
-    hojaStats.getRow(1).height = 30;
+    hojaStats.getRow(1).height = 25;
+
+    // Subtítulo (Generado el)
+    hojaStats.mergeCells('A2:D2');
+    const infoCellStats = hojaStats.getCell('A2');
+    const infoTextStats = `GENERADO EL: ${new Date().toLocaleString('es-EC').toUpperCase()}`;
+    infoCellStats.value = infoTextStats;
+    infoCellStats.font = { size: 10, color: { argb: 'FF000000' }, name: 'Calibri' };
+    infoCellStats.alignment = { horizontal: 'center', vertical: 'middle' };
+    hojaStats.getRow(2).height = 35;
 
     // Información del período
-    hojaStats.addRow([]);
     hojaStats.addRow(['PERÍODO DEL REPORTE']);
     hojaStats.getCell('A3').font = { bold: true, size: 12 };
 
     if (filtros.fechaInicio) {
-      const rowDesde = hojaStats.addRow(['Desde:', new Date(filtros.fechaInicio)]);
+      const rowDesde = hojaStats.addRow(['DESDE:', new Date(filtros.fechaInicio)]);
       rowDesde.getCell(2).numFmt = 'dd/mm/yyyy';
     }
 
     if (filtros.fechaFin) {
-      const rowHasta = hojaStats.addRow(['Hasta:', new Date(filtros.fechaFin)]);
+      const rowHasta = hojaStats.addRow(['HASTA:', new Date(filtros.fechaFin)]);
       rowHasta.getCell(2).numFmt = 'dd/mm/yyyy';
     }
 
@@ -926,10 +1065,10 @@ async function generarExcelCursos(datos, filtros, estadisticas) {
     hojaStats.getCell('A7').font = { bold: true, size: 12 };
 
     const stats = [
-      ['Total de Cursos', parseInt(estadisticas.total_cursos) || 0],
-      ['Cursos Activos', parseInt(estadisticas.cursos_activos) || 0],
-      ['Total Estudiantes Inscritos', parseInt(estadisticas.total_estudiantes_inscritos) || 0],
-      ['Promedio de Ocupación', estadisticas.promedio_ocupacion ? parseFloat(estadisticas.promedio_ocupacion) : 0]
+      ['TOTAL DE CURSOS', parseInt(estadisticas.total_cursos) || 0],
+      ['CURSOS ACTIVOS', parseInt(estadisticas.cursos_activos) || 0],
+      ['TOTAL ESTUDIANTES INSCRITOS', parseInt(estadisticas.total_estudiantes_inscritos) || 0],
+      ['PROMEDIO DE OCUPACIÓN', estadisticas.promedio_ocupacion ? parseFloat(estadisticas.promedio_ocupacion) : 0]
     ];
 
     stats.forEach(([label, valor]) => {
@@ -944,10 +1083,22 @@ async function generarExcelCursos(datos, filtros, estadisticas) {
         row.getCell(2).numFmt = '0';
       }
 
-      // Color según tipo
+      // Color según tipo (Todo Negro)
       if (label.includes('Activos')) {
-        row.getCell(2).font = { color: { argb: 'FF10B981' }, bold: true };
+        row.getCell(2).font = { color: { argb: 'FF000000' }, bold: true, name: 'Calibri', size: 10 };
+      } else {
+        row.getCell(2).font = { color: { argb: 'FF000000' }, bold: true, name: 'Calibri', size: 10 };
       }
+
+      // Bordes
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'thin', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } }
+        };
+      });
     });
 
     // Ajustar anchos

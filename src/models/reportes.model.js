@@ -9,7 +9,6 @@ const ReportesModel = {
     try {
       const CalificacionesModel = require('./calificaciones.model');
 
-      // Query simplificado SIN el cálculo de promedio
       let query = `
         SELECT 
           u.id_usuario,
@@ -35,18 +34,19 @@ const ReportesModel = {
           m.codigo_matricula,
           m.monto_matricula,
           m.fecha_matricula,
-          u.estado as estado_usuario
+          u.estado as estado_usuario,
+          sm.contacto_emergencia as telefono_emergencia
         FROM usuarios u
         INNER JOIN estudiante_curso ec ON u.id_usuario = ec.id_estudiante
         INNER JOIN cursos c ON ec.id_curso = c.id_curso
         INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
         INNER JOIN matriculas m ON m.id_estudiante = u.id_usuario AND m.id_curso = c.id_curso
+        INNER JOIN solicitudes_matricula sm ON m.id_solicitud = sm.id_solicitud
         WHERE 1=1
       `;
 
       const params = [];
 
-      // Filtros (igual que antes)
       if (fechaInicio && fechaFin) {
         query += ` AND DATE(ec.fecha_inscripcion) BETWEEN ? AND ?`;
         params.push(fechaInicio, fechaFin);
@@ -54,9 +54,9 @@ const ReportesModel = {
 
       if (estado && estado !== 'todos') {
         if (estado === 'inactivo') {
-          query += ` AND(u.estado = 'inactivo' OR ec.estado IN('inactivo', 'retirado'))`;
+          query += ` AND (u.estado = 'inactivo' OR ec.estado IN('inactivo', 'retirado'))`;
         } else if (estado === 'activo') {
-          query += ` AND(u.estado = 'activo' AND ec.estado IN('activo', 'inscrito'))`;
+          query += ` AND (u.estado = 'activo' AND ec.estado IN('activo', 'inscrito'))`;
         } else {
           query += ` AND ec.estado = ? `;
           params.push(estado);
@@ -77,7 +77,6 @@ const ReportesModel = {
 
       const [rows] = await pool.query(query, params);
 
-      // Calcular promedio para cada estudiante usando el método de la UI
       const rowsWithGrades = await Promise.all(
         rows.map(async (row) => {
           try {
@@ -85,8 +84,6 @@ const ReportesModel = {
               row.id_usuario,
               row.id_curso
             );
-
-            // Usar promedio calculado o nota almacenada
             row.nota_final = promedioData.promedio_global || row.nota_final_almacenada || null;
           } catch (error) {
             console.error(`Error calculando promedio para estudiante ${row.id_usuario}:`, error);
@@ -106,19 +103,20 @@ const ReportesModel = {
   /**
    * ESTADÍSTICAS DE ESTUDIANTES
    */
-  async getEstadisticasEstudiantes({ fechaInicio, fechaFin }) {
+  async getEstadisticasEstudiantes({ fechaInicio, fechaFin, estado, idCurso, horario }) {
     try {
-      const query = `
-      SELECT
-      COUNT(DISTINCT ec.id_estudiante) as total_estudiantes,
-        COUNT(DISTINCT CASE WHEN u.estado = 'activo' AND ec.estado IN('activo', 'inscrito') THEN ec.id_estudiante END) as activos,
-        COUNT(DISTINCT CASE WHEN ec.estado = 'aprobado' OR COALESCE(notas.promedio_calculado, ec.nota_final, 0) >= 7 THEN ec.id_estudiante END) as aprobados,
-        COUNT(DISTINCT CASE WHEN ec.estado = 'reprobado' AND COALESCE(notas.promedio_calculado, ec.nota_final, 0) < 7 THEN ec.id_estudiante END) as reprobados,
-        COUNT(DISTINCT CASE WHEN u.estado = 'inactivo' OR ec.estado IN('retirado', 'inactivo') THEN ec.id_estudiante END) as retirados,
-        COUNT(DISTINCT CASE WHEN ec.estado = 'graduado' OR COALESCE(notas.promedio_calculado, ec.nota_final, 0) >= 7 THEN ec.id_estudiante END) as graduados,
-        AVG(COALESCE(notas.promedio_calculado, ec.nota_final, 0)) as promedio_notas
+      let query = `
+        SELECT
+          COUNT(DISTINCT ec.id_estudiante) as total_estudiantes,
+          COUNT(DISTINCT CASE WHEN u.estado = 'activo' AND ec.estado IN('activo', 'inscrito') THEN ec.id_estudiante END) as activos,
+          COUNT(DISTINCT CASE WHEN ec.estado = 'aprobado' OR COALESCE(notas.promedio_calculado, ec.nota_final, 0) >= 7 THEN ec.id_estudiante END) as aprobados,
+          COUNT(DISTINCT CASE WHEN ec.estado = 'reprobado' AND COALESCE(notas.promedio_calculado, ec.nota_final, 0) < 7 THEN ec.id_estudiante END) as reprobados,
+          COUNT(DISTINCT CASE WHEN u.estado = 'inactivo' OR ec.estado IN('retirado', 'inactivo') THEN ec.id_estudiante END) as retirados,
+          COUNT(DISTINCT CASE WHEN ec.estado = 'graduado' OR COALESCE(notas.promedio_calculado, ec.nota_final, 0) >= 7 THEN ec.id_estudiante END) as graduados,
+          AVG(COALESCE(notas.promedio_calculado, ec.nota_final, 0)) as promedio_notas
         FROM estudiante_curso ec
         INNER JOIN usuarios u ON ec.id_estudiante = u.id_usuario
+        INNER JOIN cursos c ON ec.id_curso = c.id_curso
         LEFT JOIN (
             SELECT 
                 promedios.id_estudiante,
@@ -142,10 +140,38 @@ const ReportesModel = {
             ) as promedios
             GROUP BY promedios.id_estudiante, promedios.id_curso
         ) as notas ON notas.id_estudiante = ec.id_estudiante AND notas.id_curso = ec.id_curso
-        WHERE DATE(ec.fecha_inscripcion) BETWEEN ? AND ?
-        `;
+        WHERE 1=1
+      `;
 
-      const [rows] = await pool.query(query, [fechaInicio, fechaFin]);
+      const params = [];
+
+      if (fechaInicio && fechaFin) {
+        query += ` AND DATE(ec.fecha_inscripcion) BETWEEN ? AND ?`;
+        params.push(fechaInicio, fechaFin);
+      }
+
+      if (estado && estado !== 'todos') {
+        if (estado === 'inactivo') {
+          query += ` AND (u.estado = 'inactivo' OR ec.estado IN('inactivo', 'retirado'))`;
+        } else if (estado === 'activo') {
+          query += ` AND (u.estado = 'activo' AND ec.estado IN('activo', 'inscrito'))`;
+        } else {
+          query += ` AND ec.estado = ? `;
+          params.push(estado);
+        }
+      }
+
+      if (idCurso) {
+        query += ` AND c.id_curso = ? `;
+        params.push(idCurso);
+      }
+
+      if (horario && horario !== 'todos') {
+        query += ` AND c.horario = ? `;
+        params.push(horario);
+      }
+
+      const [rows] = await pool.query(query, params);
       return rows[0];
     } catch (error) {
       console.error('Error en getEstadisticasEstudiantes:', error);
@@ -161,36 +187,36 @@ const ReportesModel = {
     try {
       let query = `
         SELECT
-      pm.id_pago,
-        pm.numero_cuota,
-        pm.monto,
-        pm.fecha_vencimiento,
-        pm.fecha_pago,
-        pm.metodo_pago,
-        pm.numero_comprobante,
-        pm.banco_comprobante,
-        pm.fecha_transferencia,
-        pm.recibido_por,
-        pm.estado as estado_pago,
-        pm.observaciones,
-        u.cedula as cedula_estudiante,
-        u.nombre as nombre_estudiante,
-        u.apellido as apellido_estudiante,
-        u.email as email_estudiante,
-        c.id_curso,
-        c.codigo_curso,
-        c.nombre as nombre_curso,
-        c.horario,
-        c.fecha_inicio,
-        c.fecha_fin,
-        c.estado as estado_curso,
-        tc.nombre as tipo_curso,
-        tc.modalidad_pago,
-        m.codigo_matricula,
-        m.monto_matricula,
-        verificador.nombre as verificado_por_nombre,
-        verificador.apellido as verificado_por_apellido,
-        pm.fecha_verificacion
+          pm.id_pago,
+          pm.numero_cuota,
+          pm.monto,
+          pm.fecha_vencimiento,
+          pm.fecha_pago,
+          pm.metodo_pago,
+          pm.numero_comprobante,
+          pm.banco_comprobante,
+          pm.fecha_transferencia,
+          pm.recibido_por,
+          pm.estado as estado_pago,
+          pm.observaciones,
+          u.cedula as cedula_estudiante,
+          u.nombre as nombre_estudiante,
+          u.apellido as apellido_estudiante,
+          u.email as email_estudiante,
+          c.id_curso,
+          c.codigo_curso,
+          c.nombre as nombre_curso,
+          c.horario,
+          c.fecha_inicio,
+          c.fecha_fin,
+          c.estado as estado_curso,
+          tc.nombre as tipo_curso,
+          tc.modalidad_pago,
+          m.codigo_matricula,
+          m.monto_matricula,
+          verificador.nombre as verificado_por_nombre,
+          verificador.apellido as verificado_por_apellido,
+          pm.fecha_verificacion
         FROM pagos_mensuales pm
         INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
         INNER JOIN usuarios u ON m.id_estudiante = u.id_usuario
@@ -198,35 +224,30 @@ const ReportesModel = {
         INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
         LEFT JOIN usuarios verificador ON pm.verificado_por = verificador.id_usuario
         WHERE 1=1
-        `;
+      `;
 
       const params = [];
 
-      // Filtro por fecha - usar fecha_pago si existe, sino fecha_vencimiento
       if (fechaInicio && fechaFin) {
         query += ` AND DATE(COALESCE(pm.fecha_pago, pm.fecha_vencimiento)) BETWEEN ? AND ?`;
         params.push(fechaInicio, fechaFin);
       }
 
-      // Filtro por curso específico
       if (idCurso) {
         query += ` AND c.id_curso = ? `;
         params.push(idCurso);
       }
 
-      // Filtro por estado del curso
       if (estadoCurso && estadoCurso !== 'todos') {
         query += ` AND c.estado = ? `;
         params.push(estadoCurso);
       }
 
-      // Filtro por horario del curso
       if (horario && horario !== 'todos') {
         query += ` AND c.horario = ? `;
         params.push(horario);
       }
 
-      // Filtro por tipo de pago (primer mes = cuota 1)
       if (tipoPago && tipoPago !== 'todos') {
         if (tipoPago === 'primer_mes') {
           query += ` AND pm.numero_cuota = 1`;
@@ -237,13 +258,11 @@ const ReportesModel = {
         }
       }
 
-      // Filtro por estado de pago
       if (estadoPago && estadoPago !== 'todos') {
         query += ` AND pm.estado = ? `;
         params.push(estadoPago);
       }
 
-      // Filtro por método de pago
       if (metodoPago && metodoPago !== 'todos') {
         query += ` AND pm.metodo_pago = ? `;
         params.push(metodoPago);
@@ -265,26 +284,25 @@ const ReportesModel = {
   async getEstadisticasFinancieras({ fechaInicio, fechaFin, idCurso, estadoCurso, horario, metodoPago, tipoPago }) {
     try {
       let query = `
-SELECT
-COUNT(*) as total_pagos,
-  COUNT(CASE WHEN pm.estado = 'pagado' THEN 1 END) as pagos_realizados,
-  COUNT(CASE WHEN pm.estado = 'verificado' THEN 1 END) as pagos_verificados,
-  COUNT(CASE WHEN pm.estado = 'pendiente' THEN 1 END) as pagos_pendientes,
-  COUNT(CASE WHEN pm.estado = 'vencido' THEN 1 END) as pagos_vencidos,
-  SUM(CASE WHEN pm.estado IN('pagado', 'verificado') THEN pm.monto ELSE 0 END) as ingresos_totales,
-  SUM(CASE WHEN pm.estado = 'pendiente' THEN pm.monto ELSE 0 END) as ingresos_pendientes,
-  AVG(CASE WHEN pm.estado IN('pagado', 'verificado') THEN pm.monto END) as promedio_pago,
-  COUNT(DISTINCT CASE WHEN pm.numero_cuota = 1 THEN pm.id_matricula END) as matriculas_pagadas
+        SELECT
+          COUNT(*) as total_pagos,
+          COUNT(CASE WHEN pm.estado = 'pagado' THEN 1 END) as pagos_realizados,
+          COUNT(CASE WHEN pm.estado = 'verificado' THEN 1 END) as pagos_verificados,
+          COUNT(CASE WHEN pm.estado = 'pendiente' THEN 1 END) as pagos_pendientes,
+          COUNT(CASE WHEN pm.estado = 'vencido' THEN 1 END) as pagos_vencidos,
+          SUM(CASE WHEN pm.estado IN('pagado', 'verificado') THEN pm.monto ELSE 0 END) as ingresos_totales,
+          SUM(CASE WHEN pm.estado = 'pendiente' THEN pm.monto ELSE 0 END) as ingresos_pendientes,
+          AVG(CASE WHEN pm.estado IN('pagado', 'verificado') THEN pm.monto END) as promedio_pago,
+          COUNT(DISTINCT CASE WHEN pm.numero_cuota = 1 THEN pm.id_matricula END) as matriculas_pagadas
         FROM pagos_mensuales pm
         INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula
         INNER JOIN cursos c ON m.id_curso = c.id_curso
         INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
         WHERE DATE(COALESCE(pm.fecha_pago, pm.fecha_vencimiento)) BETWEEN ? AND ?
-    `;
+      `;
 
       const params = [fechaInicio, fechaFin];
 
-      // Aplicar filtros adicionales
       if (idCurso) {
         query += ` AND c.id_curso = ?`;
         params.push(idCurso);
@@ -305,7 +323,6 @@ COUNT(*) as total_pagos,
         params.push(metodoPago);
       }
 
-      // Filtro por tipo de pago
       if (tipoPago && tipoPago !== 'todos') {
         if (tipoPago === 'primer_mes') {
           query += ` AND pm.numero_cuota = 1`;
@@ -332,31 +349,32 @@ COUNT(*) as total_pagos,
     try {
       let query = `
         SELECT
-c.id_curso,
-  c.codigo_curso,
-  c.nombre as nombre_curso,
-  c.horario,
-  c.capacidad_maxima,
-  c.cupos_disponibles,
-  c.fecha_inicio,
-  c.fecha_fin,
-  c.estado as estado_curso,
-  tc.nombre as tipo_curso,
-  tc.duracion_meses,
-  tc.precio_base,
-  tc.modalidad_pago,
-  COUNT(DISTINCT ec.id_estudiante) as total_estudiantes,
-  COUNT(DISTINCT CASE WHEN ec.estado = 'activo' THEN ec.id_estudiante END) as estudiantes_activos,
-  COUNT(DISTINCT CASE WHEN ec.estado = 'graduado' THEN ec.id_estudiante END) as estudiantes_graduados,
-  ROUND((COUNT(DISTINCT ec.id_estudiante) / c.capacidad_maxima) * 100, 2) as porcentaje_ocupacion,
-  SUM(m.monto_matricula) as ingresos_matriculas,
-  MAX(d.nombres) as docente_nombres,
-  MAX(d.apellidos) as docente_apellidos,
-  MAX(a.nombre) as aula_nombre,
-  MAX(a.ubicacion) as aula_ubicacion,
-  MAX(aa.hora_inicio) as hora_inicio,
-  MAX(aa.hora_fin) as hora_fin,
-  MAX(aa.dias) as dias
+          c.id_curso,
+          c.codigo_curso,
+          c.nombre as nombre_curso,
+          c.horario,
+          c.capacidad_maxima,
+          c.cupos_disponibles,
+          c.fecha_inicio,
+          c.fecha_fin,
+          c.estado as estado_curso,
+          tc.nombre as tipo_curso,
+          tc.duracion_meses,
+          tc.precio_base,
+          tc.modalidad_pago,
+          COUNT(DISTINCT ec.id_estudiante) as total_estudiantes,
+          COUNT(DISTINCT CASE WHEN ec.estado = 'activo' THEN ec.id_estudiante END) as estudiantes_activos,
+          COUNT(DISTINCT CASE WHEN ec.estado = 'graduado' THEN ec.id_estudiante END) as estudiantes_graduados,
+          ROUND((COUNT(DISTINCT ec.id_estudiante) / c.capacidad_maxima) * 100, 2) as porcentaje_ocupacion,
+          SUM(m.monto_matricula) as ingresos_matriculas,
+          MAX(d.nombres) as docente_nombres,
+          MAX(d.apellidos) as docente_apellidos,
+          MAX(d.identificacion) as docente_identificacion,
+          MAX(a.nombre) as aula_nombre,
+          MAX(a.ubicacion) as aula_ubicacion,
+          MAX(aa.hora_inicio) as hora_inicio,
+          MAX(aa.hora_fin) as hora_fin,
+          MAX(aa.dias) as dias
         FROM cursos c
         INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
         LEFT JOIN estudiante_curso ec ON c.id_curso = ec.id_curso
@@ -369,17 +387,15 @@ c.id_curso,
           (DATE(c.fecha_fin) BETWEEN ? AND ?) OR
           (DATE(c.fecha_inicio) <= ? AND DATE(c.fecha_fin) >= ?)
         )
-  `;
+      `;
 
       const params = [fechaInicio, fechaFin, fechaInicio, fechaFin, fechaInicio, fechaFin];
 
-      // Filtro por estado del curso
       if (estado && estado !== 'todos') {
         query += ` AND c.estado = ? `;
         params.push(estado);
       }
 
-      // Filtro por horario
       if (horario && horario !== 'todos') {
         query += ` AND c.horario = ? `;
         params.push(horario);
@@ -387,11 +403,10 @@ c.id_curso,
 
       query += `
         GROUP BY c.id_curso, c.codigo_curso, c.nombre, c.horario, c.capacidad_maxima,
-  c.cupos_disponibles, c.fecha_inicio, c.fecha_fin, c.estado,
-  tc.nombre, tc.duracion_meses, tc.precio_base, tc.modalidad_pago
-    `;
+        c.cupos_disponibles, c.fecha_inicio, c.fecha_fin, c.estado,
+        tc.nombre, tc.duracion_meses, tc.precio_base, tc.modalidad_pago
+      `;
 
-      // Filtro por ocupación (se aplica después del GROUP BY)
       if (ocupacion && ocupacion !== 'todos') {
         if (ocupacion === 'lleno') {
           query += ` HAVING porcentaje_ocupacion >= 80`;
@@ -415,21 +430,45 @@ c.id_curso,
   /**
    * ESTADÍSTICAS DE CURSOS
    */
-  async getEstadisticasCursos({ fechaInicio, fechaFin }) {
+  async getEstadisticasCursos({ fechaInicio, fechaFin, estado, horario, ocupacion }) {
     try {
-      const query = `
-SELECT
-COUNT(DISTINCT c.id_curso) as total_cursos,
-  COUNT(DISTINCT CASE WHEN c.estado = 'activo' THEN c.id_curso END) as cursos_activos,
-  COUNT(DISTINCT CASE WHEN c.estado = 'finalizado' THEN c.id_curso END) as cursos_finalizados,
-  AVG(c.capacidad_maxima) as promedio_capacidad,
-  AVG(c.cupos_disponibles) as promedio_cupos_disponibles,
-  SUM(c.capacidad_maxima - c.cupos_disponibles) as total_estudiantes_inscritos
+      let query = `
+        SELECT
+          COUNT(DISTINCT c.id_curso) as total_cursos,
+          COUNT(DISTINCT CASE WHEN c.estado = 'activo' THEN c.id_curso END) as cursos_activos,
+          COUNT(DISTINCT CASE WHEN c.estado = 'finalizado' THEN c.id_curso END) as cursos_finalizados,
+          AVG(c.capacidad_maxima) as promedio_capacidad,
+          AVG(c.cupos_disponibles) as promedio_cupos_disponibles,
+          SUM(c.capacidad_maxima - c.cupos_disponibles) as total_estudiantes_inscritos
         FROM cursos c
-        WHERE DATE(c.fecha_inicio) BETWEEN ? AND ?
-  `;
+        WHERE 1=1
+      `;
 
-      const [rows] = await pool.query(query, [fechaInicio, fechaFin]);
+      const params = [];
+
+      if (fechaInicio && fechaFin) {
+        query += ` AND DATE(c.fecha_inicio) BETWEEN ? AND ?`;
+        params.push(fechaInicio, fechaFin);
+      }
+
+      if (estado && estado !== 'todos') {
+        query += ` AND c.estado = ? `;
+        params.push(estado);
+      }
+
+      if (horario && horario !== 'todos') {
+        query += ` AND c.horario = ? `;
+        params.push(horario);
+      }
+
+      if (ocupacion && ocupacion !== 'todos') {
+        query += ` AND (SELECT ROUND((COUNT(*) / c.capacidad_maxima) * 100, 2) FROM estudiante_curso ec WHERE ec.id_curso = c.id_curso) `;
+        if (ocupacion === 'lleno') query += ` >= 80`;
+        else if (ocupacion === 'medio') query += ` BETWEEN 40 AND 79.99`;
+        else if (ocupacion === 'bajo') query += ` < 40`;
+      }
+
+      const [rows] = await pool.query(query, params);
       return rows[0];
     } catch (error) {
       console.error('Error en getEstadisticasCursos:', error);
@@ -444,18 +483,18 @@ COUNT(DISTINCT c.id_curso) as total_cursos,
     try {
       const query = `
         SELECT
-c.id_curso,
-  c.codigo_curso,
-  c.nombre,
-  c.horario,
-  c.fecha_inicio,
-  c.fecha_fin,
-  tc.nombre as tipo_curso
+          c.id_curso,
+          c.codigo_curso,
+          c.nombre,
+          c.horario,
+          c.fecha_inicio,
+          c.fecha_fin,
+          tc.nombre as tipo_curso
         FROM cursos c
         INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
         WHERE c.estado IN('activo', 'planificado')
         ORDER BY c.fecha_inicio DESC, c.nombre
-  `;
+      `;
 
       const [rows] = await pool.query(query);
       return rows;
@@ -488,7 +527,6 @@ c.id_curso,
         };
       }
 
-      // Si no hay cursos, retornar rango por defecto
       return {
         fechaInicio: '2020-01-01',
         fechaFin: '2050-12-31'

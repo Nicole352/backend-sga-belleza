@@ -61,6 +61,9 @@ class TareasModel {
         m.id_curso,
         c.nombre as curso_nombre,
         c.codigo_curso,
+        c.horario,
+        aa.hora_inicio,
+        aa.hora_fin,
         d.nombres as docente_nombres,
         d.apellidos as docente_apellidos,
         (SELECT COUNT(*) FROM entregas_tareas WHERE id_tarea = t.id_tarea) as total_entregas,
@@ -71,6 +74,7 @@ class TareasModel {
       INNER JOIN modulos_curso m ON t.id_modulo = m.id_modulo
       INNER JOIN cursos c ON m.id_curso = c.id_curso
       INNER JOIN docentes d ON t.id_docente = d.id_docente
+      LEFT JOIN asignaciones_aulas aa ON c.id_curso = aa.id_curso AND aa.estado = 'activo'
       LEFT JOIN categorias_evaluacion c_eval ON t.id_categoria = c_eval.id_categoria
       WHERE t.id_tarea = ?
     `, [id_tarea]);

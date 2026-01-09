@@ -22,11 +22,14 @@ const upload = multer({
   }
 });
 
-// GET /api/pagos-mensuales/reporte/excel - Generar reporte Excel (sin autenticación para admin)
+// GET /api/pagos-mensuales/reporte/excel (Admin)
 router.get('/reporte/excel', pagosMenualesController.generarReporteExcel);
 
 // Todas las rutas requieren autenticación
 router.use(authMiddleware);
+
+// GET /api/pagos-mensuales/reporte-estudiante - Generar reporte Excel (Estudiante)
+router.get('/reporte-estudiante', pagosMenualesController.generarReporteEstudiante);
 
 // GET /api/pagos-mensuales/resumen - Obtener resumen de pagos del estudiante
 router.get('/resumen', pagosMenualesController.getResumenPagos);

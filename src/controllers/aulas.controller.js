@@ -308,7 +308,7 @@ exports.deleteAula = async (req, res) => {
 
     // Verificar que el aula existe
     const [existingAula] = await pool.execute(
-      'SELECT id_aula, nombre FROM aulas WHERE id_aula = ?',
+      'SELECT id_aula, nombre, codigo_aula FROM aulas WHERE id_aula = ?',
       [id]
     );
 
@@ -319,8 +319,20 @@ exports.deleteAula = async (req, res) => {
       });
     }
 
-    // TODO: Verificar si el aula está siendo usada en cursos o asignaciones
-    // antes de eliminar (opcional)
+    // Verificar si el aula está siendo usada en asignaciones
+    const [asignaciones] = await pool.execute(
+      'SELECT COUNT(*) as count FROM asignaciones_aulas WHERE id_aula = ?',
+      [id]
+    );
+
+    if (asignaciones[0].count > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No se puede eliminar esta aula porque tiene asignaciones activas',
+        enUso: true,
+        cantidadAsignaciones: asignaciones[0].count
+      });
+    }
 
     // Registrar auditoría antes de eliminar
     try {

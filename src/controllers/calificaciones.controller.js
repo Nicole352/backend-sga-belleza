@@ -1,4 +1,252 @@
+const ExcelJS = require('exceljs');
 const CalificacionesModel = require("../models/calificaciones.model");
+
+// ... (existing code)
+
+// GET /api/calificaciones/reporte-estudiante/:id_curso - Generar Excel de notas para estudiante
+async function generarReporteNotasEstudiante(req, res) {
+  try {
+    const { id_curso } = req.params;
+    const { id_usuario: id_estudiante } = req.user;
+    const { pool } = require("../config/database");
+
+    // 1. Obtener información del curso y del estudiante por separado para asegurar datos reales
+    const [cursoInfo] = await pool.execute(
+      `SELECT c.nombre as nombre_curso, c.codigo_curso 
+       FROM cursos c 
+       WHERE c.id_curso = ?`,
+      [id_curso]
+    );
+
+    const [estudianteInfo] = await pool.execute(
+      `SELECT id_usuario, nombre, apellido, cedula 
+       FROM usuarios 
+       WHERE id_usuario = ?`,
+      [id_estudiante]
+    );
+
+    if (cursoInfo.length === 0) {
+      return res.status(404).json({ error: "Curso no encontrado" });
+    }
+
+    if (estudianteInfo.length === 0) {
+      return res.status(404).json({ error: "Estudiante no encontrado" });
+    }
+
+    const curso = cursoInfo[0];
+    const estudiante = estudianteInfo[0];
+
+    // 2. Obtener desglose de notas y promedios
+    const todasLasNotas = await CalificacionesModel.getByEstudianteCurso(id_estudiante, id_curso);
+    const desgloseModulos = await CalificacionesModel.getDesglosePorModulos(id_estudiante, id_curso);
+    const promedioData = await CalificacionesModel.getPromedioGlobalBalanceado(id_estudiante, id_curso);
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Notas', {
+      pageSetup: {
+        orientation: 'portrait',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        paperSize: 9,
+        margins: { left: 0.2, right: 0.2, top: 0.2, bottom: 0.6, header: 0.1, footer: 0.2 },
+        printTitlesRow: '1:4'
+      },
+      headerFooter: {
+        oddFooter: `&L&"-,Bold"&16Escuela de Belleza Jessica Vélez&"-,Regular"&12&RDescargado: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })} — Pág. &P de &N`
+      }
+    });
+
+    // Encabezado
+    sheet.mergeCells('A1:F1');
+    const cellTitle = sheet.getCell('A1');
+    cellTitle.value = `REPORTE DE CALIFICACIONES - ${(curso.nombre_curso || '').toUpperCase()}`;
+    cellTitle.font = { bold: true, size: 12, name: 'Calibri' };
+    cellTitle.alignment = { horizontal: 'center', vertical: 'middle' };
+    sheet.getRow(1).height = 25;
+
+    sheet.mergeCells('A2:F2');
+    const cellInfo = sheet.getCell('A2');
+    cellInfo.value = `ESTUDIANTE: ${estudiante.apellido.toUpperCase()} ${estudiante.nombre.toUpperCase()} | ID: ${estudiante.cedula}`;
+    cellInfo.font = { size: 10, name: 'Calibri' };
+    cellInfo.alignment = { horizontal: 'center', vertical: 'middle' };
+    sheet.getRow(1).height = 30;
+    sheet.getRow(2).height = 25;
+
+    // Table Headers (Fila 4)
+    const headers = ['#', 'MÓDULO', 'CATEGORÍA', 'TAREA', 'NOTA', 'PONDERACIÓN'];
+    const headerRow = sheet.getRow(4);
+    headers.forEach((h, i) => {
+      const cell = headerRow.getCell(i + 1);
+      cell.value = h.toUpperCase();
+      cell.font = { bold: true, size: 10, name: 'Calibri', color: { argb: 'FF000000' } };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' }
+      };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    });
+    headerRow.height = 25;
+
+    // Configizar columnas
+    sheet.columns = [
+      { width: 5 },  // #
+      { width: 22 }, // Módulo
+      { width: 22 }, // Categoría
+      { width: 45 }, // Tarea
+      { width: 10 }, // Nota
+      { width: 14 }  // Ponderación
+    ];
+
+    // Datos por Módulo
+    const modulosAgrupados = {};
+    todasLasNotas.forEach(nota => {
+      if (!modulosAgrupados[nota.modulo_nombre]) modulosAgrupados[nota.modulo_nombre] = [];
+      modulosAgrupados[nota.modulo_nombre].push(nota);
+    });
+
+    let modCounter = 1;
+    Object.keys(modulosAgrupados).forEach(moduloNombre => {
+      const tareas = modulosAgrupados[moduloNombre];
+      const startRowModulo = sheet.lastRow.number + 1;
+
+      // Agrupar por categoría dentro del módulo
+      const categoriasDeModulo = {};
+      tareas.forEach(t => {
+        const cat = t.categoria_nombre || "SIN CATEGORÍA";
+        if (!categoriasDeModulo[cat]) categoriasDeModulo[cat] = [];
+        categoriasDeModulo[cat].push(t);
+      });
+
+      Object.keys(categoriasDeModulo).forEach(catNombre => {
+        const tareasCat = categoriasDeModulo[catNombre];
+        const startRowCat = sheet.lastRow.number + 1;
+        const catPond = tareasCat[0].categoria_ponderacion || 0;
+
+        tareasCat.forEach((t) => {
+          const numTareasCat = tareasCat.length;
+          const valorTarea = numTareasCat > 0 ? (catPond / numTareasCat) : 0;
+
+          const row = sheet.addRow([
+            modCounter,
+            moduloNombre.toUpperCase(),
+            catNombre.toUpperCase(),
+            t.tarea_titulo.toUpperCase(),
+            t.nota !== null ? parseFloat(t.nota) : "-",
+            valorTarea.toFixed(2)
+          ]);
+
+          row.eachCell((cell, colNum) => {
+            cell.font = { size: 10, name: 'Calibri' };
+            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+            // Formatos específicos
+            if (colNum === 1) {
+              cell.numFmt = '0'; // Índice
+            } else if (colNum === 5 || colNum === 6) {
+              cell.numFmt = '0.00'; // Nota y Ponderación
+            } else {
+              cell.numFmt = '@'; // Texto
+            }
+
+            // Alineación
+            cell.alignment = {
+              horizontal: (colNum === 1 || colNum >= 5) ? 'center' : 'left',
+              vertical: 'middle',
+              wrapText: true
+            };
+          });
+        });
+
+        // Merging para Categoría si tiene más de una tarea
+        if (tareasCat.length > 1) {
+          sheet.mergeCells(startRowCat, 3, sheet.lastRow.number, 3);
+        }
+      });
+
+      // Merging para Módulo e Índice se tiene más de una tarea
+      if (tareas.length > 1) {
+        sheet.mergeCells(startRowModulo, 1, sheet.lastRow.number, 1);
+        sheet.mergeCells(startRowModulo, 2, sheet.lastRow.number, 2);
+      }
+
+      // Fila de Promedio del Módulo
+      const modInfo = desgloseModulos.find(m => m.nombre_modulo === moduloNombre);
+      const promMod = modInfo ? parseFloat(modInfo.promedio_modulo_sobre_10) : 0;
+
+      const subTotalRow = sheet.addRow([
+        `PROMEDIO ${moduloNombre.toUpperCase()}`,
+        '',
+        '',
+        '',
+        promMod,
+        ''
+      ]);
+      sheet.mergeCells(subTotalRow.number, 1, subTotalRow.number, 4);
+
+      subTotalRow.eachCell((cell, colNum) => {
+        cell.font = { bold: true, size: 10, name: 'Calibri' };
+        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+        if (colNum === 1) {
+          cell.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+          cell.numFmt = '@';
+        } else if (colNum === 5) {
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          cell.numFmt = '0.00';
+        } else {
+          cell.numFmt = '@';
+        }
+      });
+
+      modCounter++;
+    });
+
+    // Fila de Promedio Global Final
+    const promGlobal = parseFloat(promedioData.promedio_global);
+    const finalRow = sheet.addRow([
+      'PROMEDIO GLOBAL FINAL',
+      '',
+      '',
+      '',
+      promGlobal,
+      ''
+    ]);
+    sheet.mergeCells(finalRow.number, 1, finalRow.number, 4);
+
+    finalRow.eachCell((cell, colNum) => {
+      cell.font = { bold: true, size: 11, name: 'Calibri' };
+      cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+      if (colNum === 1) {
+        cell.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+        cell.numFmt = '@';
+      } else if (colNum === 5) {
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        cell.numFmt = '0.00';
+      } else {
+        cell.numFmt = '@';
+      }
+    });
+
+    // Response
+
+    // Response
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=Notas_${estudiante.apellido.toUpperCase()}${estudiante.nombre.toUpperCase()}.xlsx`
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error("Error al generar reporte de notas:", error);
+    res.status(500).json({ error: "Error interno al generar el reporte" });
+  }
+}
 
 // GET /api/calificaciones/estudiante/curso/:id_curso - Obtener calificaciones de un estudiante en un curso
 async function getCalificacionesByEstudianteCurso(req, res) {
@@ -317,4 +565,5 @@ module.exports = {
   getDesglosePorModulos,
   getCalificacionByEntrega,
   getCalificacionesCompletasCurso,
+  generarReporteNotasEstudiante
 };

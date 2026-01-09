@@ -22,6 +22,8 @@ async function getCursosDocenteController(req, res) {
         c.fecha_fin,
         c.estado,
         tc.nombre AS tipo_curso_nombre,
+        aa.hora_inicio,
+        aa.hora_fin,
         COUNT(DISTINCT ec.id_estudiante) AS total_estudiantes
       FROM asignaciones_aulas aa
       INNER JOIN cursos c ON aa.id_curso = c.id_curso
@@ -32,7 +34,7 @@ async function getCursosDocenteController(req, res) {
         AND aa.estado = 'activa'
         AND c.estado IN ('activo', 'planificado')
       GROUP BY c.id_curso, c.codigo_curso, c.nombre, c.horario, 
-               c.fecha_inicio, c.fecha_fin, c.estado, tc.nombre
+               c.fecha_inicio, c.fecha_fin, c.estado, tc.nombre, aa.hora_inicio, aa.hora_fin
       ORDER BY c.fecha_inicio DESC, c.nombre
     `, [id_docente]);
 
@@ -270,10 +272,10 @@ async function guardarAsistenciaController(req, res) {
       operacion: 'INSERT',
       id_registro: id_curso,
       usuario_id: req.user?.id_usuario || id_docente,
-      datos_nuevos: { 
-        id_curso, 
+      datos_nuevos: {
+        id_curso,
         nombre_curso: nombreCurso,
-        fecha, 
+        fecha,
         total_estudiantes: asistencias.length,
         presentes,
         ausentes,
