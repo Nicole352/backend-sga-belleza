@@ -58,11 +58,13 @@ app.use(compression());
 const allowedOrigins = process.env.NODE_ENV === 'production'
   ? [process.env.FRONTEND_URL].filter(Boolean)
   : [
-      process.env.FRONTEND_URL,
-      "http://localhost:3000",
-      "http://localhost:5173",
-      "http://localhost:4173"
-    ].filter(Boolean);
+    process.env.FRONTEND_URL,
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:4173"
+
+
+  ].filter(Boolean);
 
 app.use(
   cors({

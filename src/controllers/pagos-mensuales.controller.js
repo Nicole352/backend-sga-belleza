@@ -908,10 +908,13 @@ exports.generarReporteEstudiante = async (req, res) => {
         c.nombre as curso_nombre,
         c.codigo_curso,
         c.horario as curso_horario,
-        m.codigo_matricula
+        m.codigo_matricula,
+        verificador.nombre as verificado_por_nombre,
+        verificador.apellido as verificado_por_apellido
       FROM pagos_mensuales pm
       INNER JOIN matriculas m ON m.id_matricula = pm.id_matricula
       INNER JOIN cursos c ON c.id_curso = m.id_curso
+      LEFT JOIN usuarios verificador ON pm.verificado_por = verificador.id_usuario
       WHERE m.id_estudiante = ?
       ORDER BY c.nombre, pm.numero_cuota ASC
     `;
@@ -937,7 +940,7 @@ exports.generarReporteEstudiante = async (req, res) => {
         fitToPage: true,
         fitToWidth: 1,
         fitToHeight: 0,
-        paperSize: 9, // A4
+        paperSize: 9, // A4 horizontal
         margins: { left: 0.25, right: 0.25, top: 0.3, bottom: 0.75, header: 0.1, footer: 0.3 },
         printTitlesRow: '1:4'
       },
@@ -947,7 +950,7 @@ exports.generarReporteEstudiante = async (req, res) => {
     });
 
     // Título (Fila 1)
-    sheet1.mergeCells('A1:K1');
+    sheet1.mergeCells('A1:M1');
     const titleCell = sheet1.getCell('A1');
     titleCell.value = 'REPORTE DE PAGOS - ESTUDIANTE';
     titleCell.font = { bold: true, size: 14, color: { argb: 'FF000000' }, name: 'Calibri' }; // NEGRO
@@ -955,7 +958,7 @@ exports.generarReporteEstudiante = async (req, res) => {
     sheet1.getRow(1).height = 30;
 
     // Info Estudiante (Fila 2)
-    sheet1.mergeCells('A2:K2');
+    sheet1.mergeCells('A2:M2');
     const subTitle = sheet1.getCell('A2');
     subTitle.value = `ESTUDIANTE: ${estudiante.apellido || ''} ${estudiante.nombre || ''} | ID: ${estudiante.cedula || ''} | GENERADO: ${new Date().toLocaleDateString('es-EC')}`;
     subTitle.value = subTitle.value.toUpperCase(); // Asegurar mayúsculas
@@ -965,12 +968,13 @@ exports.generarReporteEstudiante = async (req, res) => {
 
     // Encabezados (Fila 4)
     const headers = [
-      'CURSO', 'CÓDIGO CURSO', 'CUOTA #', 'MONTO', 'VENCIMIENTO', 'FECHA PAGO',
-      'MÉTODO', 'COMPROBANTE', 'ESTADO', 'OBSERVACIONES'
+      '#', 'CURSO', 'CÓDIGO CURSO', 'CUOTA #', 'MONTO', 'VENCIMIENTO', 'FECHA PAGO',
+      'MÉTODO', 'COMPROBANTE', 'ESTADO', 'VERIFICADO POR', 'OBSERVACIONES'
     ];
 
     // Asignar anchos de columna
     sheet1.columns = [
+      { key: 'index', width: 5 },
       { key: 'curso', width: 25 },
       { key: 'cod_curso', width: 15 },
       { key: 'cuota', width: 10 },
@@ -980,6 +984,7 @@ exports.generarReporteEstudiante = async (req, res) => {
       { key: 'metodo', width: 15 },
       { key: 'comprobante', width: 18 },
       { key: 'estado', width: 15 },
+      { key: 'verificador', width: 25 },
       { key: 'obs', width: 30 }
     ];
 
@@ -1000,17 +1005,19 @@ exports.generarReporteEstudiante = async (req, res) => {
     headerRow.height = 30;
 
     // Datos
-    pagos.forEach(p => {
+    pagos.forEach((p, index) => {
       const row = sheet1.addRow({
+        index: index + 1,
         curso: p.curso_nombre ? p.curso_nombre.toUpperCase() : '',
         cod_curso: p.codigo_curso,
         cuota: Number(p.numero_cuota),
         monto: Number(p.monto),
         venc: new Date(p.fecha_vencimiento),
         f_pago: p.fecha_pago ? new Date(p.fecha_pago) : 'PENDIENTE',
-        metodo: p.metodo_pago ? p.metodo_pago.toUpperCase() : '-',
+        metodo: p.fecha_pago ? (p.metodo_pago ? p.metodo_pago.toUpperCase() : '-') : 'PENDIENTE',
         comprobante: p.numero_comprobante || '-',
         estado: p.estado || 'PENDIENTE',
+        verificador: p.verificado_por_nombre ? `${p.verificado_por_apellido.toUpperCase()} ${p.verificado_por_nombre.toUpperCase()}` : '-',
         obs: p.observaciones ? p.observaciones.toUpperCase() : '-'
       });
 
@@ -1025,23 +1032,92 @@ exports.generarReporteEstudiante = async (req, res) => {
         };
 
         // Alineación específica
-        if ([3, 4, 5, 6, 7, 8].includes(colNum)) { // Cuota, Monto, Fechas, Estado
+        if ([1, 2, 3, 4, 5, 6, 7, 8, 9].includes(colNum)) { // Índice, Curso, Codigo, Cuota, Monto, Fechas, Estado
           cell.alignment = { horizontal: 'center', vertical: 'middle' };
         } else {
           cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
         }
 
         // Formatos
-        if (colNum === 4) cell.numFmt = '$#,##0.00'; // Monto
-        if (colNum === 5 || (colNum === 6 && p.fecha_pago)) cell.numFmt = 'dd/mm/yyyy'; // Fechas
+        if (colNum === 5) cell.numFmt = '$#,##0.00'; // Monto
+        if (colNum === 6 || (colNum === 7 && p.fecha_pago)) cell.numFmt = 'dd/mm/yyyy'; // Fechas
 
         // Color de estado
-        if (colNum === 9) { // Columna Estado
+        if (colNum === 10) { // Columna Estado
           cell.value = (p.estado || 'PENDIENTE').toUpperCase();
           cell.font = { bold: true, color: { argb: 'FF000000' } }; // Texto negro siempre
         }
       });
     });
+
+    // Post-procesamiento 1: Combinar celdas de "CURSO" (Columna 2 / B) y "CÓDIGO" (Columna 3 / C)
+    let rowCurso = 5;
+    while (rowCurso <= sheet1.lastRow.number) {
+      let nextRow = rowCurso + 1;
+      const cellCurso = sheet1.getCell(`B${rowCurso}`);
+      const valCurso = cellCurso.value;
+
+      if (valCurso) {
+        while (nextRow <= sheet1.lastRow.number) {
+          const nextCell = sheet1.getCell(`B${nextRow}`);
+          if (nextCell.value === valCurso) {
+            nextRow++;
+          } else {
+            break;
+          }
+        }
+
+        if (nextRow > rowCurso + 1) {
+          const endRow = nextRow - 1;
+          sheet1.mergeCells(`B${rowCurso}:B${endRow}`); // Curso
+          sheet1.mergeCells(`C${rowCurso}:C${endRow}`); // Código Curso
+          rowCurso = nextRow;
+        } else {
+          rowCurso++;
+        }
+      } else {
+        rowCurso++;
+      }
+    }
+
+    // Post-procesamiento 2: Combinar celdas de "COMPROBANTE" (Columna 9 / I)
+    let currentRow = 5; // Primera fila de datos
+    while (currentRow <= sheet1.lastRow.number) {
+      let nextRow = currentRow + 1;
+      const currentCell = sheet1.getCell(`I${currentRow}`);
+      const currentVal = currentCell.value;
+
+      // Solo combinar si hay valor y no es guión
+      if (currentVal && currentVal !== '-') {
+        while (nextRow <= sheet1.lastRow.number) {
+          const nextCell = sheet1.getCell(`I${nextRow}`);
+          if (nextCell.value === currentVal) {
+            nextRow++;
+          } else {
+            break;
+          }
+        }
+
+        // Si encontramos duplicados consecutivos
+        if (nextRow > currentRow + 1) {
+          const endRow = nextRow - 1;
+          sheet1.mergeCells(`I${currentRow}:I${endRow}`);
+
+          // Combinar también columnas relacionas con la transacción (Fecha Pago, Metodo, Estado, Verificador, Observaciones)
+          sheet1.mergeCells(`G${currentRow}:G${endRow}`); // Fecha Pago
+          sheet1.mergeCells(`H${currentRow}:H${endRow}`); // Metodo
+          sheet1.mergeCells(`J${currentRow}:J${endRow}`); // Estado
+          sheet1.mergeCells(`K${currentRow}:K${endRow}`); // Verificado Por
+          sheet1.mergeCells(`L${currentRow}:L${endRow}`); // Observaciones
+
+          currentRow = nextRow;
+        } else {
+          currentRow++;
+        }
+      } else {
+        currentRow++;
+      }
+    }
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=Mis_Pagos_${estudiante.cedula}.xlsx`);

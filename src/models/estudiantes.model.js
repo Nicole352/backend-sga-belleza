@@ -619,16 +619,21 @@ class EstudiantesModel {
         d.nombres as docente_nombres,
         d.apellidos as docente_apellidos,
         d.titulo_profesional as docente_titulo,
-        -- Calcular progreso real basado en tareas y entregas
+        -- Calcular progreso real basado en porcentaje de tareas completadas (entregadas)
         COALESCE(
-          (SELECT ROUND(AVG(CASE 
-            WHEN cal.nota IS NOT NULL THEN (cal.nota / t.nota_maxima) * 100
-            ELSE 0 
-          END), 2)
+          (SELECT 
+            CASE 
+              WHEN COUNT(t.id_tarea) = 0 THEN 0
+              ELSE ROUND(
+                (SUM(CASE 
+                  WHEN e.id_entrega IS NOT NULL AND e.estado != 'pendiente' THEN 1 
+                  ELSE 0 
+                END) / COUNT(t.id_tarea)) * 100
+              )
+            END
           FROM modulos_curso mc
           INNER JOIN tareas_modulo t ON mc.id_modulo = t.id_modulo
           LEFT JOIN entregas_tareas e ON t.id_tarea = e.id_tarea AND e.id_estudiante = m.id_estudiante
-          LEFT JOIN calificaciones_tareas cal ON e.id_entrega = cal.id_entrega
           WHERE mc.id_curso = c.id_curso), 0) as progreso,
         -- Calcular calificación real basada en promedio GLOBAL PONDERADO
         COALESCE(
@@ -667,8 +672,8 @@ class EstudiantesModel {
           LEFT JOIN entregas_tareas e ON t.id_tarea = e.id_tarea AND e.id_estudiante = m.id_estudiante
           WHERE mc.id_curso = c.id_curso AND (e.estado = 'pendiente' OR e.id_entrega IS NULL)), 
           0) as tareas_pendientes,
-        -- Próxima clase (simulado)
-        DATE_ADD(COALESCE(c.fecha_inicio, CURDATE()), INTERVAL FLOOR(RAND() * 30) DAY) as proxima_clase
+        -- Próxima clase se calcula en JS
+        NULL as proxima_clase
       FROM matriculas m
       LEFT JOIN cursos c ON m.id_curso = c.id_curso
       LEFT JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
@@ -686,44 +691,91 @@ class EstudiantesModel {
       ORDER BY m.fecha_matricula DESC
     `, [id_usuario]);
 
-    return cursos.map(curso => ({
-      id_curso: curso.id_curso,
-      codigo_curso: curso.codigo_curso || curso.codigo_matricula,
-      nombre: curso.nombre,
-      fecha_inicio: curso.fecha_inicio,
-      fecha_fin: curso.fecha_fin,
-      capacidad_maxima: curso.capacidad_maxima,
-      estado: curso.estado_curso,
-      tipo_curso: curso.tipo_curso_nombre,
-      precio_base: curso.precio_base || curso.monto_matricula,
-      progreso: curso.progreso,
-      calificacion: curso.calificacion_final,
-      tareasPendientes: curso.tareas_pendientes,
-      estado_matricula: curso.estado_matricula,
-      fecha_matricula: curso.fecha_matricula,
-      proximaClase: curso.proxima_clase,
-      // Información del aula
-      aula: {
-        codigo: curso.codigo_aula,
-        nombre: curso.aula_nombre,
-        ubicacion: curso.aula_ubicacion
-      },
-      // Información del horario
-      horario: {
-        hora_inicio: curso.hora_inicio,
-        hora_fin: curso.hora_fin,
-        dias: curso.dias
-      },
-      // Información del docente
-      docente: {
-        nombres: curso.docente_nombres,
-        apellidos: curso.docente_apellidos,
-        titulo: curso.docente_titulo,
-        nombre_completo: curso.docente_nombres && curso.docente_apellidos
-          ? `${curso.docente_nombres} ${curso.docente_apellidos}`
-          : null
+    return cursos.map(curso => {
+      // Calcular próxima clase real
+      let proximaClase = null;
+      const diasMap = { 'domingo': 0, 'lunes': 1, 'martes': 2, 'miércoles': 3, 'miercoles': 3, 'jueves': 4, 'viernes': 5, 'sábado': 6, 'sabado': 6 };
+
+      if (curso.dias && curso.estado_curso === 'activo') {
+        const hoy = new Date();
+        const fechaInicio = new Date(curso.fecha_inicio);
+        const fechaFin = new Date(curso.fecha_fin);
+
+        // Normalizar fechas para comparación sin hora
+        hoy.setHours(0, 0, 0, 0);
+        fechaInicio.setHours(0, 0, 0, 0);
+        fechaFin.setHours(0, 0, 0, 0);
+
+        // Si el curso no ha empezado, la próxima clase es la fecha de inicio
+        if (hoy < fechaInicio) {
+          proximaClase = curso.fecha_inicio;
+        }
+        // Si el curso está en curso y no ha terminado
+        else if (hoy <= fechaFin) {
+          const diasClase = curso.dias.toLowerCase().split(',').map(d => d.trim()).map(d => diasMap[d]).filter(d => d !== undefined);
+
+          if (diasClase.length > 0) {
+            let fechaTentativa = new Date(hoy);
+            let encontrado = false;
+
+            // Buscar en los próximos 7 días
+            for (let i = 0; i < 7; i++) {
+              // Si es hoy, verificar si la hora de inicio ya pasó (opcional, por ahora asumimos el día completo)
+              // Aquí simplificamos buscando el primer día coincidente a partir de hoy (inclusive)
+              const diaSemana = fechaTentativa.getDay();
+
+              if (diasClase.includes(diaSemana)) {
+                // Si es hoy, podríamos validar la hora, pero para simplificar lo tomamos como válido
+                // O si se prefiere, buscar el siguiente si es hoy
+                proximaClase = new Date(fechaTentativa);
+                encontrado = true;
+                break;
+              }
+              fechaTentativa.setDate(fechaTentativa.getDate() + 1);
+            }
+          }
+        }
       }
-    }));
+
+      return {
+        id_curso: curso.id_curso,
+        codigo_curso: curso.codigo_curso || curso.codigo_matricula,
+        nombre: curso.nombre,
+        fecha_inicio: curso.fecha_inicio,
+        fecha_fin: curso.fecha_fin,
+        capacidad_maxima: curso.capacidad_maxima,
+        estado: curso.estado_curso,
+        tipo_curso: curso.tipo_curso_nombre,
+        precio_base: curso.precio_base || curso.monto_matricula,
+        progreso: curso.progreso,
+        calificacion: curso.calificacion_final,
+        tareasPendientes: curso.tareas_pendientes,
+        estado_matricula: curso.estado_matricula,
+        fecha_matricula: curso.fecha_matricula,
+        proximaClase: proximaClase ? proximaClase.toISOString() : null,
+        // Información del aula
+        aula: {
+          codigo: curso.codigo_aula,
+          nombre: curso.aula_nombre,
+          ubicacion: curso.aula_ubicacion
+        },
+        // Información del horario
+        horario: {
+          hora_inicio: curso.hora_inicio,
+          hora_fin: curso.hora_fin,
+          dias: curso.dias
+        },
+        // Información del docente
+        docente: {
+          nombres: curso.docente_nombres,
+          apellidos: curso.docente_apellidos,
+          titulo: curso.docente_titulo,
+          nombre_completo: curso.docente_nombres && curso.docente_apellidos
+            ? `${curso.docente_apellidos} ${curso.docente_nombres}`
+            : null
+        }
+      };
+    });
   }
 
   // Obtener estudiantes recientes

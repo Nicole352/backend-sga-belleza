@@ -28,9 +28,9 @@ async function getSystemMetrics(req, res) {
         const cpuUsage = process.cpuUsage();
         const cpuPercent = ((cpuUsage.user + cpuUsage.system) / 1000000 / uptimeSeconds * 100).toFixed(2);
 
-        // 4. Conexiones activas del pool de MySQL
-        const poolStats = pool.pool;
-        const activeConnections = poolStats._allConnections.length - poolStats._freeConnections.length;
+        // 4. Conexiones activas (Usuarios conectados por WebSocket)
+        const { getConnectedUsersCount } = require('../services/socket.service');
+        const activeConnections = getConnectedUsersCount(req);
 
         // 5. Peticiones por minuto y tasa de errores (DATOS REALES del middleware)
         const metricsData = getMetrics();
@@ -47,6 +47,7 @@ async function getSystemMetrics(req, res) {
             timestamp: new Date().toISOString(),
             // Datos adicionales para debugging
             debug: {
+                activeUserIds: req.app.get('userSockets') ? [...req.app.get('userSockets').keys()] : [],
                 heapUsedMB: heapUsedMB.toFixed(2),
                 heapTotalMB: heapTotalMB.toFixed(2),
                 rss: (memUsage.rss / 1024 / 1024).toFixed(2) + ' MB',
@@ -66,12 +67,14 @@ async function getSystemMetrics(req, res) {
  */
 async function getDatabaseMetrics(req, res) {
     try {
-        // 1. Total de conexiones
+        // 1. Total de conexiones (excluyendo la consulta de monitoreo)
         const [processlist] = await pool.query('SHOW PROCESSLIST');
-        const totalConnections = processlist.length;
+        const currentThreadId = processlist.find(p => p.Info && p.Info.includes('SHOW PROCESSLIST'))?.Id;
+        const realConnections = processlist.filter(p => p.Id !== currentThreadId);
+        const totalConnections = realConnections.length;
 
-        // 2. Consultas activas (que no estén en estado Sleep)
-        const activeQueries = processlist.filter(p => p.Command !== 'Sleep').length;
+        // 2. Consultas activas (que no estén en estado Sleep, excluyendo monitoreo)
+        const activeQueries = realConnections.filter(p => p.Command !== 'Sleep').length;
 
         // 3. Tamaño de la base de datos
         const [dbSize] = await pool.query(`

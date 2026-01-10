@@ -53,6 +53,8 @@ const startServer = async () => {
         'http://localhost:3000',
         'http://localhost:5173',
         'http://localhost:4173'
+
+
       ];
 
     const io = new Server(server, {
@@ -62,7 +64,7 @@ const startServer = async () => {
       }
     });
 
-    // Mapa para relacionar userId -> socketId y permitir enviar eventos a usuarios específicos
+    // Mapa para relacionar userId -> Set<socketId> y permitir múltiples pestañas por usuario
     const userSockets = new Map();
     const userRoles = new Map(); // Mapa para relacionar userId -> rol
 
@@ -79,6 +81,8 @@ const startServer = async () => {
           rol = 'unknown';
         } else if (typeof userData === 'object') {
           userId = userData.userId || userData.id_usuario;
+          // Asegurar que userId sea string para evitar duplicados por tipo (123 vs "123")
+          if (userId) userId = String(userId);
           rol = userData.rol;
           cursos = userData.cursos || []; // Array de IDs de cursos
         } else {
@@ -86,8 +90,11 @@ const startServer = async () => {
         }
 
         if (userId) {
-          // Guardar en los mapas
-          userSockets.set(userId, socket.id);
+          // Guardar en los mapas (Manejo de múltiples sockets por usuario)
+          if (!userSockets.has(userId)) {
+            userSockets.set(userId, new Set());
+          }
+          userSockets.get(userId).add(socket.id);
           if (rol && rol !== 'unknown') {
             userRoles.set(userId, rol);
           }
@@ -114,22 +121,41 @@ const startServer = async () => {
 
           // Confirmar registro al cliente
           socket.emit('registered', { userId, socketId: socket.id, rol });
+
+          // Notificar a superadmins sobre el cambio en conexiones activas
+          io.to('rol_superadmin').emit('activeConnectionsUpdate', {
+            activeConnections: userSockets.size
+          });
         }
       });
 
       // Manejar desconexión y limpiar los mapas
       socket.on('disconnect', () => {
-        for (const [userId, socketId] of userSockets.entries()) {
-          if (socketId === socket.id) {
-            const rol = userRoles.get(userId);
-            userSockets.delete(userId);
-            userRoles.delete(userId);
-            if (rol) {
-              console.log(`Usuario ${userId} (${rol}) desconectado`);
+        // Buscar y eliminar el socket en todos los usuarios
+        for (const [userId, sockets] of userSockets.entries()) {
+          if (sockets.has(socket.id)) {
+            sockets.delete(socket.id);
+
+            // Si el usuario ya no tiene sockets activos, eliminarlo completamente
+            if (sockets.size === 0) {
+              const rol = userRoles.get(userId);
+              userSockets.delete(userId);
+              userRoles.delete(userId);
+
+              // Notificar a superadmins sobre el cambio en conexiones activas
+              io.to('rol_superadmin').emit('activeConnectionsUpdate', {
+                activeConnections: userSockets.size
+              });
+
+              if (rol) {
+                console.log(`Usuario ${userId} (${rol}) se ha desconectado completamente`);
+              } else {
+                console.log(`Usuario ${userId} se ha desconectado completamente`);
+              }
             } else {
-              console.log(`Usuario ${userId} desconectado`);
+              console.log(`Socket ${socket.id} desconectado. Usuario ${userId} mantiene ${sockets.size} conexiones activas`);
             }
-            break;
+            break; // Un socket solo pertenece a un usuario a la vez, podemos salir
           }
         }
         console.log('Cliente desconectado:', socket.id);

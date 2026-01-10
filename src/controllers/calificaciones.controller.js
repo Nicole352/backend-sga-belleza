@@ -12,9 +12,19 @@ async function generarReporteNotasEstudiante(req, res) {
 
     // 1. Obtener información del curso y del estudiante por separado para asegurar datos reales
     const [cursoInfo] = await pool.execute(
-      `SELECT c.nombre as nombre_curso, c.codigo_curso 
+      `SELECT c.nombre as nombre_curso, c.codigo_curso, c.horario
        FROM cursos c 
        WHERE c.id_curso = ?`,
+      [id_curso]
+    );
+
+    // 1.1 Obtener información del docente y horario de clases (asignación)
+    const [asignacionInfo] = await pool.execute(
+      `SELECT d.nombres, d.apellidos, aa.hora_inicio, aa.hora_fin
+       FROM asignaciones_aulas aa
+       INNER JOIN docentes d ON aa.id_docente = d.id_docente
+       WHERE aa.id_curso = ? AND aa.estado = 'activa'
+       LIMIT 1`,
       [id_curso]
     );
 
@@ -50,7 +60,7 @@ async function generarReporteNotasEstudiante(req, res) {
         fitToHeight: 0,
         paperSize: 9,
         margins: { left: 0.2, right: 0.2, top: 0.2, bottom: 0.6, header: 0.1, footer: 0.2 },
-        printTitlesRow: '1:4'
+        printTitlesRow: '1:5'
       },
       headerFooter: {
         oddFooter: `&L&"-,Bold"&16Escuela de Belleza Jessica Vélez&"-,Regular"&12&RDescargado: ${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })} — Pág. &P de &N`
@@ -70,12 +80,25 @@ async function generarReporteNotasEstudiante(req, res) {
     cellInfo.value = `ESTUDIANTE: ${estudiante.apellido.toUpperCase()} ${estudiante.nombre.toUpperCase()} | ID: ${estudiante.cedula}`;
     cellInfo.font = { size: 10, name: 'Calibri' };
     cellInfo.alignment = { horizontal: 'center', vertical: 'middle' };
-    sheet.getRow(1).height = 30;
     sheet.getRow(2).height = 25;
 
-    // Table Headers (Fila 4)
+    // Info Docente y Horario (Fila 3)
+    const asignacion = asignacionInfo.length > 0 ? asignacionInfo[0] : {};
+    const docenteNombre = asignacion.nombres ? `${asignacion.apellidos} ${asignacion.nombres}` : 'NO ASIGNADO';
+    const horaInicio = asignacion.hora_inicio ? asignacion.hora_inicio.substring(0, 5) : '--:--';
+    const horaFin = asignacion.hora_fin ? asignacion.hora_fin.substring(0, 5) : '--:--';
+    const horarioCurso = curso.horario ? curso.horario.toUpperCase() : 'N/A';
+
+    sheet.mergeCells('A3:F3');
+    const cellDocente = sheet.getCell('A3');
+    cellDocente.value = `DOCENTE: ${docenteNombre.toUpperCase()} | HORARIO: ${horarioCurso} | HORA: ${horaInicio} - ${horaFin}`;
+    cellDocente.font = { size: 10, name: 'Calibri' };
+    cellDocente.alignment = { horizontal: 'center', vertical: 'middle' };
+    sheet.getRow(3).height = 25;
+
+    // Table Headers (Fila 5)
     const headers = ['#', 'MÓDULO', 'CATEGORÍA', 'TAREA', 'NOTA', 'PONDERACIÓN'];
-    const headerRow = sheet.getRow(4);
+    const headerRow = sheet.getRow(5);
     headers.forEach((h, i) => {
       const cell = headerRow.getCell(i + 1);
       cell.value = h.toUpperCase();

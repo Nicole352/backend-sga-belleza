@@ -21,6 +21,11 @@ const getUserSockets = (req) => {
   return userSocketsInstance;
 };
 
+const getConnectedUsersCount = (req) => {
+  const userSockets = getUserSockets(req);
+  return userSockets ? userSockets.size : 0;
+};
+
 const emitSocketEvent = (req, event, data) => {
   const io = getIo(req);
   if (io) {
@@ -43,11 +48,12 @@ const emitToUser = (req, userId, event, data) => {
   }
 
   if (io && userSockets) {
-    const socketId = userSockets.get(userId);
-    if (socketId) {
-      io.to(socketId).emit(event, data);
-      console.log(`Evento '${event}' enviado al usuario ${userId} (socket: ${socketId})`);
-    } else {
+    const sockets = userSockets.get(userId);
+    if (sockets && sockets.size > 0) {
+      sockets.forEach(socketId => {
+        io.to(socketId).emit(event, data);
+        console.log(`Evento '${event}' enviado al usuario ${userId} (socket: ${socketId})`);
+      });
       console.log(`Usuario ${userId} no está conectado al WebSocket`);
     }
   } else {
@@ -94,5 +100,6 @@ module.exports = {
   emitSocketEvent,
   emitToUser,
   emitToRole,
-  emitToCurso
+  emitToCurso,
+  getConnectedUsersCount
 };
