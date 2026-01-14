@@ -1,6 +1,6 @@
 const { pool } = require('../config/database');
 const SolicitudesModel = require('../models/solicitudes.model');
-const { enviarNotificacionNuevaMatricula } = require('../services/emailService');
+const { enviarNotificacionNuevaMatricula, enviarEmailRechazoEstudiante } = require('../services/emailService');
 const { emitSocketEvent } = require('../services/socket.service');
 const { notificarNuevaSolicitudMatricula, notificarMatriculasPendientes } = require('../utils/notificationHelper');
 const ExcelJS = require('exceljs');
@@ -1129,6 +1129,23 @@ exports.updateDecision = async (req, res) => {
       observaciones,
       fecha_verificacion: new Date()
     });
+
+    // 5. ENVIAR EMAIL DE RECHAZO SI APLICA
+    if (estado === 'rechazado') {
+      setImmediate(async () => {
+        try {
+          const [solInfo] = await pool.execute(
+            'SELECT nombre_solicitante, apellido_solicitante, email_solicitante, identificacion_solicitante FROM solicitudes_matricula WHERE id_solicitud = ?',
+            [id]
+          );
+          if (solInfo.length > 0) {
+            await enviarEmailRechazoEstudiante(solInfo[0], observaciones);
+          }
+        } catch (emailErr) {
+          console.error('Error enviando email de rechazo:', emailErr);
+        }
+      });
+    }
 
     return res.json({ ok: true });
   } catch (err) {

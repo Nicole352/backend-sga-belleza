@@ -525,11 +525,11 @@ async function getAllUsersWithFilters({ search = '', rol = 'todos', estado = 'to
   let whereConditions = [];
   let params = [];
 
-  // Búsqueda por nombre, username o email
+  // Búsqueda por nombre, apellido, cedula, username o email
   if (search) {
-    whereConditions.push('(u.nombre LIKE ? OR u.apellido LIKE ? OR u.username LIKE ? OR u.email LIKE ?)');
+    whereConditions.push('(u.nombre LIKE ? OR u.apellido LIKE ? OR u.cedula LIKE ? OR u.username LIKE ? OR u.email LIKE ?)');
     const searchParam = `%${search}%`;
-    params.push(searchParam, searchParam, searchParam, searchParam);
+    params.push(searchParam, searchParam, searchParam, searchParam, searchParam);
   }
 
   // Filtro por rol

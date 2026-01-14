@@ -1637,6 +1637,73 @@ async function enviarReporteFinancieroAutomatico(adminEmails, excelBuffer, perio
   }
 }
 
+/**
+ * Enviar email de rechazo de solicitud de matrícula
+ */
+async function enviarEmailRechazoEstudiante(solicitud, observaciones) {
+  try {
+    const mailOptions = {
+      from: `"${process.env.EMAIL_FROM_NAME || 'Escuela Jessica Vélez'}" <${process.env.EMAIL_USER}>`,
+      to: solicitud.email_solicitante,
+      replyTo: process.env.EMAIL_USER,
+      subject: 'Información sobre su Solicitud de Matrícula - Escuela Jessica Vélez',
+      headers: {
+        'X-Priority': '1',
+        'X-MSMail-Priority': 'High',
+        'Importance': 'high',
+        'X-Mailer': 'Escuela Jessica Vélez - SGA',
+        'X-Entity-Ref-ID': `rechazo-${solicitud.identificacion_solicitante}-${Date.now()}`,
+      },
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 30px; text-align: center; color: white; }
+            .header h1 { margin: 0; font-size: 24px; font-weight: 700; }
+            .content { padding: 30px; line-height: 1.6; color: #374151; }
+            .message-box { background: #fef2f2; border-left: 4px solid #ef4444; padding: 20px; border-radius: 8px; margin: 20px 0; }
+            .footer { background: #f9fafb; padding: 20px; text-align: center; font-size: 12px; color: #6b7280; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>Comunicado de Matrícula</h1>
+            </div>
+            <div class="content">
+              <p>Estimado(a) <strong>${solicitud.nombre_solicitante} ${solicitud.apellido_solicitante}</strong>,</p>
+              
+              <div class="message-box">
+                <p>Con identificación <strong>${solicitud.identificacion_solicitante}</strong>, se le comunica que se rechazó su solicitud de matrícula por inconsistencias de información o pago.</p>
+                <p style="margin-top: 10px;"><strong>Motivo detallado:</strong><br>${observaciones || 'No especificado'}</p>
+                <p style="margin-top: 15px; font-weight: 600;">Si cree que es un error, por favor acérquese a la escuela Jessica Vélez.</p>
+              </div>
+
+              <p>Agradecemos su interés en nuestra institución.</p>
+            </div>
+            <div class="footer">
+              <p><strong>Escuela Jessica Vélez</strong></p>
+              <p>Sistema de Gestión Académica - Notificación Automática</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Email de rechazo enviado a:', solicitud.email_solicitante);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('Error enviando email de rechazo:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = {
   enviarNotificacionNuevaMatricula,
   enviarEmailBienvenidaEstudiante,
@@ -1647,5 +1714,6 @@ module.exports = {
   enviarNotificacionBloqueoCuenta,
   enviarNotificacionDesbloqueoTemporal,
   enviarConfirmacionMatricula,
-  enviarReporteFinancieroAutomatico
+  enviarReporteFinancieroAutomatico,
+  enviarEmailRechazoEstudiante
 };

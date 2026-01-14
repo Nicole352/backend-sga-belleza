@@ -1082,7 +1082,16 @@ exports.getEstudianteById = async (req, res) => {
                 u.direccion,
                 u.estado,
                 u.fecha_registro,
-                u.fecha_ultima_conexion
+                u.fecha_ultima_conexion,
+                (
+                  SELECT contacto_emergencia
+                  FROM solicitudes_matricula s
+                  WHERE s.identificacion_solicitante = u.cedula
+                  AND s.estado = 'aprobado'
+                  AND s.contacto_emergencia IS NOT NULL
+                  AND s.contacto_emergencia != ''
+                  ORDER BY s.fecha_solicitud DESC LIMIT 1
+                ) as contacto_emergencia
       FROM usuarios u
       INNER JOIN roles r ON u.id_rol = r.id_rol
       WHERE r.nombre_rol = 'estudiante' AND u.id_usuario = ?
