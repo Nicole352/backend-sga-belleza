@@ -72,9 +72,11 @@ app.use(
       // Permitir requests sin origin (como mobile apps o curl)
       if (!origin) return callback(null, true);
 
-      // En producción, permitir el dominio principal y subdominios de Vercel
-      if (process.env.NODE_ENV === 'production' && origin.includes('.vercel.app')) {
-        return callback(null, true);
+      // En producción, permitir dominios de Vercel y Render
+      if (process.env.NODE_ENV === 'production') {
+        if (origin.includes('.vercel.app') || origin.includes('.onrender.com')) {
+          return callback(null, true);
+        }
       }
 
       if (allowedOrigins.indexOf(origin) !== -1) {
