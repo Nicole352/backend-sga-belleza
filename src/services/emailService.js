@@ -84,7 +84,7 @@ async function enviarNotificacionNuevaMatricula(solicitud) {
             .info-item { background: #f9fafb; padding: 12px; border-radius: 8px; }
             .info-label { font-size: 12px; color: #6b7280; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
             .info-value { font-size: 14px; color: #1f2937; font-weight: 600; }
-            .button { display: inline-block; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; text-align: center; }
+            .button { display: inline-block; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: #ffffff !important; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; text-align: center; }
             .footer { background: #f9fafb; padding: 20px; text-align: center; font-size: 12px; color: #6b7280; }
             .steps { background: #eff6ff; padding: 20px; border-radius: 8px; margin: 20px 0; }
             .steps ol { margin: 10px 0; padding-left: 20px; }
@@ -148,7 +148,7 @@ async function enviarNotificacionNuevaMatricula(solicitud) {
               </div>
 
               <div style="text-align: center;">
-                <a href="${process.env.FRONTEND_URL}/panel/administrativo" class="button">
+                <a href="${process.env.FRONTEND_URL}/panel/administrativo" class="button" style="color: #ffffff !important;">
                   🚪 Ir a Gestión de Matrículas
                 </a>
               </div>
@@ -346,7 +346,7 @@ async function enviarEmailBienvenidaEstudiante(estudiante, credenciales, pdfComp
             .button { 
               display: inline-block; 
               background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); 
-              color: white !important; 
+              color: #ffffff !important; 
               padding: 16px 40px; 
               text-decoration: none; 
               border-radius: 8px; 
@@ -546,7 +546,7 @@ async function enviarEmailBienvenidaEstudiante(estudiante, credenciales, pdfComp
               </div>
 
               <div style="text-align: center;">
-                <a href="${process.env.FRONTEND_URL}/aula-virtual" class="button">
+                <a href="${process.env.FRONTEND_URL}/aula-virtual" class="button" style="color: #ffffff !important;">
                   🚀 Acceder al Aula Virtual
                 </a>
               </div>
@@ -767,7 +767,7 @@ async function sendCredentialsEmail(email, password, nombre) {
             .label { font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 4px; }
             .value { font-size: 18px; color: #0f172a; font-family: 'Courier New', monospace; font-weight: 700; background: white; padding: 8px 12px; border-radius: 4px; border: 1px solid #cbd5e1; display: inline-block; }
             .alert { background: #fff7ed; border-left: 4px solid #f97316; padding: 15px; border-radius: 4px; margin: 25px 0; color: #9a3412; font-size: 14px; line-height: 1.5; }
-            .button { display: inline-block; background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; text-align: center; }
+            .button { display: inline-block; background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%); color: #ffffff !important; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; text-align: center; }
             .footer { background: #f1f5f9; padding: 20px; text-align: center; font-size: 12px; color: #64748b; }
           </style>
         </head>
@@ -802,7 +802,7 @@ async function sendCredentialsEmail(email, password, nombre) {
               </div>
 
               <div style="text-align: center; margin-top: 30px;">
-                <a href="${process.env.FRONTEND_URL}/aula-virtual" class="button">
+                <a href="${process.env.FRONTEND_URL}/aula-virtual" class="button" style="color: #ffffff !important;">
                   Acceder al Panel Administrativo
                 </a>
               </div>
@@ -1550,7 +1550,7 @@ async function enviarReporteFinancieroAutomatico(adminEmails, excelBuffer, perio
             .stat-value.warning { color: #f59e0b; }
             .stat-value.danger { color: #ef4444; }
             .alert { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px; }
-            .button { display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }
+            .button { display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff !important; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }
             .footer { background: #f9fafb; padding: 25px 20px; text-align: center; font-size: 12px; color: #6b7280; }
             @media only screen and (max-width: 767px) {
               .container { margin: 10px; }
@@ -1612,7 +1612,7 @@ async function enviarReporteFinancieroAutomatico(adminEmails, excelBuffer, perio
               </div>
 
               <div style="text-align: center;">
-                <a href="${process.env.FRONTEND_URL}/panel/administrativo" class="button">
+                <a href="${process.env.FRONTEND_URL}/panel/administrativo" class="button" style="color: #ffffff !important;">
                   🚪 Ir al Panel Administrativo
                 </a>
               </div>
