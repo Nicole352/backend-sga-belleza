@@ -870,7 +870,7 @@ async function enviarNotificacionPagoEstudiante(datosPago) {
             .info-row:last-child { border-bottom: none; }
             .label { font-weight: 600; color: #374151; }
             .value { color: #6b7280; }
-            .button { display: inline-block; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 14px 30px; text-decoration: none; border-radius: 8px; margin: 20px 0; font-weight: 600; }
+            .button { display: inline-block; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #ffffff !important; padding: 14px 30px; text-decoration: none; border-radius: 8px; margin: 20px 0; font-weight: 600; }
             .footer { background: #f9fafb; padding: 20px; text-align: center; color: #6b7280; font-size: 12px; }
           </style>
         </head>
@@ -927,7 +927,9 @@ async function enviarNotificacionPagoEstudiante(datosPago) {
               </div>
               
               <div style="text-align: center;">
-                </p>
+                <a href="${process.env.FRONTEND_URL}/panel/administrativo" class="button" style="color: #ffffff !important;">
+                  🔍 Ir a Verificar Pago
+                </a>
               </div>
             </div>
             
@@ -978,7 +980,7 @@ async function enviarNotificacionBloqueoCuenta(email, nombre, motivo) {
             .header h1 { margin: 0; font-size: 24px; font-weight: 700; }
             .content { padding: 30px; }
             .alert { background: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px; }
-            .button { display: inline-block; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; text-align: center; }
+            .button { display: inline-block; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: #ffffff !important; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; text-align: center; }
             .footer { background: #f9fafb; padding: 20px; text-align: center; font-size: 12px; color: #6b7280; }
           </style>
         </head>
@@ -1066,6 +1068,7 @@ async function enviarNotificacionDesbloqueoTemporal(email, nombre, fechaExpiraci
             .header h1 { margin: 0; font-size: 24px; font-weight: 700; }
             .content { padding: 30px; }
             .alert { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px; }
+            .button { display: inline-block; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: #ffffff !important; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; text-align: center; }
             .footer { background: #f9fafb; padding: 20px; text-align: center; font-size: 12px; color: #6b7280; }
           </style>
         </head>
@@ -1095,6 +1098,12 @@ async function enviarNotificacionDesbloqueoTemporal(email, nombre, fechaExpiraci
                 Por favor, aproveche este tiempo para realizar el pago y subir su comprobante.
                 Si no regulariza su situación antes de la fecha indicada, el sistema volverá a bloquear su cuenta automáticamente.
               </p>
+
+              <div style="text-align: center;">
+                <a href="${process.env.FRONTEND_URL}/aula-virtual" class="button" style="color: #ffffff !important;">
+                  🚀 Acceder al Aula Virtual
+                </a>
+              </div>
             </div>
             <div class="footer">
               <p><strong>Escuela Jessica Vélez</strong></p>
@@ -1261,6 +1270,18 @@ async function enviarEmailBienvenidaDocente(docente, credenciales) {
               text-align: center;
               border-top: 1px solid #e5e7eb;
             }
+            .button { 
+              display: inline-block; 
+              background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%); 
+              color: #ffffff !important; 
+              padding: 16px 40px; 
+              text-decoration: none; 
+              border-radius: 8px; 
+              font-weight: 600; 
+              margin: 20px 0; 
+              text-align: center; 
+              font-size: 16px;
+            }
             .footer p {
               color: #6b7280;
               font-size: 13px;
@@ -1316,6 +1337,12 @@ async function enviarEmailBienvenidaDocente(docente, credenciales) {
                   <li>Desde el panel podrás ver tus cursos, estudiantes y horarios</li>
                   <li>Si tienes dudas, contacta con administración</li>
                 </ul>
+              </div>
+
+              <div style="text-align: center;">
+                <a href="${process.env.FRONTEND_URL}/aula-virtual" class="button" style="color: #ffffff !important;">
+                  🚀 Acceder al Panel de Docentes
+                </a>
               </div>
             </div>
 
@@ -1397,6 +1424,7 @@ async function enviarConfirmacionMatricula(estudiante, pdfComprobantes = [], esN
             .pdf-box { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 20px; margin: 20px 0; border-radius: 8px; }
             .pdf-box h4 { color: #1e40af; margin: 0 0 10px 0; }
             .pdf-box ul { color: #1e40af; margin: 10px 0 0 20px; }
+            .button { display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff !important; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; text-align: center; }
             .footer { background: #f9fafb; padding: 25px 20px; text-align: center; font-size: 12px; color: #6b7280; }
           </style>
         </head>
