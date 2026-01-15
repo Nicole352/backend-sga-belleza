@@ -2,11 +2,11 @@ const nodemailer = require('nodemailer');
 const { getActiveAdmins } = require('../models/admins.model');
 
 // Configuración del transporter de nodemailer para Gmail
-// Con configuraciones anti-spam optimizadas
+// Usando puerto 465 con SSL para mejor compatibilidad con servicios de hosting
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 587,
-  secure: false, // true para 465, false para otros puertos
+  port: 465,
+  secure: true, // true para 465 (SSL), false para 587 (STARTTLS)
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASSWORD
