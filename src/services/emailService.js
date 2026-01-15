@@ -2,36 +2,32 @@ const nodemailer = require('nodemailer');
 const { getActiveAdmins } = require('../models/admins.model');
 
 // Configuración del transporter de nodemailer para Gmail
-// Usando puerto 465 con SSL para mejor compatibilidad con servicios de hosting
+// Ajustes extremos de timeout para intentar superar bloqueos de red en Render
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 465,
-  secure: true, // true para 465 (SSL), false para 587 (STARTTLS)
+  secure: true, // SSL directo
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASSWORD
   },
-  // Opciones de conexión para evitar bloqueos/timeouts en servicios como Render
-  connectionTimeout: 10000, // 10 segundos
-  greetingTimeout: 10000,
-  socketTimeout: 10000,
-  family: 4, // Forzar IPv4 para evitar problemas de red en la nube
+  // Opciones de conexión extremas para evitar el error ETIMEDOUT
+  connectionTimeout: 30000, // 30 segundos de espera para conectar
+  greetingTimeout: 30000,
+  socketTimeout: 30000,
+  family: 4, // Forzar IPv4 (Gmail a veces bloquea IPv6 de centros de datos)
   tls: {
+    // No permitir certificados viejos y asegurar conexión moderna
     rejectUnauthorized: true,
-    minVersion: 'TLSv1.2'
+    minVersion: 'TLSv1.2',
+    servername: 'smtp.gmail.com'
   },
-  debug: true, // Habilitar logs para diagnóstico
-  // Configuraciones adicionales para evitar spam
   pool: true,
-  maxConnections: 5,
-  maxMessages: 100,
-  rateDelta: 1000,
-  rateLimit: 5,
+  maxConnections: 1, // Reducir a 1 conexión para evitar que Gmail lo vea como ataque
+  debug: true,
   headers: {
     'X-Transport-Type': 'Direct',
-    'X-Mailer': 'Escuela Jessica Vélez - SGA',
-    'X-MSMail-Priority': 'Normal',
-    'X-MimeOLE': 'Produced By SGA System'
+    'X-Mailer': 'Escuela Jessica Vélez - SGA'
   }
 });
 
