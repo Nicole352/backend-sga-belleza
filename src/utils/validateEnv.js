@@ -11,16 +11,16 @@ function validateEnv() {
     'DB_PORT',
     'JWT_SECRET',
     'EMAIL_USER',
-    'EMAIL_PASSWORD'
+    'RESEND_API_KEY'
   ];
-  
+
   const missing = required.filter(key => !process.env[key]);
-  
+
   if (missing.length > 0) {
     console.error('-ERROR: Faltan las siguientes variables de entorno:');
     missing.forEach(key => console.error(`   - ${key}`));
     console.error('\n Verifica tu archivo .env');
-    
+
     // Solo salir en producción
     if (process.env.NODE_ENV === 'production') {
       process.exit(1);
@@ -30,7 +30,7 @@ function validateEnv() {
   } else {
     console.log('Variables de entorno validadas correctamente');
   }
-  
+
   // Validar JWT_SECRET en producción
   if (process.env.NODE_ENV === 'production' && process.env.JWT_SECRET === 'dev_secret') {
     console.error('ERROR: No puedes usar "dev_secret" como JWT_SECRET en producción');

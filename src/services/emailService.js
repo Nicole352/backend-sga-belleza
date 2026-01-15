@@ -1,35 +1,34 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const { getActiveAdmins } = require('../models/admins.model');
 
-// Configuración del transporter de nodemailer para Gmail
-// Ajustes extremos de timeout para intentar superar bloqueos de red en Render
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465,
-  secure: true, // SSL directo
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD
-  },
-  // Opciones de conexión extremas para evitar el error ETIMEDOUT
-  connectionTimeout: 30000, // 30 segundos de espera para conectar
-  greetingTimeout: 30000,
-  socketTimeout: 30000,
-  family: 4, // Forzar IPv4 (Gmail a veces bloquea IPv6 de centros de datos)
-  tls: {
-    // No permitir certificados viejos y asegurar conexión moderna
-    rejectUnauthorized: true,
-    minVersion: 'TLSv1.2',
-    servername: 'smtp.gmail.com'
-  },
-  pool: true,
-  maxConnections: 1, // Reducir a 1 conexión para evitar que Gmail lo vea como ataque
-  debug: true,
-  headers: {
-    'X-Transport-Type': 'Direct',
-    'X-Mailer': 'Escuela Jessica Vélez - SGA'
+// Configuración de Resend API
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+/**
+ * Helper para enviar correos usando Resend de forma consistente
+ */
+async function sendWithResend(options) {
+  try {
+    const { data, error } = await resend.emails.send({
+      from: 'SGA Belleza <onboarding@resend.dev>',
+      to: Array.isArray(options.to) ? options.to : options.to.split(',').map(e => e.trim()),
+      subject: options.subject,
+      html: options.html,
+      attachments: options.attachments ? options.attachments.map(att => ({
+        filename: att.filename,
+        content: att.content
+      })) : []
+    });
+
+    if (error) {
+      throw error;
+    }
+    return data;
+  } catch (err) {
+    console.error('Error detallado en Resend:', err);
+    throw err;
   }
-});
+}
 
 /**
  * Enviar notificación al admin cuando hay una nueva solicitud de matrícula
@@ -151,9 +150,9 @@ async function enviarNotificacionNuevaMatricula(solicitud) {
       `
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log('Email de notificación enviado al admin:', info.messageId);
-    return { success: true, messageId: info.messageId };
+    const info = await sendWithResend(mailOptions);
+    console.log('Email enviado vía Resend:', info.id);
+    return { success: true, messageId: info.id };
   } catch (error) {
     console.error('Error enviando email de notificación:', error);
     return { success: false, error: error.message };
