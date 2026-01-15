@@ -37,7 +37,9 @@ async function sendWithBrevo(options) {
     const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
     return data;
   } catch (err) {
-    console.error('Error detallado en Brevo:', err.response ? err.response.body : err);
+    // Si hay un error de la API de Brevo, el detalle suele venir en err.body
+    const errorDetail = err.response ? err.response.body : (err.body || err);
+    console.error('Error detallado en Brevo:', JSON.stringify(errorDetail, null, 2));
     throw err;
   }
 }
