@@ -23,6 +23,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@getbrevo/brevo": "^3.0.1",
     "axios": "^1.12.2",
     "bcryptjs": "^3.0.2",
     "cloudinary": "^2.8.0",
@@ -41,7 +42,6 @@
     "node-cron": "^4.2.1",
     "nodemailer": "^7.0.11",
     "pdfkit": "^0.15.2",
-    "resend": "^4.1.1",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {

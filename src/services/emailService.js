@@ -1,31 +1,43 @@
-const { Resend } = require('resend');
+const brevo = require('@getbrevo/brevo');
 const { getActiveAdmins } = require('../models/admins.model');
 
-// Configuración de Resend API
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Configuración de Brevo API
+const apiInstance = new brevo.TransactionalEmailsApi();
+apiInstance.setApiKey(brevo.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
 
 /**
- * Helper para enviar correos usando Resend de forma consistente
+ * Helper para enviar correos usando Brevo API de forma consistente
  */
-async function sendWithResend(options) {
+async function sendWithBrevo(options) {
   try {
-    const { data, error } = await resend.emails.send({
-      from: 'SGA Belleza <onboarding@resend.dev>',
-      to: Array.isArray(options.to) ? options.to : options.to.split(',').map(e => e.trim()),
-      subject: options.subject,
-      html: options.html,
-      attachments: options.attachments ? options.attachments.map(att => ({
-        filename: att.filename,
-        content: att.content
-      })) : []
-    });
+    const sendSmtpEmail = new brevo.SendSmtpEmail();
 
-    if (error) {
-      throw error;
+    sendSmtpEmail.subject = options.subject;
+    sendSmtpEmail.htmlContent = options.html || options.text;
+    sendSmtpEmail.sender = {
+      name: process.env.EMAIL_FROM_NAME || 'Escuela Jessica Vélez',
+      email: process.env.EMAIL_USER
+    };
+
+    // Formatear destinatarios
+    const recipients = Array.isArray(options.to)
+      ? options.to
+      : options.to.split(',').map(e => e.trim());
+
+    sendSmtpEmail.to = recipients.map(email => ({ email }));
+
+    // Adjuntos si existen
+    if (options.attachments && options.attachments.length > 0) {
+      sendSmtpEmail.attachment = options.attachments.map(att => ({
+        content: Buffer.isBuffer(att.content) ? att.content.toString('base64') : Buffer.from(att.content).toString('base64'),
+        name: att.filename
+      }));
     }
+
+    const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
     return data;
   } catch (err) {
-    console.error('Error detallado en Resend:', err);
+    console.error('Error detallado en Brevo:', err.response ? err.response.body : err);
     throw err;
   }
 }
@@ -150,9 +162,9 @@ async function enviarNotificacionNuevaMatricula(solicitud) {
       `
     };
 
-    const info = await sendWithResend(mailOptions);
-    console.log('Email enviado vía Resend:', info.id);
-    return { success: true, messageId: info.id };
+    const info = await sendWithBrevo(mailOptions);
+    console.log('Email enviado vía Brevo:', info.messageId);
+    return { success: true, messageId: info.messageId };
   } catch (error) {
     console.error('Error enviando email de notificación:', error);
     return { success: false, error: error.message };
@@ -594,7 +606,7 @@ async function enviarEmailBienvenidaEstudiante(estudiante, credenciales, pdfComp
       `
     };
 
-    const info = await transporter.sendMail(mailOptions);
+    const info = await sendWithBrevo(mailOptions);
     console.log('Email de bienvenida enviado a:', estudiante.email);
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -710,7 +722,7 @@ async function enviarComprobantePagoMensual(estudiante, pago, pdfBuffer) {
       ]
     };
 
-    const info = await transporter.sendMail(mailOptions);
+    const info = await sendWithBrevo(mailOptions);
     console.log('Email con comprobante enviado a:', estudiante.email);
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -805,7 +817,7 @@ async function sendCredentialsEmail(email, password, nombre) {
       `
     };
 
-    const info = await transporter.sendMail(mailOptions);
+    const info = await sendWithBrevo(mailOptions);
     console.log('Email de credenciales enviado a:', email);
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -928,7 +940,7 @@ async function enviarNotificacionPagoEstudiante(datosPago) {
       `
     };
 
-    await transporter.sendMail(mailOptions);
+    await sendWithBrevo(mailOptions);
     console.log('Email de notificación de pago enviado al admin');
   } catch (error) {
     console.error('Error enviando email de notificación de pago:', error);
@@ -1011,7 +1023,7 @@ async function enviarNotificacionBloqueoCuenta(email, nombre, motivo) {
       `
     };
 
-    const info = await transporter.sendMail(mailOptions);
+    const info = await sendWithBrevo(mailOptions);
     console.log('Email de bloqueo enviado a:', email);
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -1091,7 +1103,7 @@ async function enviarNotificacionDesbloqueoTemporal(email, nombre, fechaExpiraci
       `
     };
 
-    const info = await transporter.sendMail(mailOptions);
+    const info = await sendWithBrevo(mailOptions);
     console.log('Email de desbloqueo temporal enviado a:', email);
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -1319,7 +1331,7 @@ async function enviarEmailBienvenidaDocente(docente, credenciales) {
       `
     };
 
-    const info = await transporter.sendMail(mailOptions);
+    const info = await sendWithBrevo(mailOptions);
     console.log('Email de bienvenida docente enviado a:', docente.email);
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -1464,7 +1476,7 @@ async function enviarConfirmacionMatricula(estudiante, pdfComprobantes = [], esN
       `
     };
 
-    const info = await transporter.sendMail(mailOptions);
+    const info = await sendWithBrevo(mailOptions);
     console.log(`✉️ Email de confirmación de matrícula enviado a: ${estudiante.email} (${esNuevo ? 'nuevo' : 'existente'})`);
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -1628,7 +1640,7 @@ async function enviarReporteFinancieroAutomatico(adminEmails, excelBuffer, perio
       ]
     };
 
-    const info = await transporter.sendMail(mailOptions);
+    const info = await sendWithBrevo(mailOptions);
     console.log('Email de reporte financiero enviado a:', adminEmails.join(', '));
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -1695,7 +1707,7 @@ async function enviarEmailRechazoEstudiante(solicitud, observaciones) {
       `
     };
 
-    const info = await transporter.sendMail(mailOptions);
+    const info = await sendWithBrevo(mailOptions);
     console.log('Email de rechazo enviado a:', solicitud.email_solicitante);
     return { success: true, messageId: info.messageId };
   } catch (error) {

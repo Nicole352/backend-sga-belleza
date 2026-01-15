@@ -11,7 +11,7 @@ function validateEnv() {
     'DB_PORT',
     'JWT_SECRET',
     'EMAIL_USER',
-    'RESEND_API_KEY'
+    'BREVO_API_KEY'
   ];
 
   const missing = required.filter(key => !process.env[key]);
