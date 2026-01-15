@@ -11,6 +11,11 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASSWORD
   },
+  // Opciones de conexión para evitar bloqueos/timeouts en servicios como Render
+  connectionTimeout: 10000, // 10 segundos
+  greetingTimeout: 10000,
+  socketTimeout: 10000,
+  family: 4, // Forzar IPv4 para evitar problemas de red en la nube
   tls: {
     rejectUnauthorized: true,
     minVersion: 'TLSv1.2'
