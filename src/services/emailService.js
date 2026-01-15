@@ -802,7 +802,7 @@ async function sendCredentialsEmail(email, password, nombre) {
               </div>
 
               <div style="text-align: center; margin-top: 30px;">
-                <a href="${process.env.FRONTEND_URL}/login" class="button">
+                <a href="${process.env.FRONTEND_URL}/aula-virtual" class="button">
                   Acceder al Panel Administrativo
                 </a>
               </div>
