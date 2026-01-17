@@ -18,14 +18,14 @@ exports.create = async (req, res) => {
 
     // Validaciones
     if (!id_curso_principal || !id_curso_promocional || !nombre_promocion) {
-      return res.status(400).json({ 
-        error: 'Curso principal, curso promocional y nombre son obligatorios' 
+      return res.status(400).json({
+        error: 'Curso principal, curso promocional y nombre son obligatorios'
       });
     }
 
     if (!meses_gratis && !clases_gratis) {
-      return res.status(400).json({ 
-        error: 'Debe especificar meses gratis o clases gratis' 
+      return res.status(400).json({
+        error: 'Debe especificar meses gratis o clases gratis'
       });
     }
 
@@ -131,12 +131,12 @@ exports.update = async (req, res) => {
   try {
     const { id } = req.params;
     const {
+      id_curso_principal,
+      id_curso_promocional,
       nombre_promocion,
       descripcion,
       meses_gratis,
-      fecha_inicio,
-      fecha_fin,
-      horarios_disponibles,
+      clases_gratis,
       cupos_disponibles,
       activa
     } = req.body;
@@ -148,13 +148,13 @@ exports.update = async (req, res) => {
     }
 
     await PromocionesModel.update(id, {
+      id_curso_principal,
+      id_curso_promocional,
       nombre_promocion,
       descripcion,
       meses_gratis,
-      fecha_inicio,
-      fecha_fin,
-      horarios_disponibles,
-      cupos_disponibles,
+      clases_gratis,
+      cupos_disponibles: cupos_disponibles || null,
       activa
     });
 
@@ -165,7 +165,16 @@ exports.update = async (req, res) => {
       id_registro: id,
       usuario_id: req.user.id_usuario,
       datos_anteriores: promocionAnterior,
-      datos_nuevos: req.body,
+      datos_nuevos: {
+        id_curso_principal,
+        id_curso_promocional,
+        nombre_promocion,
+        descripcion,
+        meses_gratis,
+        clases_gratis,
+        cupos_disponibles,
+        activa
+      },
       ip_address: req.ip,
       user_agent: req.get('user-agent')
     });
@@ -267,20 +276,20 @@ exports.aceptarPromocion = async (req, res) => {
     }
 
     // Verificar cupos
-    if (promocion.cupos_disponibles !== null && 
-        promocion.cupos_utilizados >= promocion.cupos_disponibles) {
+    if (promocion.cupos_disponibles !== null &&
+      promocion.cupos_utilizados >= promocion.cupos_disponibles) {
       return res.status(400).json({ error: 'No hay cupos disponibles para esta promoción' });
     }
 
     // Verificar que el estudiante no haya aceptado ya esta promoción
     const yaAcepto = await PromocionesModel.estudianteTienePromocion(
-      id_estudiante, 
+      id_estudiante,
       promocion.id_curso
     );
 
     if (yaAcepto) {
-      return res.status(400).json({ 
-        error: 'Ya has aceptado una promoción para este curso' 
+      return res.status(400).json({
+        error: 'Ya has aceptado una promoción para este curso'
       });
     }
 

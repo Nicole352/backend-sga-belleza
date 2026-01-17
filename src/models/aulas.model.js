@@ -9,26 +9,26 @@ class AulasModel {
     const safeLimit = Math.max(1, Math.floor(Number(limit) || 10));
     const safePage = Math.max(1, Math.floor(Number(page) || 1));
     const offset = (safePage - 1) * safeLimit;
-    
+
     // Construir condiciones WHERE
     let whereConditions = [];
     let queryParams = [];
-    
+
     if (search) {
       whereConditions.push('(codigo_aula LIKE ? OR nombre LIKE ? OR ubicacion LIKE ?)');
       const searchTerm = `%${search}%`;
       queryParams.push(searchTerm, searchTerm, searchTerm);
     }
-    
+
     if (estado && estado !== 'todos') {
       whereConditions.push('estado = ?');
       queryParams.push(estado);
     }
-    
-    const whereClause = whereConditions.length > 0 
-      ? `WHERE ${whereConditions.join(' AND ')}` 
+
+    const whereClause = whereConditions.length > 0
+      ? `WHERE ${whereConditions.join(' AND ')}`
       : '';
-    
+
     // Consulta para obtener aulas (LIMIT/OFFSET inline para evitar ER_WRONG_ARGUMENTS)
     const aulasQuery = `
       SELECT 
@@ -45,19 +45,19 @@ class AulasModel {
       ORDER BY codigo_aula ASC
       LIMIT ${safeLimit} OFFSET ${offset}
     `;
-    
+
     // Consulta para contar total
     const countQuery = `
       SELECT COUNT(*) as total 
       FROM aulas 
       ${whereClause}
     `;
-    
+
     // Ejecutar consultas
     const [aulas] = await pool.execute(aulasQuery, queryParams);
     const [countResult] = await pool.execute(countQuery, queryParams);
     const total = countResult[0].total;
-    
+
     return {
       aulas,
       total,
@@ -73,7 +73,7 @@ class AulasModel {
       'SELECT * FROM aulas WHERE id_aula = ?',
       [id]
     );
-    
+
     return aulas.length > 0 ? aulas[0] : null;
   }
 
@@ -92,7 +92,7 @@ class AulasModel {
         estado
       ]
     );
-    
+
     return result.insertId;
   }
 
@@ -126,12 +126,12 @@ class AulasModel {
   static async existsByNombre(nombre, excludeId = null) {
     let query = 'SELECT COUNT(*) as count FROM aulas WHERE nombre = ?';
     let params = [nombre.trim()];
-    
+
     if (excludeId) {
       query += ' AND id_aula != ?';
       params.push(excludeId);
     }
-    
+
     const [result] = await pool.execute(query, params);
     return result[0].count > 0;
   }
@@ -140,12 +140,12 @@ class AulasModel {
   static async existsByCodigo(codigo_aula, excludeId = null) {
     let query = 'SELECT COUNT(*) as count FROM aulas WHERE codigo_aula = ?';
     let params = [codigo_aula.trim()];
-    
+
     if (excludeId) {
       query += ' AND id_aula != ?';
       params.push(excludeId);
     }
-    
+
     const [result] = await pool.execute(query, params);
     return result[0].count > 0;
   }
@@ -153,18 +153,18 @@ class AulasModel {
   // Obtener aulas por estado
   static async getByEstado(estado, limit = 100) {
     const safeLimit = Math.max(1, Math.min(200, Number(limit) || 100));
-    
+
     let sql = `SELECT id_aula, nombre, codigo_aula, ubicacion, estado FROM aulas WHERE 1=1`;
     const params = [];
-    
-    if (estado) { 
-      sql += ' AND estado = ?'; 
-      params.push(estado); 
+
+    if (estado) {
+      sql += ' AND estado = ?';
+      params.push(estado);
     }
-    
+
     // Evitar placeholder en LIMIT por compatibilidad
     sql += ` ORDER BY nombre ASC LIMIT ${safeLimit}`;
-    
+
     const [rows] = await pool.execute(sql, params);
     return rows;
   }
@@ -187,7 +187,7 @@ class AulasModel {
         SUM(CASE WHEN estado = 'reservada' THEN 1 ELSE 0 END) as aulas_reservadas
       FROM aulas
     `);
-    
+
     return stats[0];
   }
 
