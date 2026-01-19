@@ -42,7 +42,7 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
     try {
       const doc = new PDFDocument({
         size: 'A4',
-        margins: { top: 40, bottom: 0, left: 40, right: 40 },
+        margins: { top: 30, bottom: 30, left: 20, right: 20 },
         bufferPages: true
       });
       const chunks = [];
@@ -68,25 +68,25 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
       // Función para dibujar encabezado completo (logo + título + institución)
       const dibujarEncabezadoCompleto = (yInicio = 15) => {
         if (logoBuffer) {
-          doc.image(logoBuffer, doc.page.width - 90, yInicio, { width: 50 });
+          doc.image(logoBuffer, doc.page.width - 70, yInicio, { width: 50 });
 
           // Nombre de la institución debajo del logo
           doc.fontSize(6)
             .font('Helvetica-Bold')
             .fillColor(colors.dark)
-            .text('ESCUELA DE BELLEZA', doc.page.width - 100, yInicio + 55, { width: 70, align: 'center' })
-            .text('JESSICA VÉLEZ', doc.page.width - 100, yInicio + 63, { width: 70, align: 'center' });
+            .text('ESCUELA DE BELLEZA', doc.page.width - 80, yInicio + 55, { width: 70, align: 'center' })
+            .text('JESSICA VÉLEZ', doc.page.width - 80, yInicio + 63, { width: 70, align: 'center' });
         }
 
         doc.fontSize(10)
           .fillColor(colors.dark)
           .font('Helvetica-Bold')
-          .text('REPORTE DE ESTUDIANTES', 40, yInicio + 5, { align: 'left' });
+          .text('REPORTE DE ESTUDIANTES', 20, yInicio + 5, { align: 'left' });
 
         doc.fontSize(8)
           .fillColor(colors.text)
           .font('Helvetica')
-          .text(`GENERADO EL: ${formatearFecha(new Date()).toUpperCase()}`, 40, yInicio + 17, { align: 'left' });
+          .text(`GENERADO EL: ${formatearFecha(new Date()).toUpperCase()}`, 20, yInicio + 17, { align: 'left' });
 
         return yInicio + 85;
       };
@@ -142,17 +142,17 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
         fecha: 85,
         estado: 80 // Se ajustará
       };
-      colWidths.estado = (doc.page.width - 80) - (colWidths.indice + colWidths.cedula + colWidths.nombre + colWidths.curso + colWidths.fecha);
+      colWidths.estado = (doc.page.width - 40) - (colWidths.indice + colWidths.cedula + colWidths.nombre + colWidths.curso + colWidths.fecha);
 
       // (Línea separadora eliminada)
 
       const dibujarEncabezadoTabla = (y) => {
-        let x = 40;
+        let x = 20;
         // Fondo blanco con bordes negros (ahorro de tinta)
-        doc.rect(40, y, doc.page.width - 80, 25)
+        doc.rect(20, y, doc.page.width - 40, 25)
           .fillAndStroke('#FFFFFF', colors.dark);
 
-        doc.fontSize(8).fillColor(colors.dark).font('Helvetica-Bold');
+        doc.fontSize(7).fillColor(colors.dark).font('Helvetica-Bold');
 
         doc.text('#', x, y + 8, { width: colWidths.indice, align: 'center' });
         x += colWidths.indice;
@@ -225,15 +225,15 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
           cursosEnEstaPagina.forEach((estudiante, cIdx) => {
             // Bordes de columnas de curso (siempre por fila)
             doc.lineWidth(0.5).strokeColor(colors.border);
-            let xTmp = 40 + colWidths.indice + colWidths.cedula + colWidths.nombre;
+            let xTmp = 20 + colWidths.indice + colWidths.cedula + colWidths.nombre;
             [colWidths.curso, colWidths.fecha, colWidths.estado].forEach(width => {
               doc.rect(xTmp, yPos - 5, width, rowHeight).stroke(); // Use dynamic height
               xTmp += width;
             });
 
-            const xContenidoCurso = 40 + colWidths.indice + colWidths.cedula + colWidths.nombre;
+            const xContenidoCurso = 20 + colWidths.indice + colWidths.cedula + colWidths.nombre;
             let currentX = xContenidoCurso;
-            doc.fontSize(7.5).fillColor(colors.text).font('Helvetica');
+            doc.fontSize(6.5).fillColor(colors.text).font('Helvetica');
 
             // Calcular centro vertical para texto de curso
             const yCentroCurso = yPos - 5 + (rowHeight / 2);
@@ -261,7 +261,7 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
 
           // 2. Dibujar celdas "combinadas" (columnas izquierda)
           doc.lineWidth(0.5).strokeColor(colors.border);
-          let xEst = 40;
+          let xEst = 20;
           [colWidths.indice, colWidths.cedula, colWidths.nombre].forEach(width => {
             doc.rect(xEst, yInicioBloque - 5, width, alturaBloque).stroke();
             xEst += width;
@@ -271,7 +271,7 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
           const primerEst = cursosEnEstaPagina[0];
           const yCentro = yInicioBloque - 5 + (alturaBloque / 2);
 
-          let xCont = 40;
+          let xCont = 20;
           doc.fillColor(colors.text);
 
           // #
@@ -309,7 +309,7 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
         .font('Helvetica-Bold')
         .text('RESUMEN DETALLADO', 0, 100, { align: 'center', width: doc.page.width });
 
-      doc.x = 40; // Reset X to left margin for subsequent text
+      doc.x = 20; // Reset X to left margin for subsequent text
 
       doc.moveDown(1);
 
@@ -415,15 +415,15 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
         // Línea superior del footer
         doc.strokeColor(colors.border)
           .lineWidth(1)
-          .moveTo(40, doc.page.height - 50)
-          .lineTo(doc.page.width - 40, doc.page.height - 50)
+          .moveTo(20, doc.page.height - 50)
+          .lineTo(doc.page.width - 20, doc.page.height - 50)
           .stroke();
 
         // Footer Izquierdo: Escuela de Belleza Jessica Vélez
         doc.fontSize(10)
           .fillColor(colors.dark)
           .font('Helvetica-Bold')
-          .text('Escuela de Belleza Jessica Vélez', 40, doc.page.height - 40, { align: 'left', width: 250 });
+          .text('Escuela de Belleza Jessica Vélez', 20, doc.page.height - 40, { align: 'left', width: 250 });
 
         // Footer Derecho: Descargado... Pág X de Y
         const fechaDescarga = new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' });
@@ -432,7 +432,7 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
           .font('Helvetica')
           .text(
             `Descargado: ${fechaDescarga} — Pág. ${i + 1} de ${pages.count}`,
-            doc.page.width - 300,
+            doc.page.width - 280,
             doc.page.height - 40,
             { align: 'right', width: 260 }
           );
@@ -454,7 +454,7 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
     try {
       const doc = new PDFDocument({
         size: 'A4',
-        margins: { top: 40, bottom: 0, left: 40, right: 40 },
+        margins: { top: 30, bottom: 30, left: 20, right: 20 },
         bufferPages: true
       });
       const chunks = [];
@@ -479,25 +479,25 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
       // Función para dibujar encabezado completo (logo + título + institución)
       const dibujarEncabezadoCompleto = (yInicio = 15) => {
         if (logoBuffer) {
-          doc.image(logoBuffer, doc.page.width - 90, yInicio, { width: 50 });
+          doc.image(logoBuffer, doc.page.width - 70, yInicio, { width: 50 });
 
           // Nombre de la institución debajo del logo
           doc.fontSize(6)
             .font('Helvetica-Bold')
             .fillColor(colors.dark)
-            .text('ESCUELA DE BELLEZA', doc.page.width - 100, yInicio + 55, { width: 70, align: 'center' })
-            .text('JESSICA VÉLEZ', doc.page.width - 100, yInicio + 63, { width: 70, align: 'center' });
+            .text('ESCUELA DE BELLEZA', doc.page.width - 80, yInicio + 55, { width: 70, align: 'center' })
+            .text('JESSICA VÉLEZ', doc.page.width - 80, yInicio + 63, { width: 70, align: 'center' });
         }
 
         doc.fontSize(10)
           .fillColor(colors.dark)
           .font('Helvetica-Bold')
-          .text('REPORTE FINANCIERO', 40, yInicio + 5, { align: 'left' });
+          .text('REPORTE FINANCIERO', 20, yInicio + 5, { align: 'left' });
 
         doc.fontSize(8)
           .fillColor(colors.text)
           .font('Helvetica')
-          .text(`GENERADO EL: ${formatearFecha(new Date()).toUpperCase()}`, 40, yInicio + 17, { align: 'left' });
+          .text(`GENERADO EL: ${formatearFecha(new Date()).toUpperCase()}`, 20, yInicio + 17, { align: 'left' });
 
         return yInicio + 85;
       };
@@ -544,17 +544,17 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
         metodo: 60,
         estado: 40 // Se ajustará
       };
-      colWidths.estado = (doc.page.width - 80) - (colWidths.indice + colWidths.cedula + colWidths.nombre + colWidths.curso + colWidths.monto + colWidths.fecha + colWidths.metodo);
+      colWidths.estado = (doc.page.width - 40) - (colWidths.indice + colWidths.cedula + colWidths.nombre + colWidths.curso + colWidths.monto + colWidths.fecha + colWidths.metodo);
 
       // (Línea separadora eliminada)
 
       const dibujarEncabezadoTabla = (y) => {
-        let x = 40;
+        let x = 20;
         // Fondo blanco con bordes negros (ahorro de tinta)
-        doc.rect(40, y, doc.page.width - 80, 25)
+        doc.rect(20, y, doc.page.width - 40, 25)
           .fillAndStroke('#FFFFFF', colors.dark);
 
-        doc.fontSize(8).fillColor(colors.dark).font('Helvetica-Bold');
+        doc.fontSize(7).fillColor(colors.dark).font('Helvetica-Bold');
 
         doc.text('#', x, y + 8, { width: colWidths.indice, align: 'center' });
         x += colWidths.indice;
@@ -568,17 +568,18 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
         x += colWidths.monto;
         doc.text('FECHA', x, y + 8, { width: colWidths.fecha, align: 'center' });
         x += colWidths.fecha;
-        doc.text('MÉT.', x, y + 8, { width: colWidths.metodo, align: 'center' });
+        doc.text('MÉTODO', x, y + 8, { width: colWidths.metodo, align: 'center' });
         x += colWidths.metodo;
-        doc.text('EST.', x, y + 8, { width: colWidths.estado, align: 'center' });
+        doc.text('ESTADO', x, y + 8, { width: colWidths.estado, align: 'center' });
       };
 
       // Dibujar primer encabezado
       dibujarEncabezadoTabla(tableTop);
 
-      // Agrupar pagos por estudiante para que el reporte sea coherente (igual que en Excel)
+      // Agrupar pagos por ESTUDIANTE (no por curso)
       const pagosAgrupados = {};
       datos.forEach(pago => {
+        // Clave: Solo Cedula del estudiante (para agrupar todos sus pagos sin importar el curso)
         const key = pago.cedula_estudiante || pago.nombre_estudiante || 'SIN_ID';
         if (!pagosAgrupados[key]) {
           pagosAgrupados[key] = [];
@@ -586,7 +587,7 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
         pagosAgrupados[key].push(pago);
       });
 
-      // Ordenar estudiantes por apellido (consistencia con Excel)
+      // Ordenar por Apellido Estudiante
       const identificacionesOrdenadas = Object.keys(pagosAgrupados).sort((a, b) => {
         const apA = pagosAgrupados[a][0].apellido_estudiante || '';
         const apB = pagosAgrupados[b][0].apellido_estudiante || '';
@@ -632,16 +633,16 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
           pagosEnEstaPagina.forEach((pago, pIdx) => {
             // Bordes de las columnas de PAGO (siempre se dibujan por fila)
             doc.lineWidth(0.5).strokeColor(colors.border);
-            let xTmp = 40 + colWidths.indice + colWidths.cedula + colWidths.nombre;
+            let xTmp = 20 + colWidths.indice + colWidths.cedula + colWidths.nombre;
             [colWidths.curso, colWidths.monto, colWidths.fecha, colWidths.metodo, colWidths.estado].forEach(width => {
               doc.rect(xTmp, yPos - 5, width, rowHeight).stroke();
               xTmp += width;
             });
 
-            const xContenidoPago = 40 + colWidths.indice + colWidths.cedula + colWidths.nombre;
+            const xContenidoPago = 20 + colWidths.indice + colWidths.cedula + colWidths.nombre;
             let currentX = xContenidoPago;
 
-            doc.fontSize(7.5).fillColor(colors.text).font('Helvetica');
+            doc.fontSize(6.5).fillColor(colors.text).font('Helvetica');
 
             // Calcular centro vertical
             const yCentroRow = yPos - 5 + (rowHeight / 2);
@@ -668,8 +669,8 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
 
             // Método
             const metodoPago = (pago.estado_pago === 'verificado' || pago.estado_pago === 'pagado') && pago.metodo_pago
-              ? (pago.metodo_pago.length > 9 ? (pago.metodo_pago.substring(0, 8) + '.').toUpperCase() : pago.metodo_pago.toUpperCase())
-              : 'PEND.';
+              ? pago.metodo_pago.toUpperCase()
+              : 'PENDIENTE';
             doc.text(metodoPago, currentX, yCentroRow - 4, { width: colWidths.metodo, align: 'center' });
             currentX += colWidths.metodo;
 
@@ -678,14 +679,14 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
             if (pago.estado_pago === 'verificado') estadoColor = colors.success;
             if (pago.estado_pago === 'pendiente') estadoColor = colors.error;
             doc.fillColor(estadoColor).font('Helvetica-Bold')
-              .text(pago.estado_pago.substring(0, 3).toUpperCase() + '.', currentX, yCentroRow - 4, { width: colWidths.estado, align: 'center' });
+              .text(pago.estado_pago.toUpperCase(), currentX, yCentroRow - 4, { width: colWidths.estado, align: 'center' });
 
             yPos += rowHeight;
           });
 
           // 2. Dibujar celdas "combinadas" (columnas de la izquierda)
           doc.lineWidth(0.5).strokeColor(colors.border);
-          let xEst = 40;
+          let xEst = 20;
 
           // Bordes de bloque para #, Cédula, Nombre
           [colWidths.indice, colWidths.cedula, colWidths.nombre].forEach(width => {
@@ -697,7 +698,7 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
           const primerPago = pagosEnEstaPagina[0];
           const yCentro = yInicioBloque - 5 + (alturaBloque / 2);
 
-          let xCont = 40;
+          let xCont = 20;
           doc.fillColor(colors.text);
 
           // #
@@ -731,7 +732,7 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
       doc.fontSize(10).fillColor(colors.primary).font('Helvetica-Bold')
         .text('RESUMEN FINANCIERO', 0, 100, { align: 'center', width: doc.page.width });
 
-      doc.x = 40; // Reset X
+      doc.x = 20; // Reset X
       doc.moveDown(1);
 
       // ESTADÍSTICAS GENERALES
@@ -794,7 +795,7 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
       doc.fontSize(10).fillColor(colors.primary).font('Helvetica-Bold')
         .text('RESUMEN DE CURSOS', 0, 100, { align: 'center', width: doc.page.width });
 
-      doc.x = 40; // Reset X
+      doc.x = 20; // Reset X
       doc.moveDown(1);
 
       // ESTADÍSTICAS
@@ -915,15 +916,15 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
         // Línea superior del footer
         doc.strokeColor(colors.border)
           .lineWidth(1)
-          .moveTo(40, doc.page.height - 50)
-          .lineTo(doc.page.width - 40, doc.page.height - 50)
+          .moveTo(20, doc.page.height - 50)
+          .lineTo(doc.page.width - 20, doc.page.height - 50)
           .stroke();
 
         // Footer Izquierdo
         doc.fontSize(10)
           .fillColor(colors.dark)
           .font('Helvetica-Bold')
-          .text('Escuela de Belleza Jessica Vélez', 40, doc.page.height - 40, { align: 'left', width: 250 });
+          .text('Escuela de Belleza Jessica Vélez', 20, doc.page.height - 40, { align: 'left', width: 250 });
 
         // Footer Derecho
         const fechaDescarga = new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' });
@@ -932,7 +933,7 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
           .font('Helvetica')
           .text(
             `Descargado: ${fechaDescarga} — Pág. ${i + 1} de ${pages.count}`,
-            doc.page.width - 300,
+            doc.page.width - 280,
             doc.page.height - 40,
             { align: 'right', width: 260 }
           );
@@ -954,7 +955,7 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
     try {
       const doc = new PDFDocument({
         size: 'A4',
-        margins: { top: 40, bottom: 0, left: 40, right: 40 },
+        margins: { top: 30, bottom: 30, left: 20, right: 20 },
         bufferPages: true
       });
       const chunks = [];
@@ -979,25 +980,25 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
       // Función para dibujar encabezado completo (logo + título + institución)
       const dibujarEncabezadoCompleto = (yInicio = 15) => {
         if (logoBuffer) {
-          doc.image(logoBuffer, doc.page.width - 90, yInicio, { width: 50 });
+          doc.image(logoBuffer, doc.page.width - 70, yInicio, { width: 50 });
 
           // Nombre de la institución debajo del logo
           doc.fontSize(6)
             .font('Helvetica-Bold')
             .fillColor(colors.dark)
-            .text('ESCUELA DE BELLEZA', doc.page.width - 100, yInicio + 55, { width: 70, align: 'center' })
-            .text('JESSICA VÉLEZ', doc.page.width - 100, yInicio + 63, { width: 70, align: 'center' });
+            .text('ESCUELA DE BELLEZA', doc.page.width - 80, yInicio + 55, { width: 70, align: 'center' })
+            .text('JESSICA VÉLEZ', doc.page.width - 80, yInicio + 63, { width: 70, align: 'center' });
         }
 
         doc.fontSize(10)
           .fillColor(colors.dark)
           .font('Helvetica-Bold')
-          .text('REPORTE DE CURSOS', 40, yInicio + 5, { align: 'left' });
+          .text('REPORTE DE CURSOS', 20, yInicio + 5, { align: 'left' });
 
         doc.fontSize(8)
           .fillColor(colors.text)
           .font('Helvetica')
-          .text(`GENERADO EL: ${formatearFecha(new Date()).toUpperCase()}`, 40, yInicio + 17, { align: 'left' });
+          .text(`GENERADO EL: ${formatearFecha(new Date()).toUpperCase()}`, 20, yInicio + 17, { align: 'left' });
 
         return yInicio + 85;
       };
@@ -1025,17 +1026,17 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
         aula: 50       // Se ajustará
       };
       // Recalcular el último para ajuste fino
-      colWidths.aula = (doc.page.width - 80) - (colWidths.indice + colWidths.codigo + colWidths.docente + colWidths.nombre + colWidths.horario + colWidths.capacidad);
+      colWidths.aula = (doc.page.width - 40) - (colWidths.indice + colWidths.codigo + colWidths.docente + colWidths.nombre + colWidths.horario + colWidths.capacidad);
 
       // (Línea separadora eliminada)
 
       const dibujarEncabezadoTabla = (y) => {
-        let x = 40;
+        let x = 20;
         // Fondo blanco con bordes negros (ahorro de tinta)
-        doc.rect(40, y, doc.page.width - 80, 25)
+        doc.rect(20, y, doc.page.width - 40, 25)
           .fillAndStroke('#FFFFFF', colors.dark);
 
-        doc.fontSize(8).fillColor(colors.dark).font('Helvetica-Bold');
+        doc.fontSize(7).fillColor(colors.dark).font('Helvetica-Bold');
 
         doc.text('#', x, y + 8, { width: colWidths.indice, align: 'center' });
         x += colWidths.indice;
@@ -1088,7 +1089,7 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
 
         // Bordes de celda (con altura dinámica)
         doc.lineWidth(0.5).strokeColor(colors.border);
-        let xTmp = 40;
+        let xTmp = 20;
         // Orden de anchos para dibujar rectángulos
         const anchosEnOrden = [colWidths.indice, colWidths.codigo, colWidths.docente, colWidths.nombre, colWidths.horario, colWidths.capacidad, colWidths.aula];
         anchosEnOrden.forEach(width => {
@@ -1097,7 +1098,7 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
         });
 
         let yCentroRow = yPos - 5 + (rowHeight / 2);
-        let xPos = 40;
+        let xPos = 20;
 
         doc.fontSize(7.5)
           .fillColor(colors.text)
@@ -1180,7 +1181,7 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
         .font('Helvetica-Bold')
         .text('RESUMEN DETALLADO', 0, 100, { align: 'center', width: doc.page.width });
 
-      doc.x = 40; // Reset X
+      doc.x = 20; // Reset X
 
       doc.moveDown(1);
 
@@ -1256,15 +1257,15 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
         // Línea superior del footer
         doc.strokeColor(colors.border)
           .lineWidth(1)
-          .moveTo(40, doc.page.height - 50)
-          .lineTo(doc.page.width - 40, doc.page.height - 50)
+          .moveTo(20, doc.page.height - 50)
+          .lineTo(doc.page.width - 20, doc.page.height - 50)
           .stroke();
 
         // Footer Izquierdo
         doc.fontSize(10)
           .fillColor(colors.dark)
           .font('Helvetica-Bold')
-          .text('Escuela de Belleza Jessica Vélez', 40, doc.page.height - 40, { align: 'left', width: 250 });
+          .text('Escuela de Belleza Jessica Vélez', 20, doc.page.height - 40, { align: 'left', width: 250 });
 
         // Footer Derecho
         const fechaDescarga = new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' });
@@ -1273,7 +1274,7 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
           .font('Helvetica')
           .text(
             `Descargado: ${fechaDescarga} — Pág. ${i + 1} de ${pages.count}`,
-            doc.page.width - 300,
+            doc.page.width - 280,
             doc.page.height - 40,
             { align: 'right', width: 260 }
           );

@@ -35,7 +35,16 @@ const ReportesModel = {
           m.monto_matricula,
           m.fecha_matricula,
           u.estado as estado_usuario,
-          sm.contacto_emergencia as telefono_emergencia
+          COALESCE(
+            sm.contacto_emergencia,
+            (SELECT contacto_emergencia 
+             FROM solicitudes_matricula sm2 
+             INNER JOIN matriculas m2 ON sm2.id_solicitud = m2.id_solicitud
+             WHERE m2.id_estudiante = u.id_usuario 
+             AND sm2.contacto_emergencia IS NOT NULL 
+             AND sm2.contacto_emergencia != ''
+             LIMIT 1)
+          ) as telefono_emergencia
         FROM usuarios u
         INNER JOIN estudiante_curso ec ON u.id_usuario = ec.id_estudiante
         INNER JOIN cursos c ON ec.id_curso = c.id_curso
@@ -268,7 +277,8 @@ const ReportesModel = {
         params.push(metodoPago);
       }
 
-      query += ` ORDER BY pm.fecha_pago DESC`;
+      // Ordenar por Curso, luego Estudiante, luego Cuota
+      query += ` ORDER BY c.nombre ASC, u.apellido ASC, u.nombre ASC, pm.numero_cuota ASC`;
 
       const [rows] = await pool.query(query, params);
       return rows;
