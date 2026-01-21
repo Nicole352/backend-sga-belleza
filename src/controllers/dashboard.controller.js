@@ -1,16 +1,20 @@
 const { pool } = require('../config/database');
 
 // Helper para construir filtros de fecha según el período
+// Las fechas están guardadas en UTC, convertir a zona horaria de Ecuador (UTC-5) para filtrar
 const getDateFilter = (dateColumn, period = 'all') => {
+  // Convertir de UTC a Ecuador (UTC-5 = -05:00)
+  const ecuadorDate = `CONVERT_TZ(${dateColumn}, '+00:00', '-05:00')`;
+
   switch (period) {
     case 'today':
-      return `AND DATE(${dateColumn}) = CURDATE()`;
+      return `AND DATE(${ecuadorDate}) = CURDATE()`;
     case 'week':
-      return `AND ${dateColumn} >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)`;
+      return `AND ${ecuadorDate} >= DATE_SUB(NOW(), INTERVAL 7 DAY)`;
     case 'month':
-      return `AND MONTH(${dateColumn}) = MONTH(CURDATE()) AND YEAR(${dateColumn}) = YEAR(CURDATE())`;
+      return `AND MONTH(${ecuadorDate}) = MONTH(CURDATE()) AND YEAR(${ecuadorDate}) = YEAR(CURDATE())`;
     case 'year':
-      return `AND YEAR(${dateColumn}) = YEAR(CURDATE())`;
+      return `AND YEAR(${ecuadorDate}) = YEAR(CURDATE())`;
     case 'all':
     default:
       return '';
@@ -142,19 +146,20 @@ exports.getIngresosTendencias = async (req, res) => {
 
     // Configurar consulta según el período
     if (period === 'today') {
-      // Por horas (00-23)
+      // Por horas (00-23) - Convertir de UTC a Ecuador (UTC-5)
+      const ecuadorDate = `CONVERT_TZ(pm.fecha_verificacion, '+00:00', '-05:00')`;
       query = `
         SELECT 
-          HOUR(pm.fecha_verificacion) as etiqueta_num,
-          CONCAT(HOUR(pm.fecha_verificacion), ':00') as etiqueta,
+          HOUR(${ecuadorDate}) as etiqueta_num,
+          DATE_FORMAT(${ecuadorDate}, '%H:00') as etiqueta,
           COALESCE(SUM(pm.monto), 0) as total_ingresos
         FROM pagos_mensuales pm
         ${courseJoin}
         WHERE pm.estado = 'verificado'
-          AND DATE(pm.fecha_verificacion) = CURDATE()
+          AND DATE(${ecuadorDate}) = CURDATE()
           ${courseFilter}
-        GROUP BY HOUR(pm.fecha_verificacion), etiqueta
-        ORDER BY HOUR(pm.fecha_verificacion) ASC
+        GROUP BY etiqueta_num, etiqueta
+        ORDER BY etiqueta_num ASC
       `;
 
       // Generar horas 8am - 8pm (o todas si prefieres)
@@ -163,16 +168,17 @@ exports.getIngresosTendencias = async (req, res) => {
       }
 
     } else if (period === 'week') {
-      // Por días (Lun-Dom o últimos 7 días)
+      // Por días (Lun-Dom o últimos 7 días) - Convertir de UTC a Ecuador (UTC-5)
+      const ecuadorDate = `CONVERT_TZ(pm.fecha_verificacion, '+00:00', '-05:00')`;
       query = `
-        SELECT 
-          DATE(pm.fecha_verificacion) as fecha_completa,
-          DAYNAME(pm.fecha_verificacion) as etiqueta,
-          COALESCE(SUM(pm.monto), 0) as total_ingresos
+SELECT
+DATE(${ecuadorDate}) as fecha_completa,
+  DAYNAME(${ecuadorDate}) as etiqueta,
+  COALESCE(SUM(pm.monto), 0) as total_ingresos
         FROM pagos_mensuales pm
         ${courseJoin}
         WHERE pm.estado = 'verificado'
-          AND pm.fecha_verificacion >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+          AND ${ecuadorDate} >= DATE_SUB(NOW(), INTERVAL 7 DAY)
           ${courseFilter}
         GROUP BY fecha_completa, etiqueta
         ORDER BY fecha_completa ASC
@@ -188,17 +194,18 @@ exports.getIngresosTendencias = async (req, res) => {
       }
 
     } else if (period === 'month') {
-      // Por semanas (Semana 1, Semana 2...) - Esto está bien abreviado "Sem 1" o "Semana 1"
+      // Por semanas (Semana 1, Semana 2...) - Convertir de UTC a Ecuador (UTC-5)
+      const ecuadorDate = `CONVERT_TZ(pm.fecha_verificacion, '+00:00', '-05:00')`;
       query = `
-        SELECT 
-          WEEK(pm.fecha_verificacion, 1) - WEEK(DATE_SUB(pm.fecha_verificacion, INTERVAL DAYOFMONTH(pm.fecha_verificacion)-1 DAY), 1) + 1 as semana_num,
-          CONCAT('Semana ', WEEK(pm.fecha_verificacion, 1) - WEEK(DATE_SUB(pm.fecha_verificacion, INTERVAL DAYOFMONTH(pm.fecha_verificacion)-1 DAY), 1) + 1) as etiqueta,
-          COALESCE(SUM(pm.monto), 0) as total_ingresos
+SELECT
+WEEK(${ecuadorDate}, 1) - WEEK(DATE_SUB(${ecuadorDate}, INTERVAL DAYOFMONTH(${ecuadorDate}) - 1 DAY), 1) + 1 as semana_num,
+  CONCAT('Semana ', WEEK(${ecuadorDate}, 1) - WEEK(DATE_SUB(${ecuadorDate}, INTERVAL DAYOFMONTH(${ecuadorDate}) - 1 DAY), 1) + 1) as etiqueta,
+  COALESCE(SUM(pm.monto), 0) as total_ingresos
         FROM pagos_mensuales pm
         ${courseJoin}
         WHERE pm.estado = 'verificado'
-          AND MONTH(pm.fecha_verificacion) = MONTH(CURDATE())
-          AND YEAR(pm.fecha_verificacion) = YEAR(CURDATE())
+          AND MONTH(${ecuadorDate}) = MONTH(CURDATE())
+          AND YEAR(${ecuadorDate}) = YEAR(CURDATE())
           ${courseFilter}
         GROUP BY semana_num, etiqueta
         ORDER BY semana_num ASC
@@ -209,19 +216,20 @@ exports.getIngresosTendencias = async (req, res) => {
       }
 
     } else if (period === 'year') {
-      // Filtro Año actual: Enero - Diciembre
+      // Filtro Año actual: Enero - Diciembre - Convertir de UTC a Ecuador (UTC-5)
+      const ecuadorDate = `CONVERT_TZ(pm.fecha_verificacion, '+00:00', '-05:00')`;
       query = `
-        SELECT 
-          MONTH(pm.fecha_verificacion) as mes_num,
-          COALESCE(SUM(pm.monto), 0) as total_ingresos
+SELECT
+MONTH(${ecuadorDate}) as mes_num,
+  COALESCE(SUM(pm.monto), 0) as total_ingresos
         FROM pagos_mensuales pm
         ${courseJoin}
         WHERE pm.estado = 'verificado'
-          AND YEAR(pm.fecha_verificacion) = YEAR(CURDATE())
+          AND YEAR(${ecuadorDate}) = YEAR(CURDATE())
           ${courseFilter}
         GROUP BY mes_num
         ORDER BY mes_num ASC
-       `;
+  `;
 
       const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
       meses.forEach((m, i) => timeLabels.push({ etiqueta: m, valor: 0, orden: i + 1 }));
