@@ -34,7 +34,11 @@ router.get('/admin-stats', authMiddleware, async (req, res) => {
       return res.status(403).json({ error: 'Acceso denegado' });
     }
 
-    const stats = await getAdminStats();
+    const period = req.query.period || 'all'; // 'today', 'week', 'month', 'year', 'all'
+    const course = req.query.course || 'all'; // id_tipo_curso o 'all'
+    const status = req.query.status || 'all'; // 'activo', 'inactivo', 'all'
+
+    const stats = await getAdminStats(period, course, status);
     res.json(stats);
   } catch (error) {
     console.error('Error obteniendo estadísticas de admin:', error);

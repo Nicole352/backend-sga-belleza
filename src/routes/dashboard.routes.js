@@ -7,6 +7,7 @@ router.use(authMiddleware);
 router.use(requireRole(['superadmin', 'admin', 'administrativo']));
 
 router.get('/matriculas-por-mes', dashboardController.getMatriculasPorMes);
+router.get('/ingresos-tendencias', dashboardController.getIngresosTendencias);
 router.get('/actividad-reciente', dashboardController.getActividadReciente);
 router.get('/estadisticas-pagos', dashboardController.getEstadisticasPagos);
 router.get('/estadisticas-solicitudes', dashboardController.getEstadisticasSolicitudes);

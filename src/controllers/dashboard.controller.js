@@ -1,5 +1,32 @@
 const { pool } = require('../config/database');
 
+// Helper para construir filtros de fecha según el período
+const getDateFilter = (dateColumn, period = 'all') => {
+  switch (period) {
+    case 'today':
+      return `AND DATE(${dateColumn}) = CURDATE()`;
+    case 'week':
+      return `AND ${dateColumn} >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)`;
+    case 'month':
+      return `AND MONTH(${dateColumn}) = MONTH(CURDATE()) AND YEAR(${dateColumn}) = YEAR(CURDATE())`;
+    case 'year':
+      return `AND YEAR(${dateColumn}) = YEAR(CURDATE())`;
+    case 'all':
+    default:
+      return '';
+  }
+};
+
+// Helper para filtro de curso
+const getCourseFilter = (courseFilter = 'all', tablealias = '') => {
+  if (courseFilter !== 'all') {
+    const prefix = tablealias ? `${tablealias}.` : '';
+    return `AND ${prefix}id_tipo_curso = ${parseInt(courseFilter)}`;
+  }
+  return '';
+};
+
+
 // Obtener matrículas por mes (últimos 6 meses)
 exports.getMatriculasPorMes = async (req, res) => {
   try {
@@ -57,6 +84,227 @@ exports.getMatriculasPorMes = async (req, res) => {
   } catch (error) {
     console.error('Error obteniendo matrículas por mes:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
+  }
+};
+
+// Obtener pagos pendientes de verificación
+exports.getPagosPendientesVerificacion = async (req, res) => {
+  try {
+    const period = req.query.period || 'all';
+    let dateFilter = '';
+
+    switch (period) {
+      case 'today':
+        dateFilter = "AND DATE(fecha_pago) = CURDATE()";
+        break;
+      case 'week':
+        dateFilter = "AND fecha_pago >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)";
+        break;
+      case 'month':
+        dateFilter = "AND MONTH(fecha_pago) = MONTH(CURDATE()) AND YEAR(fecha_pago) = YEAR(CURDATE())";
+        break;
+      case 'year':
+        dateFilter = "AND YEAR(fecha_pago) = YEAR(CURDATE())";
+        break;
+      default:
+        dateFilter = "";
+    }
+
+    const [result] = await pool.execute(`
+      SELECT COUNT(*) as total_pendientes
+      FROM pagos_mensuales
+      WHERE estado = 'pagado'
+      ${dateFilter}
+    `);
+
+    res.json({
+      total_pendientes: parseInt(result[0].total_pendientes)
+    });
+  } catch (error) {
+    console.error('Error obteniendo pagos pendientes de verificación:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+};
+
+// Obtener tendencias de ingresos dinámicamente
+exports.getIngresosTendencias = async (req, res) => {
+  try {
+    const period = req.query.period || 'month';
+    const course = req.query.course || 'all';
+
+    const courseJoin = course !== 'all' ? 'INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula INNER JOIN cursos c ON m.id_curso = c.id_curso' : '';
+    const courseFilter = getCourseFilter(course, 'c');
+
+    let query = '';
+    let groupBy = '';
+    let dateFormat = '';
+    let timeLabels = [];
+
+    // Configurar consulta según el período
+    if (period === 'today') {
+      // Por horas (00-23)
+      query = `
+        SELECT 
+          HOUR(pm.fecha_verificacion) as etiqueta_num,
+          CONCAT(HOUR(pm.fecha_verificacion), ':00') as etiqueta,
+          COALESCE(SUM(pm.monto), 0) as total_ingresos
+        FROM pagos_mensuales pm
+        ${courseJoin}
+        WHERE pm.estado = 'verificado'
+          AND DATE(pm.fecha_verificacion) = CURDATE()
+          ${courseFilter}
+        GROUP BY HOUR(pm.fecha_verificacion), etiqueta
+        ORDER BY HOUR(pm.fecha_verificacion) ASC
+      `;
+
+      // Generar horas 8am - 8pm (o todas si prefieres)
+      for (let i = 0; i < 24; i++) {
+        timeLabels.push({ etiqueta: `${i}:00`, valor: 0, orden: i });
+      }
+
+    } else if (period === 'week') {
+      // Por días (Lun-Dom o últimos 7 días)
+      query = `
+        SELECT 
+          DATE(pm.fecha_verificacion) as fecha_completa,
+          DAYNAME(pm.fecha_verificacion) as etiqueta,
+          COALESCE(SUM(pm.monto), 0) as total_ingresos
+        FROM pagos_mensuales pm
+        ${courseJoin}
+        WHERE pm.estado = 'verificado'
+          AND pm.fecha_verificacion >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+          ${courseFilter}
+        GROUP BY fecha_completa, etiqueta
+        ORDER BY fecha_completa ASC
+      `;
+
+      // Generar últimos 7 días con nombres Completos (MySQL DAYNAME devuelve en inglés, lo mapeamos)
+      const daysMap = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dayName = daysMap[d.getDay()];
+        timeLabels.push({ etiqueta: dayName, valor: 0, fecha: d.toISOString().split('T')[0] });
+      }
+
+    } else if (period === 'month') {
+      // Por semanas (Semana 1, Semana 2...) - Esto está bien abreviado "Sem 1" o "Semana 1"
+      query = `
+        SELECT 
+          WEEK(pm.fecha_verificacion, 1) - WEEK(DATE_SUB(pm.fecha_verificacion, INTERVAL DAYOFMONTH(pm.fecha_verificacion)-1 DAY), 1) + 1 as semana_num,
+          CONCAT('Semana ', WEEK(pm.fecha_verificacion, 1) - WEEK(DATE_SUB(pm.fecha_verificacion, INTERVAL DAYOFMONTH(pm.fecha_verificacion)-1 DAY), 1) + 1) as etiqueta,
+          COALESCE(SUM(pm.monto), 0) as total_ingresos
+        FROM pagos_mensuales pm
+        ${courseJoin}
+        WHERE pm.estado = 'verificado'
+          AND MONTH(pm.fecha_verificacion) = MONTH(CURDATE())
+          AND YEAR(pm.fecha_verificacion) = YEAR(CURDATE())
+          ${courseFilter}
+        GROUP BY semana_num, etiqueta
+        ORDER BY semana_num ASC
+       `;
+
+      for (let i = 1; i <= 5; i++) {
+        timeLabels.push({ etiqueta: `Semana ${i}`, valor: 0 });
+      }
+
+    } else if (period === 'year') {
+      // Filtro Año actual: Enero - Diciembre
+      query = `
+        SELECT 
+          MONTH(pm.fecha_verificacion) as mes_num,
+          COALESCE(SUM(pm.monto), 0) as total_ingresos
+        FROM pagos_mensuales pm
+        ${courseJoin}
+        WHERE pm.estado = 'verificado'
+          AND YEAR(pm.fecha_verificacion) = YEAR(CURDATE())
+          ${courseFilter}
+        GROUP BY mes_num
+        ORDER BY mes_num ASC
+       `;
+
+      const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+      meses.forEach((m, i) => timeLabels.push({ etiqueta: m, valor: 0, orden: i + 1 }));
+
+    } else {
+      // Default / All: Mostrar últimos 12 meses o histórico
+      query = `
+        SELECT 
+          DATE_FORMAT(pm.fecha_verificacion, '%Y-%m') as mes_anio,
+          DATE_FORMAT(pm.fecha_verificacion, '%b %y') as etiqueta, 
+          COALESCE(SUM(pm.monto), 0) as total_ingresos
+        FROM pagos_mensuales pm
+        ${courseJoin}
+        WHERE pm.estado = 'verificado'
+          ${courseFilter}
+        GROUP BY mes_anio, etiqueta
+        ORDER BY mes_anio ASC
+        LIMIT 12
+       `;
+    }
+
+    // Ejecutar consulta
+    const [rows] = await pool.execute(query);
+
+    // Mapear resultados
+    let datosFinales = [];
+    if (period === 'today') {
+      datosFinales = timeLabels.map(plantilla => {
+        const encontrado = rows.find(r => r.etiqueta_num === plantilla.orden);
+        return { ...plantilla, valor: encontrado ? parseFloat(encontrado.total_ingresos) : 0 };
+      }).filter((_, i) => i >= 8 && i <= 20);
+    } else if (period === 'week') {
+      datosFinales = timeLabels.map(plantilla => {
+        const encontrado = rows.find(r => {
+          return r.fecha_completa.toISOString().split('T')[0] === plantilla.fecha;
+        });
+        return { mes: plantilla.etiqueta, valor: encontrado ? parseFloat(encontrado.total_ingresos) : 0 };
+      });
+    } else if (period === 'month') {
+      datosFinales = timeLabels.map(plantilla => {
+        const encontrado = rows.find(r => r.etiqueta === plantilla.etiqueta);
+        return { mes: plantilla.etiqueta, valor: encontrado ? parseFloat(encontrado.total_ingresos) : 0 };
+      });
+    } else if (period === 'year') {
+      const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+      datosFinales = timeLabels.map(plantilla => {
+        const encontrado = rows.find(r => r.mes_num === plantilla.orden);
+        return { mes: plantilla.etiqueta, valor: encontrado ? parseFloat(encontrado.total_ingresos) : 0 };
+      });
+    } else {
+      // Para 'all', generar los últimos 12 meses para asegurar que el gráfico se vea bien incluso con huecos
+      const ultimos12Meses = [];
+      const mesesNombres = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date();
+        d.setMonth(d.getMonth() - i);
+        const label = `${mesesNombres[d.getMonth()]} ${d.getFullYear()}`;
+        const key = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+        ultimos12Meses.push({ etiqueta: label, valor: 0, key: key });
+      }
+
+      datosFinales = ultimos12Meses.map(plantilla => {
+        const encontrado = rows.find(r => r.mes_anio === plantilla.key);
+        return { mes: plantilla.etiqueta, valor: encontrado ? parseFloat(encontrado.total_ingresos) : 0 };
+      });
+    }
+
+    // Calcular estadísticas
+    const totalIngresos = datosFinales.reduce((sum, d) => sum + d.valor, 0);
+    const promedio = datosFinales.length > 0 ? totalIngresos / datosFinales.length : 0;
+    const maxDato = datosFinales.reduce((max, d) => d.valor > max.valor ? d : max, datosFinales[0] || { mes: '-', valor: 0 });
+
+    res.json({
+      datos: datosFinales.map(d => ({ mes: d.mes || d.etiqueta, valor: d.valor })), // Estandarizar clave 'mes' para el frontend
+      promedio: Math.round(promedio * 100) / 100,
+      total: Math.round(totalIngresos * 100) / 100,
+      mes_mayor: { mes: maxDato.mes || maxDato.etiqueta, valor: maxDato.valor }
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo tendencias:', error);
+    // Fallback a seguro
+    res.json({ datos: [], promedio: 0, total: 0, mes_mayor: { mes: '-', valor: 0 } });
   }
 };
 
@@ -225,29 +473,52 @@ exports.getCursosTopMatriculas = async (req, res) => {
   }
 };
 
-// Obtener ingresos del mes actual
+// Obtener ingresos del período seleccionado
 exports.getIngresosMesActual = async (req, res) => {
   try {
+    const period = req.query.period || 'month';
+    const course = req.query.course || 'all';
+
+    const dateFilter = getDateFilter('pm.fecha_verificacion', period);
+    const courseJoin = course !== 'all' ? 'INNER JOIN matriculas m ON pm.id_matricula = m.id_matricula INNER JOIN cursos c ON m.id_curso = c.id_curso' : '';
+    const courseFilter = getCourseFilter(course, 'c');
+
     const [result] = await pool.execute(`
       SELECT 
-        COALESCE(SUM(monto), 0) as ingresos_mes_actual
-      FROM pagos_mensuales
-      WHERE estado = 'verificado'
-        AND MONTH(fecha_verificacion) = MONTH(CURDATE())
-        AND YEAR(fecha_verificacion) = YEAR(CURDATE())
+        COALESCE(SUM(pm.monto), 0) as ingresos_periodo
+      FROM pagos_mensuales pm
+      ${courseJoin}
+      WHERE pm.estado = 'verificado'
+        ${dateFilter}
+        ${courseFilter}
     `);
 
-    const [resultMesAnterior] = await pool.execute(`
+    // Calcular período anterior para comparación
+    let dateFilterAnterior = '';
+    if (period === 'today') {
+      dateFilterAnterior = 'AND DATE(pm.fecha_verificacion) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)';
+    } else if (period === 'week') {
+      dateFilterAnterior = 'AND pm.fecha_verificacion >= DATE_SUB(CURDATE(), INTERVAL 14 DAY) AND pm.fecha_verificacion < DATE_SUB(CURDATE(), INTERVAL 7 DAY)';
+    } else if (period === 'month') {
+      dateFilterAnterior = 'AND MONTH(pm.fecha_verificacion) = MONTH(DATE_SUB(CURDATE(), INTERVAL 1 MONTH)) AND YEAR(pm.fecha_verificacion) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))';
+    } else if (period === 'year') {
+      dateFilterAnterior = 'AND YEAR(pm.fecha_verificacion) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 YEAR))';
+    } else {
+      dateFilterAnterior = '';
+    }
+
+    const [resultAnterior] = await pool.execute(`
       SELECT 
-        COALESCE(SUM(monto), 0) as ingresos_mes_anterior
-      FROM pagos_mensuales
-      WHERE estado = 'verificado'
-        AND MONTH(fecha_verificacion) = MONTH(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))
-        AND YEAR(fecha_verificacion) = YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))
+        COALESCE(SUM(pm.monto), 0) as ingresos_anterior
+      FROM pagos_mensuales pm
+      ${courseJoin}
+      WHERE pm.estado = 'verificado'
+        ${dateFilterAnterior}
+        ${courseFilter}
     `);
 
-    const ingresosActual = parseFloat(result[0].ingresos_mes_actual);
-    const ingresosAnterior = parseFloat(resultMesAnterior[0].ingresos_mes_anterior);
+    const ingresosActual = parseFloat(result[0].ingresos_periodo);
+    const ingresosAnterior = parseFloat(resultAnterior[0].ingresos_anterior);
 
     const porcentajeCambio = ingresosAnterior > 0
       ? ((ingresosActual - ingresosAnterior) / ingresosAnterior) * 100
@@ -259,7 +530,7 @@ exports.getIngresosMesActual = async (req, res) => {
       porcentaje_cambio: Math.round(porcentajeCambio)
     });
   } catch (error) {
-    console.error('Error obteniendo ingresos del mes:', error);
+    console.error('Error obteniendo ingresos:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 };

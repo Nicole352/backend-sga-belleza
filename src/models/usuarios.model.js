@@ -320,41 +320,94 @@ async function getUserStats() {
 }
 
 // Obtener estadísticas específicas para Admin
-async function getAdminStats() {
-  // Obtener totales actuales
+async function getAdminStats(period = 'all', courseFilter = 'all', statusFilter = 'all') {
+  // Helper para construir cláusula WHERE basada en el período
+  const getDateFilter = (dateColumn) => {
+    const now = new Date();
+    switch (period) {
+      case 'today':
+        return `AND DATE(${dateColumn}) = CURDATE()`;
+      case 'week':
+        return `AND ${dateColumn} >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)`;
+      case 'month':
+        return `AND MONTH(${dateColumn}) = MONTH(CURDATE()) AND YEAR(${dateColumn}) = YEAR(CURDATE())`;
+      case 'year':
+        return `AND YEAR(${dateColumn}) = YEAR(CURDATE())`;
+      case 'all':
+      default:
+        return '';
+    }
+  };
+
+  // Helper para filtro de estado
+  const getStatusFilter = () => {
+    if (statusFilter === 'activo') return `AND u.estado = "activo"`;
+    if (statusFilter === 'inactivo') return `AND u.estado = "inactivo"`;
+    return ''; // 'all' - sin filtro
+  };
+
+  // Helper para filtro de curso (solo aplica a matrículas)
+  const getCourseJoin = () => {
+    if (courseFilter !== 'all') {
+      return `INNER JOIN matriculas m ON m.id_estudiante = u.id_usuario 
+              INNER JOIN cursos c ON m.id_curso = c.id_curso`;
+    }
+    return '';
+  };
+
+  const getCourseFilter = () => {
+    if (courseFilter !== 'all') {
+      return `AND c.id_tipo_curso = ${parseInt(courseFilter)}`;
+    }
+    return '';
+  };
+
+  // Obtener totales actuales (con filtros)
   const [adminRows] = await pool.execute(
     `SELECT COUNT(*) as total FROM usuarios u 
      JOIN roles r ON r.id_rol = u.id_rol 
-     WHERE r.nombre_rol = 'administrativo' AND u.estado = "activo"`
+     WHERE r.nombre_rol = 'administrativo' AND u.estado = "activo" ${getDateFilter('u.fecha_registro')}`
   );
+
   const [studentRows] = await pool.execute(
-    `SELECT COUNT(*) as total FROM usuarios u 
+    `SELECT COUNT(DISTINCT u.id_usuario) as total FROM usuarios u 
      JOIN roles r ON r.id_rol = u.id_rol 
-     WHERE r.nombre_rol = 'estudiante'`
+     ${getCourseJoin()}
+     WHERE r.nombre_rol = 'estudiante' ${getDateFilter('u.fecha_registro')} ${getStatusFilter()} ${getCourseFilter()}`
   );
+
   const [activeStudentRows] = await pool.execute(
-    `SELECT COUNT(*) as total FROM usuarios u 
+    `SELECT COUNT(DISTINCT u.id_usuario) as total FROM usuarios u 
      JOIN roles r ON r.id_rol = u.id_rol 
-     WHERE r.nombre_rol = 'estudiante' AND u.estado = "activo"`
+     ${getCourseJoin()}
+     WHERE r.nombre_rol = 'estudiante' AND u.estado = "activo" ${getDateFilter('u.fecha_registro')} ${getCourseFilter()}`
   );
+
   const [docenteRows] = await pool.execute(
     `SELECT COUNT(*) as total FROM usuarios u 
      JOIN roles r ON r.id_rol = u.id_rol 
-     WHERE r.nombre_rol = 'docente' AND u.estado = "activo"`
+     WHERE r.nombre_rol = 'docente' AND u.estado = "activo" ${getDateFilter('u.fecha_registro')}`
   );
 
-  // Obtener cursos activos
-  const [cursosRows] = await pool.execute(
-    'SELECT COUNT(*) as total FROM cursos WHERE estado = "activo"'
-  );
+  // Obtener cursos activos (con filtro de período y tipo de curso)
+  let cursosQuery = `SELECT COUNT(*) as total FROM cursos WHERE estado = "activo" ${getDateFilter('fecha_creacion')}`;
+  if (courseFilter !== 'all') {
+    cursosQuery += ` AND id_tipo_curso = ${parseInt(courseFilter)}`;
+  }
+  const [cursosRows] = await pool.execute(cursosQuery);
 
-  // Obtener matrículas de la tabla correcta
-  const [matriculasAceptadas] = await pool.execute(
-    'SELECT COUNT(*) as total FROM solicitudes_matricula WHERE estado = "aprobado"'
-  );
-  const [matriculasPendientes] = await pool.execute(
-    'SELECT COUNT(*) as total FROM solicitudes_matricula WHERE estado = "pendiente"'
-  );
+  // Obtener matrículas (con filtros)
+  let matriculasQuery = `SELECT COUNT(*) as total FROM solicitudes_matricula WHERE estado = "aprobado" ${getDateFilter('fecha_solicitud')}`;
+  if (courseFilter !== 'all') {
+    matriculasQuery += ` AND id_tipo_curso = ${parseInt(courseFilter)}`;
+  }
+  const [matriculasAceptadas] = await pool.execute(matriculasQuery);
+
+  let matriculasPendientesQuery = `SELECT COUNT(*) as total FROM solicitudes_matricula WHERE estado = "pendiente" ${getDateFilter('fecha_solicitud')}`;
+  if (courseFilter !== 'all') {
+    matriculasPendientesQuery += ` AND id_tipo_curso = ${parseInt(courseFilter)}`;
+  }
+  const [matriculasPendientes] = await pool.execute(matriculasPendientesQuery);
 
   // Calcular fechas para comparación mensual
   const fechaActual = new Date();
@@ -380,7 +433,7 @@ async function getAdminStats() {
     [ultimoDiaMesAnterior]
   );
   const [cursosMesAnterior] = await pool.execute(
-    'SELECT COUNT(*) as total FROM cursos WHERE estado = "activo" AND fecha_inicio <= ?',
+    'SELECT COUNT(*) as total FROM cursos WHERE estado = "activo" AND fecha_creacion <= ?',
     [ultimoDiaMesAnterior]
   );
   const [matriculasAceptadasMesAnterior] = await pool.execute(
