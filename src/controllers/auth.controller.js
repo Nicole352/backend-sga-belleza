@@ -107,6 +107,11 @@ async function meController(req, res) {
     const user = await getUserById(req.user.id_usuario);
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
+    console.log('--- DEBUG ME CONTROLLER ---');
+    console.log('ID Usuario:', req.user.id_usuario);
+    console.log('Contacto Emergencia en DB:', user.contacto_emergencia);
+    console.log('---------------------------');
+
     // Si es docente, obtener datos adicionales de la tabla docentes
     if (user.nombre_rol === 'docente') {
       const [docentes] = await pool.execute(`
@@ -141,48 +146,13 @@ async function meController(req, res) {
       }
     }
 
-    // Para estudiantes, obtener información adicional de la solicitud aprobada
-    if (user.nombre_rol === 'estudiante') {
-      const [solicitudes] = await pool.execute(`
-        SELECT s.contacto_emergencia
-        FROM solicitudes_matricula s
-        WHERE s.identificacion_solicitante = ? AND s.estado = 'aprobado'
-        ORDER BY s.fecha_solicitud DESC
-        LIMIT 1
-      `, [user.cedula]);
-
-      const contacto_emergencia = solicitudes.length > 0 ? solicitudes[0].contacto_emergencia : null;
-
-      return res.json({
-        id_usuario: user.id_usuario,
-        cedula: user.cedula || '',
-        nombre: user.nombre,
-        apellido: user.apellido,
-        nombres: user.nombre,  // Add this for consistency
-        apellidos: user.apellido,  // Add this for consistency
-        email: user.email,
-        telefono: user.telefono || '',
-        direccion: user.direccion || '',
-        fecha_nacimiento: user.fecha_nacimiento || null,
-        genero: user.genero || '',
-        username: user.username || '',
-        rol: user.nombre_rol,
-        estado: user.estado,
-        fecha_ultima_conexion: user.fecha_ultima_conexion,
-        needs_password_reset: !!user.password_temporal,
-        is_first_login: !!user.password_temporal && !user.fecha_ultima_conexion,
-        foto_perfil: user.foto_perfil || null,
-        contacto_emergencia: contacto_emergencia || null // Add this line
-      });
-    }
-
-    return res.json({
+    const responseData = {
       id_usuario: user.id_usuario,
       cedula: user.cedula || '',
       nombre: user.nombre,
       apellido: user.apellido,
-      nombres: user.nombre,  // Add this for consistency
-      apellidos: user.apellido,  // Add this for consistency
+      nombres: user.nombre,
+      apellidos: user.apellido,
       email: user.email,
       telefono: user.telefono || '',
       direccion: user.direccion || '',
@@ -194,8 +164,11 @@ async function meController(req, res) {
       fecha_ultima_conexion: user.fecha_ultima_conexion,
       needs_password_reset: !!user.password_temporal,
       is_first_login: !!user.password_temporal && !user.fecha_ultima_conexion,
-      foto_perfil: user.foto_perfil || null
-    });
+      foto_perfil: user.foto_perfil || null,
+      contacto_emergencia: user.contacto_emergencia || null
+    };
+
+    return res.json(responseData);
   } catch (err) {
     console.error('Error en /me:', err);
     return res.status(500).json({ error: 'Error obteniendo perfil' });

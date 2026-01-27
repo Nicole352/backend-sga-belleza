@@ -25,6 +25,7 @@ async function getUserByEmail(email) {
       u.fecha_bloqueo,
       u.fecha_registro,
       u.fecha_ultima_conexion,
+      u.contacto_emergencia,
       r.nombre_rol
      FROM usuarios u
      JOIN roles r ON r.id_rol = u.id_rol
@@ -61,6 +62,7 @@ async function getUserByUsername(username) {
       u.fecha_bloqueo,
       u.fecha_registro,
       u.fecha_ultima_conexion,
+      u.contacto_emergencia,
       r.nombre_rol
      FROM usuarios u
      JOIN roles r ON r.id_rol = u.id_rol
@@ -95,6 +97,7 @@ async function getUserById(id) {
       u.cuenta_bloqueada,
       u.motivo_bloqueo,
       u.fecha_bloqueo,
+      u.contacto_emergencia,
       r.nombre_rol
      FROM usuarios u
      JOIN roles r ON r.id_rol = u.id_rol
@@ -134,6 +137,7 @@ async function getUserByCedula(cedula) {
       u.fecha_bloqueo,
       u.fecha_registro,
       u.fecha_ultima_conexion,
+      u.contacto_emergencia,
       r.nombre_rol
      FROM usuarios u
      JOIN roles r ON r.id_rol = u.id_rol
@@ -167,11 +171,11 @@ async function createRole(nombre_rol, descripcion = null) {
   return role;
 }
 
-async function createAdminUser({ cedula, nombre, apellido, email, telefono, fecha_nacimiento, direccion, genero, foto_perfil_url, foto_perfil_public_id, passwordHash, password_temporal, id_rol }) {
+async function createAdminUser({ cedula, nombre, apellido, email, telefono, fecha_nacimiento, direccion, genero, foto_perfil_url, foto_perfil_public_id, passwordHash, password_temporal, id_rol, contacto_emergencia }) {
   const [result] = await pool.execute(
     `INSERT INTO usuarios (
-      cedula, nombre, apellido, email, telefono, fecha_nacimiento, direccion, genero, foto_perfil_url, foto_perfil_public_id, password, password_temporal, needs_password_reset, id_rol, estado
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?, 'activo')`,
+      cedula, nombre, apellido, email, telefono, fecha_nacimiento, direccion, contacto_emergencia, genero, foto_perfil_url, foto_perfil_public_id, password, password_temporal, needs_password_reset, id_rol, estado
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?, 'activo')`,
     [
       cedula,
       nombre,
@@ -180,6 +184,7 @@ async function createAdminUser({ cedula, nombre, apellido, email, telefono, fech
       telefono,
       fecha_nacimiento,
       direccion,
+      contacto_emergencia || null, // contacto_emergencia inicial
       genero,
       foto_perfil_url || null,
       foto_perfil_public_id || null,
@@ -218,6 +223,7 @@ async function getAdmins() {
       u.fecha_bloqueo,
       u.fecha_registro,
       u.fecha_ultima_conexion,
+      u.contacto_emergencia,
       r.nombre_rol
      FROM usuarios u
      JOIN roles r ON r.id_rol = u.id_rol
@@ -252,6 +258,7 @@ async function getAllUsers() {
       u.fecha_bloqueo,
       u.fecha_registro,
       u.fecha_ultima_conexion,
+      u.contacto_emergencia,
       r.nombre_rol
      FROM usuarios u
      JOIN roles r ON r.id_rol = u.id_rol
@@ -483,6 +490,7 @@ async function updateAdminUser(id_usuario, fields) {
     telefono: 'telefono',
     fecha_nacimiento: 'fecha_nacimiento',
     direccion: 'direccion',
+    contacto_emergencia: 'contacto_emergencia',
     genero: 'genero',
     id_rol: 'id_rol',
     foto_perfil: 'foto_perfil',
@@ -521,30 +529,8 @@ async function updateAdminUser(id_usuario, fields) {
     }
   }
 
-  // Actualizar campos en otras tablas (por ahora solo contacto_emergencia)
-  if (otherFields.contacto_emergencia !== undefined) {
-    try {
-      // Obtener la cédula del usuario
-      const [userData] = await pool.execute(`
-        SELECT cedula FROM usuarios WHERE id_usuario = ?
-      `, [id_usuario]);
-
-      if (userData.length > 0) {
-        const cedula = userData[0].cedula;
-
-        // Actualizar el contacto de emergencia en la solicitud aprobada más reciente
-        await pool.execute(`
-          UPDATE solicitudes_matricula 
-          SET contacto_emergencia = ?
-          WHERE identificacion_solicitante = ? AND estado = 'aprobado'
-          ORDER BY fecha_solicitud DESC
-          LIMIT 1
-        `, [otherFields.contacto_emergencia, cedula]);
-      }
-    } catch (error) {
-      console.error('Error updating emergency contact:', error);
-    }
-  }
+  // No es necesario actualizar solicitudes_matricula por separado, 
+  // ya que ahora es un campo del usuario
 
   const user = await getUserById(id_usuario);
   return user;
@@ -620,6 +606,7 @@ async function getAllUsersWithFilters({ search = '', rol = 'todos', estado = 'to
       u.motivo_bloqueo,
       u.fecha_bloqueo,
       r.nombre_rol,
+      u.contacto_emergencia,
       u.foto_perfil_url as foto_perfil
     FROM usuarios u 
     JOIN roles r ON r.id_rol = u.id_rol 

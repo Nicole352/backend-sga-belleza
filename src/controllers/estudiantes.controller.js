@@ -190,8 +190,8 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
       const [userResult] = await connection.execute(`
         INSERT INTO usuarios (
           cedula, nombre, apellido, fecha_nacimiento, telefono, email, username,
-          direccion, genero, password, password_temporal, id_rol, estado
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          direccion, contacto_emergencia, genero, password, password_temporal, id_rol, estado
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         solicitud.identificacion_solicitante,
         solicitud.nombre_solicitante,
@@ -201,6 +201,7 @@ exports.createEstudianteFromSolicitud = async (req, res) => {
         emailEstudiante,
         username,
         solicitud.direccion_solicitante,
+        solicitud.contacto_emergencia,
         solicitud.genero_solicitante,
         hashedPassword,
         passwordTemporal,
