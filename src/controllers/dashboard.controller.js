@@ -606,14 +606,14 @@ exports.getEstadisticasEstudiantes = async (req, res) => {
     // Tasas dinámicas
     const aprobados = parseInt(aprobadosReprobados[0].aprobados || 0);
     const totalEvaluados = parseInt(aprobadosReprobados[0].total_evaluados || 0);
-    const tasaAprobacion = totalEvaluados > 0 ? Math.round((aprobados / totalEvaluados) * 100) : 94; // fallback al valor que tenía el usuario si no hay datos
+    const tasaAprobacion = totalEvaluados > 0 ? Math.round((aprobados / totalEvaluados) * 100) : 0;
 
-    const tasaGraduacion = total > 0 ? Math.round((graduadosHistorico / total) * 100) : 87;
+    const tasaGraduacion = total > 0 ? Math.round((graduadosHistorico / total) * 100) : 0;
 
     const capacidadTotal = parseInt(ocupacionData[0].total_capacidad || 0);
     const cuposDisponibles = parseInt(ocupacionData[0].disponibles || 0);
     const matriculadosActivos = capacidadTotal - cuposDisponibles;
-    const tasaOcupacion = capacidadTotal > 0 ? Math.round((matriculadosActivos / capacidadTotal) * 100) : 73;
+    const tasaOcupacion = capacidadTotal > 0 ? Math.round((matriculadosActivos / capacidadTotal) * 100) : 0;
 
     const tasaRetencion = inscritos > 0
       ? Math.round((graduados / inscritos) * 100)
