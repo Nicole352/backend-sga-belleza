@@ -580,6 +580,149 @@ async function getCalificacionesCompletasCurso(req, res) {
   }
 }
 
+// GET /api/calificaciones/curso/:id_curso/excel - Generar Excel de Calificaciones del Curso Completo
+async function descargarReporteExcel(req, res) {
+  try {
+    const { id_curso } = req.params;
+    const { pool } = require("../config/database");
+    const CalificacionesExcelService = require("../services/calificacionesExcelService");
+
+    // 1. Obtener Info del Curso
+    const [cursoInfo] = await pool.execute(
+      `SELECT nombre, horario, fecha_inicio, fecha_fin FROM cursos WHERE id_curso = ?`,
+      [id_curso]
+    );
+
+    if (cursoInfo.length === 0) {
+      return res.status(404).json({ error: "Curso no encontrado" });
+    }
+    const cursoActual = cursoInfo[0];
+    const cursoNombre = cursoActual.nombre;
+
+    // 2. Obtener Info Docente (Asignación Activa)
+    const [docenteInfo] = await pool.execute(
+      `SELECT d.nombres, d.apellidos, aa.hora_inicio, aa.hora_fin
+       FROM asignaciones_aulas aa
+       INNER JOIN docentes d ON aa.id_docente = d.id_docente
+       WHERE aa.id_curso = ? AND aa.estado = 'activa'
+       LIMIT 1`,
+      [id_curso]
+    );
+
+    let nombreDocente = "Docente";
+    let horarioDocente = { hora_inicio: null, hora_fin: null };
+
+    if (docenteInfo.length > 0) {
+      const d = docenteInfo[0];
+      nombreDocente = `${d.apellidos}, ${d.nombres}`;
+      horarioDocente = { hora_inicio: d.hora_inicio, hora_fin: d.hora_fin };
+    }
+
+    // Merge horario info
+    const cursoData = {
+      ...cursoActual,
+      hora_inicio: horarioDocente.hora_inicio,
+      hora_fin: horarioDocente.hora_fin
+    };
+
+    // 3. Obtener Tareas
+    const tareas = await CalificacionesModel.getTareasByCurso(id_curso);
+
+    // 4. Obtener Estudiantes
+    const [estudiantesArr] = await pool.execute(
+      `SELECT
+        u.id_usuario as id_estudiante,
+        u.nombre,
+        u.apellido,
+        u.cedula
+      FROM usuarios u
+      INNER JOIN roles r ON u.id_rol = r.id_rol
+      INNER JOIN matriculas m ON u.id_usuario = m.id_estudiante
+      WHERE m.id_curso = ?
+        AND r.nombre_rol = 'estudiante'
+        AND m.estado = 'activa'
+      ORDER BY u.apellido, u.nombre`,
+      [id_curso]
+    );
+
+    // 5. Obtener Calificaciones Raw
+    const calificacionesArr = await CalificacionesModel.getAllCourseGrades(id_curso);
+
+    // 6. Obtener Promedios y Desglose Completo
+    const estudiantesProcesados = [];
+
+    // Obtener lista de módulos para el reporte
+    const [modulosRows] = await pool.execute(
+      `SELECT nombre FROM modulos_curso WHERE id_curso = ? ORDER BY id_modulo ASC`,
+      [id_curso]
+    );
+    const modulosNombres = modulosRows.map(m => m.nombre);
+
+    for (const est of estudiantesArr) {
+      // 6.1 Procesar Calificaciones por Tarea
+      const califs = {};
+      let suma = 0;
+      let count = 0;
+
+      tareas.forEach(tarea => {
+        const calif = calificacionesArr.find(c => c.id_estudiante === est.id_estudiante && c.id_tarea === tarea.id_tarea);
+        let val = 0;
+
+        if (calif && (calif.nota_obtenida !== null && calif.nota_obtenida !== undefined)) {
+          val = Number(calif.nota_obtenida);
+        }
+
+        califs[tarea.id_tarea] = val; // Guardar 0 si no existe o es null, igual que frontend
+        suma += val;
+        count++;
+      });
+
+      const promedioSimple = count > 0 ? (suma / count) : 0;
+
+      // 6.2 Obtener Promedios Globales Balanceados
+      const promedioGlobalData = await CalificacionesModel.getPromedioGlobalBalanceado(est.id_estudiante, id_curso);
+      const desgloseModulos = await CalificacionesModel.getDesglosePorModulos(est.id_estudiante, id_curso);
+
+      estudiantesProcesados.push({
+        id_estudiante: est.id_estudiante,
+        nombre: est.nombre,
+        apellido: est.apellido,
+        identificacion: est.cedula || "N/A",
+        calificaciones: califs, // Map id_tarea -> nota
+        promedio: promedioSimple,
+        promedio_global: promedioGlobalData.promedio_global || 0,
+        modulos_detalle: desgloseModulos
+      });
+    }
+
+    // Ordenar estudiantes por apellido (Ya viene ordenado de SQL pero aseguramos)
+    estudiantesProcesados.sort((a, b) => {
+      const apellidoA = (a.apellido || '').trim().toUpperCase();
+      const apellidoB = (b.apellido || '').trim().toUpperCase();
+      return apellidoA.localeCompare(apellidoB, 'es');
+    });
+
+    // 7. Generar Excel
+    const buffer = await CalificacionesExcelService.generarExcelCalificacionesCurso({
+      cursoNombre,
+      cursoActual: cursoData,
+      nombreDocente,
+      tareas,
+      estudiantes: estudiantesProcesados,
+      modulos: modulosNombres
+    });
+
+    const dateStr = new Date().toISOString().split('T')[0];
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="Calificaciones_${cursoNombre.replace(/\s+/g, '_')}_${dateStr}.xlsx"`);
+    res.send(buffer);
+
+  } catch (error) {
+    console.error("Error en descargarReporteExcel:", error);
+    res.status(500).json({ error: "Error generando reporte Excel" });
+  }
+}
+
 module.exports = {
   getCalificacionesByEstudianteCurso,
   getPromedioModulo,
@@ -588,5 +731,6 @@ module.exports = {
   getDesglosePorModulos,
   getCalificacionByEntrega,
   getCalificacionesCompletasCurso,
-  generarReporteNotasEstudiante
+  generarReporteNotasEstudiante,
+  descargarReporteExcel
 };

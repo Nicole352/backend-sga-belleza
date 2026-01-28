@@ -48,6 +48,12 @@ router.get(
   calificacionesController.getCalificacionesCompletasCurso,
 );
 
+// GET /api/calificaciones/curso/:id_curso/excel - Descargar reporte Excel de calificaciones del curso
+router.get(
+  "/curso/:id_curso/excel",
+  calificacionesController.descargarReporteExcel,
+);
+
 // GET /api/calificaciones/entrega/:id_entrega - Obtener calificación de una entrega
 router.get(
   "/entrega/:id_entrega",

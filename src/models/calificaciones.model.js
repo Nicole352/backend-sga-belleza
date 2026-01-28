@@ -380,6 +380,46 @@ class CalificacionesModel {
 
     return result.affectedRows > 0;
   }
+
+  // Obtener todas las tareas de un curso con información de módulo y categoría
+  static async getTareasByCurso(id_curso) {
+    const [tareas] = await pool.execute(
+      `SELECT
+        t.id_tarea,
+        t.titulo,
+        t.nota_maxima,
+        t.ponderacion,
+        t.id_modulo,
+        m.nombre as modulo_nombre,
+        cat.nombre as categoria_nombre,
+        cat.ponderacion as categoria_ponderacion
+      FROM tareas_modulo t
+      INNER JOIN modulos_curso m ON t.id_modulo = m.id_modulo
+      LEFT JOIN categorias_evaluacion cat ON t.id_categoria = cat.id_categoria
+      WHERE m.id_curso = ? AND t.estado = 'activo' AND m.estado != 'inactivo'
+      ORDER BY m.id_modulo ASC, t.id_tarea ASC`,
+      [id_curso]
+    );
+    return tareas;
+  }
+
+  // Obtener todas las calificaciones de un curso
+  static async getAllCourseGrades(id_curso) {
+    const [calificaciones] = await pool.execute(
+      `SELECT
+        c.id_calificacion,
+        c.nota as nota_obtenida,
+        e.id_estudiante,
+        e.id_tarea
+      FROM calificaciones_tareas c
+      INNER JOIN entregas_tareas e ON c.id_entrega = e.id_entrega
+      INNER JOIN tareas_modulo t ON e.id_tarea = t.id_tarea
+      INNER JOIN modulos_curso m ON t.id_modulo = m.id_modulo
+      WHERE m.id_curso = ? AND t.estado = 'activo' AND m.estado != 'inactivo'`,
+      [id_curso]
+    );
+    return calificaciones;
+  }
 }
 
 module.exports = CalificacionesModel;

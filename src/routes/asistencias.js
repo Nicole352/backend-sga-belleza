@@ -7,7 +7,9 @@ const {
   getAsistenciaByFechaController,
   guardarAsistenciaController,
   getHistorialEstudianteController,
-  getReporteCursoController
+  getReporteCursoController,
+  generarExcelFechaController,
+  generarExcelRangoController
 } = require('../controllers/asistencias.controller');
 
 const { authMiddleware } = require('../middleware/auth');
@@ -44,6 +46,12 @@ router.get('/estudiante/:id_estudiante/curso/:id_curso', authMiddleware, general
 
 // Obtener reporte completo de asistencia de un curso
 router.get('/reporte/:id_curso', authMiddleware, generalLimiter, getReporteCursoController);
+
+// Descargar Excel de asistencia para una fecha específica
+router.get('/excel/fecha/:id_curso/:fecha', authMiddleware, generalLimiter, generarExcelFechaController);
+
+// Descargar Excel de asistencia para un rango de fechas
+router.get('/excel/rango/:id_curso', authMiddleware, generalLimiter, generarExcelRangoController);
 
 // Obtener URL del documento adjunto de asistencia
 router.get('/documento/:id_asistencia', authMiddleware, generalLimiter, async (req, res) => {

@@ -2,6 +2,7 @@ const { pool } = require('../config/database');
 const { registrarAuditoria } = require('../utils/auditoria');
 const AsistenciasModel = require('../models/asistencias.model');
 const cloudinaryService = require('../services/cloudinary.service');
+const { generarExcelAsistenciaFecha, generarExcelAsistenciaRango } = require('../services/asistenciasExcelService');
 
 // GET /api/asistencias/cursos-docente/:id_docente
 // Obtener todos los cursos que imparte un docente
@@ -409,11 +410,236 @@ async function getReporteCursoController(req, res) {
   }
 }
 
+// GET /api/asistencias/excel/fecha/:id_curso/:fecha
+// Generar Excel de asistencia para una fecha específica
+async function generarExcelFechaController(req, res) {
+  try {
+    const id_curso = Number(req.params.id_curso);
+    const fecha = req.params.fecha;
+
+    if (!id_curso || !fecha) {
+      return res.status(400).json({ error: 'ID de curso y fecha son requeridos' });
+    }
+
+    // Obtener información del curso
+    const [cursos] = await pool.execute(`
+      SELECT 
+        c.id_curso,
+        c.nombre AS nombre_curso,
+        c.horario,
+        tc.nombre AS tipo_curso_nombre,
+        aa.hora_inicio,
+        aa.hora_fin,
+        CONCAT(d.apellidos, ', ', d.nombres) AS nombre_docente
+      FROM cursos c
+      INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
+      LEFT JOIN asignaciones_aulas aa ON c.id_curso = aa.id_curso AND aa.estado = 'activa'
+      LEFT JOIN docentes d ON aa.id_docente = d.id_docente
+      WHERE c.id_curso = ?
+      LIMIT 1
+    `, [id_curso]);
+
+    if (cursos.length === 0) {
+      return res.status(404).json({ error: 'Curso no encontrado' });
+    }
+
+    const curso = cursos[0];
+
+    // Obtener estudiantes del curso (ordenados alfabéticamente)
+    const [estudiantes] = await pool.execute(`
+      SELECT 
+        u.id_usuario AS id_estudiante,
+        u.cedula,
+        u.nombre,
+        u.apellido,
+        u.email
+      FROM estudiante_curso ec
+      INNER JOIN usuarios u ON ec.id_estudiante = u.id_usuario
+      WHERE ec.id_curso = ?
+        AND ec.estado IN ('inscrito', 'activo')
+        AND u.estado = 'activo'
+      ORDER BY u.apellido, u.nombre
+    `, [id_curso]);
+
+    // Obtener asistencias de la fecha
+    const [asistencias] = await pool.execute(`
+      SELECT 
+        a.id_asistencia,
+        a.id_estudiante,
+        a.estado,
+        a.observaciones
+      FROM asistencias a
+      WHERE a.id_curso = ? AND a.fecha = ?
+    `, [id_curso, fecha]);
+
+    // Importar el servicio de Excel
+    const { generarExcelAsistenciaFecha } = require('../services/asistenciasExcelService');
+
+    // Generar Excel
+    const buffer = await generarExcelAsistenciaFecha({
+      cursoNombre: curso.nombre_curso,
+      cursoActual: {
+        horario: curso.horario,
+        hora_inicio: curso.hora_inicio,
+        hora_fin: curso.hora_fin,
+        tipo_curso_nombre: curso.tipo_curso_nombre
+      },
+      nombreDocente: curso.nombre_docente || 'Sin asignar',
+      fechaSeleccionada: fecha,
+      estudiantes,
+      asistencias
+    });
+
+    // Configurar headers para descarga
+    const nombreCurso = curso.nombre_curso.replace(/\s+/g, '_');
+    const nombreArchivo = `Asistencia_${nombreCurso}_${fecha}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${nombreArchivo}"`);
+    res.setHeader('Content-Length', buffer.length);
+
+    return res.send(buffer);
+  } catch (err) {
+    console.error('Error generando Excel de asistencia:', err);
+    return res.status(500).json({ error: 'Error al generar Excel de asistencia' });
+  }
+}
+
+// GET /api/asistencias/excel/rango/:id_curso?fecha_inicio=X&fecha_fin=Y
+// Generar Excel de asistencia para un rango de fechas
+async function generarExcelRangoController(req, res) {
+  try {
+    console.log('[Excel Rango] Iniciando generación con:', req.params, req.query);
+    const id_curso = Number(req.params.id_curso);
+    const fecha_inicio = req.query.fecha_inicio;
+    const fecha_fin = req.query.fecha_fin;
+
+    if (!id_curso || !fecha_inicio || !fecha_fin) {
+      return res.status(400).json({
+        error: 'ID de curso, fecha_inicio y fecha_fin son requeridos'
+      });
+    }
+
+    // Validar que fecha_inicio <= fecha_fin
+    if (new Date(fecha_inicio) > new Date(fecha_fin)) {
+      return res.status(400).json({
+        error: 'La fecha de inicio debe ser anterior o igual a la fecha fin'
+      });
+    }
+
+    // Obtener información del curso
+    const [cursos] = await pool.execute(`
+      SELECT 
+        c.id_curso,
+        c.nombre AS nombre_curso,
+        c.horario,
+        tc.nombre AS tipo_curso_nombre,
+        aa.hora_inicio,
+        aa.hora_fin,
+        CONCAT(d.apellidos, ', ', d.nombres) AS nombre_docente
+      FROM cursos c
+      INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
+      LEFT JOIN asignaciones_aulas aa ON c.id_curso = aa.id_curso AND aa.estado = 'activa'
+      LEFT JOIN docentes d ON aa.id_docente = d.id_docente
+      WHERE c.id_curso = ?
+      LIMIT 1
+    `, [id_curso]);
+
+    if (cursos.length === 0) {
+      return res.status(404).json({ error: 'Curso no encontrado' });
+    }
+
+    const curso = cursos[0];
+
+    // Obtener estudiantes del curso (ordenados alfabéticamente)
+    const [estudiantes] = await pool.execute(`
+      SELECT 
+        u.id_usuario AS id_estudiante,
+        u.cedula,
+        u.nombre,
+        u.apellido,
+        u.email
+      FROM estudiante_curso ec
+      INNER JOIN usuarios u ON ec.id_estudiante = u.id_usuario
+      WHERE ec.id_curso = ?
+        AND ec.estado IN ('inscrito', 'activo')
+        AND u.estado = 'activo'
+      ORDER BY u.apellido, u.nombre
+    `, [id_curso]);
+
+    // Obtener asistencias del rango de fechas
+    // Ajustar fecha fin para incluir todo el día
+    const fechaFinQuery = `${fecha_fin} 23:59:59`;
+
+    console.log(`[Excel Rango] Consultando asistencias curso ${id_curso} desde ${fecha_inicio} hasta ${fechaFinQuery}`);
+
+    const [registros] = await pool.execute(`
+      SELECT 
+        a.id_asistencia,
+        a.id_estudiante,
+        a.fecha,
+        a.estado,
+        a.observaciones
+      FROM asistencias a
+      WHERE a.id_curso = ? 
+        AND a.fecha >= ? AND a.fecha <= ?
+      ORDER BY a.fecha, a.id_estudiante
+    `, [id_curso, fecha_inicio, fechaFinQuery]);
+
+    console.log(`[Excel Rango] Registros encontrados: ${registros.length}`);
+
+    if (registros.length === 0) {
+      return res.status(404).json({
+        error: 'No hay registros de asistencia en este rango de fechas'
+      });
+    }
+
+    // Importar el servicio de Excel
+    const { generarExcelAsistenciaRango } = require('../services/asistenciasExcelService');
+
+    // Generar Excel
+
+    const buffer = await generarExcelAsistenciaRango({
+      cursoNombre: curso.nombre_curso,
+      cursoActual: {
+        horario: curso.horario,
+        hora_inicio: curso.hora_inicio,
+        hora_fin: curso.hora_fin,
+        tipo_curso_nombre: curso.tipo_curso_nombre
+      },
+      nombreDocente: curso.nombre_docente || 'Sin asignar',
+      fechaInicio: fecha_inicio,
+      fechaFin: fecha_fin,
+      estudiantes,
+      registros
+    });
+
+    // Configurar headers para descarga
+    // Limpiar nombre del curso de caracteres problemáticos
+    const nombreCursoLimip = (curso.nombre_curso || 'Curso').replace(/[^a-zA-Z0-9]/g, '_');
+    const nombreArchivo = `Reporte_Asistencia_${nombreCursoLimip}_${fecha_inicio}_a_${fecha_fin}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${nombreArchivo}"`);
+    // res.setHeader('Content-Length', buffer.length); // Comentado para evitar problemas de hang en clientes
+
+    console.log(`[Excel Rango] Enviando archivo: ${nombreArchivo} (${buffer.length} bytes)`);
+
+    return res.status(200).end(buffer, 'binary');
+
+  } catch (err) {
+    console.error('Error generando Excel de asistencia por rango:', err);
+    return res.status(500).json({ error: 'Error al generar Excel de asistencia' });
+  }
+}
+
 module.exports = {
   getCursosDocenteController,
   getEstudiantesCursoController,
   getAsistenciaByFechaController,
   guardarAsistenciaController,
   getHistorialEstudianteController,
-  getReporteCursoController
+  getReporteCursoController,
+  generarExcelFechaController,
+  generarExcelRangoController
 };
