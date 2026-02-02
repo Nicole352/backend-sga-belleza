@@ -1,6 +1,6 @@
 const PagosMenualesModel = require('../models/pagos-mensuales.model');
 const { enviarNotificacionPagoEstudiante } = require('../services/emailService');
-const { emitSocketEvent } = require('../services/socket.service');
+const { emitSocketEvent, emitToUser } = require('../services/socket.service');
 const { notificarNuevoPagoPendiente } = require('../utils/notificationHelper');
 const { registrarAuditoria } = require('../utils/auditoria');
 const { pool } = require('../config/database');
@@ -319,6 +319,18 @@ exports.pagarCuota = async (req, res) => {
       }
     } catch (socketError) {
       console.error(' Error emitiendo evento socket (no afecta el pago):', socketError);
+    }
+
+    // Emitir evento socket al ESTUDIANTE para sincronización en tiempo real (web <-> móvil)
+    try {
+      emitToUser(req, id_estudiante, 'pago_realizado_estudiante', {
+        id_pago: Number(id_pago),
+        estado: 'pagado',
+        fecha_pago: new Date()
+      });
+      console.log(` Estudiante ${id_estudiante} notificado: pago realizado exitosamente`);
+    } catch (socketError) {
+      console.error(' Error emitiendo evento al estudiante (no afecta el pago):', socketError);
     }
 
     res.json({
