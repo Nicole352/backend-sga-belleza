@@ -175,7 +175,7 @@ async function createAdminUser({ cedula, nombre, apellido, email, telefono, fech
   const [result] = await pool.execute(
     `INSERT INTO usuarios (
       cedula, nombre, apellido, email, telefono, fecha_nacimiento, direccion, contacto_emergencia, genero, foto_perfil_url, foto_perfil_public_id, password, password_temporal, needs_password_reset, id_rol, estado
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?, 'activo')`,
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?, 'activo')`,
     [
       cedula,
       nombre,
