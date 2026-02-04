@@ -440,6 +440,8 @@ exports.createDocente = async (req, res) => {
 };
 
 exports.updateDocente = async (req, res) => {
+  const connection = await pool.getConnection();
+
   try {
     const { id } = req.params;
     const {
@@ -449,6 +451,9 @@ exports.updateDocente = async (req, res) => {
       fecha_nacimiento,
       titulo_profesional,
       gmail,
+      telefono,
+      genero,
+      direccion,
       experiencia_anos,
       estado
     } = req.body;
@@ -489,30 +494,37 @@ exports.updateDocente = async (req, res) => {
       });
     }
 
+    await connection.beginTransaction();
+
     // Verificar que el docente existe y obtener todos sus datos actuales
-    const [existingDocente] = await pool.execute(
+    // Usamos connection.execute para estar dentro de la transacción (aunque sea lectura)
+    const [existingDocente] = await connection.execute(
       `SELECT id_docente, identificacion, nombres, apellidos, fecha_nacimiento, 
               titulo_profesional, experiencia_anos, estado 
-       FROM docentes WHERE id_docente = ?`,
+       FROM docentes WHERE id_docente = ? FOR UPDATE`,
       [id]
     );
 
     if (existingDocente.length === 0) {
+      await connection.rollback();
       return res.status(404).json({
         success: false,
         message: 'Docente no encontrado'
       });
     }
 
-    // Actualizar docente
-    await pool.execute(
+    const oldDocente = existingDocente[0];
+
+    // 1. Actualizar tabla docentes
+    await connection.execute(
       `UPDATE docentes 
        SET identificacion = ?, 
            nombres = ?, 
            apellidos = ?, 
            fecha_nacimiento = ?,
            titulo_profesional = ?,
-           experiencia_anos = ?
+           experiencia_anos = ?,
+           estado = ?
        WHERE id_docente = ?`,
       [
         identificacion.trim(),
@@ -521,11 +533,42 @@ exports.updateDocente = async (req, res) => {
         fecha_nacimiento || null,
         titulo_profesional.trim(),
         parseInt(experiencia_anos) || 0,
+        estado,
         id
       ]
     );
 
-    // Obtener docente actualizado
+    // 2. Actualizar tabla usuarios (vinculada por cédula anterior)
+    // Es importante buscar por la cédula ANTERIOR para no perder el rastro si cambia la identificación
+    await connection.execute(
+      `UPDATE usuarios 
+       SET cedula = ?,
+           nombre = ?,
+           apellido = ?,
+           fecha_nacimiento = ?,
+           telefono = ?,
+           genero = ?,
+           direccion = ?,
+           email = ?,
+           estado = ?
+       WHERE cedula = ? AND id_rol = (SELECT id_rol FROM roles WHERE nombre_rol = 'docente')`,
+      [
+        identificacion.trim(),
+        nombres.trim(),
+        apellidos.trim(),
+        fecha_nacimiento || null,
+        telefono || null,
+        genero || null,
+        direccion || null,
+        gmail ? gmail.trim() : null,
+        estado,
+        oldDocente.identificacion // WHERE cedula = old_cedula
+      ]
+    );
+
+    await connection.commit();
+
+    // Obtener docente actualizado para responder
     const [updatedDocente] = await pool.execute(
       'SELECT * FROM docentes WHERE id_docente = ?',
       [id]
@@ -533,7 +576,6 @@ exports.updateDocente = async (req, res) => {
 
     // Registrar auditoría - Admin actualizó docente
     try {
-      // Validar que el usuario esté autenticado
       if (!req.user || !req.user.id_usuario) {
         console.warn('⚠️ No se pudo registrar auditoría: usuario no autenticado');
       } else {
@@ -543,24 +585,23 @@ exports.updateDocente = async (req, res) => {
           id_registro: parseInt(id),
           usuario_id: req.user.id_usuario,
           datos_anteriores: {
-            id_docente: parseInt(id),
-            identificacion: existingDocente[0].identificacion,
-            nombres: existingDocente[0].nombres,
-            apellidos: existingDocente[0].apellidos,
-            fecha_nacimiento: existingDocente[0].fecha_nacimiento,
-            titulo_profesional: existingDocente[0].titulo_profesional,
-            experiencia_anos: existingDocente[0].experiencia_anos,
-            estado: existingDocente[0].estado
+            identificacion: oldDocente.identificacion,
+            nombres: oldDocente.nombres,
+            apellidos: oldDocente.apellidos,
+            fecha_nacimiento: oldDocente.fecha_nacimiento,
+            titulo_profesional: oldDocente.titulo_profesional,
+            experiencia_anos: oldDocente.experiencia_anos,
+            estado: oldDocente.estado
           },
           datos_nuevos: {
-            id_docente: parseInt(id),
             identificacion: identificacion.trim(),
             nombres: nombres.trim(),
             apellidos: apellidos.trim(),
             fecha_nacimiento: fecha_nacimiento || null,
             titulo_profesional: titulo_profesional.trim(),
             experiencia_anos: parseInt(experiencia_anos) || 0,
-            estado: estado
+            estado: estado,
+            email: gmail // Agregamos email a la auditoría aunque no esté en tabla docentes explícitamente
           },
           ip_address: req.ip || req.connection?.remoteAddress || null,
           user_agent: req.get('user-agent') || null
@@ -577,18 +618,19 @@ exports.updateDocente = async (req, res) => {
     });
 
   } catch (error) {
+    await connection.rollback();
     console.error('Error al actualizar docente:', error);
 
     if (error.code === 'ER_DUP_ENTRY') {
-      if (error.message.includes('identificacion')) {
+      if (error.message.includes('cedula') || error.message.includes('identificacion')) {
         return res.status(400).json({
           success: false,
-          message: 'Ya existe otro docente con esa identificación'
+          message: 'Ya existe otro usuario/docente con esa identificación'
         });
-      } else if (error.message.includes('gmail')) {
+      } else if (error.message.includes('email')) {
         return res.status(400).json({
           success: false,
-          message: 'Ya existe otro docente con ese email'
+          message: 'Ya existe otro usuario con ese email'
         });
       }
     }
@@ -598,6 +640,8 @@ exports.updateDocente = async (req, res) => {
       message: 'Error interno del servidor',
       error: error.message
     });
+  } finally {
+    connection.release();
   }
 };
 
