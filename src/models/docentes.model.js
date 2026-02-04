@@ -7,8 +7,7 @@ class DocentesModel {
 
     const offset = (page - 1) * limit;
 
-    // Consulta con JOIN a usuarios para obtener id_usuario, gmail y foto_perfil
-    const docentesQuery = `
+    let docentesQuery = `
       SELECT 
         d.id_docente,
         d.identificacion,
@@ -26,17 +25,32 @@ class DocentesModel {
         u.foto_perfil_url as foto_perfil
       FROM docentes d
       LEFT JOIN usuarios u ON u.cedula = d.identificacion AND u.id_rol = (SELECT id_rol FROM roles WHERE nombre_rol = 'docente')
-      ORDER BY d.apellidos ASC, d.nombres ASC
+      WHERE 1=1
     `;
 
-    const [allDocentes] = await pool.execute(docentesQuery);
+    const params = [];
+
+    if (search) {
+      docentesQuery += ` AND (d.nombres LIKE ? OR d.apellidos LIKE ? OR d.identificacion LIKE ?)`;
+      const term = `%${search}%`;
+      params.push(term, term, term);
+    }
+
+    if (estado && estado !== 'todos') {
+      docentesQuery += ` AND d.estado = ?`;
+      params.push(estado);
+    }
+
+    docentesQuery += ` ORDER BY d.apellidos ASC, d.nombres ASC`;
+
+    const [allDocentes] = await pool.execute(docentesQuery, params);
 
     // Aplicar paginación manualmente
     const startIndex = (parseInt(page) - 1) * parseInt(limit);
     const endIndex = startIndex + parseInt(limit);
     const docentes = allDocentes.slice(startIndex, endIndex);
 
-    // Total es el length del array completo
+    // Total es el length del array completo (filtrado)
     const total = allDocentes.length;
 
     return {
