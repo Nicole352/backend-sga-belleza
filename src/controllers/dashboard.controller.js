@@ -36,9 +36,9 @@ exports.getMatriculasPorMes = async (req, res) => {
   try {
     const [result] = await pool.execute(`
       SELECT 
-        MONTH(fecha_matricula) as mes_numero,
-        YEAR(fecha_matricula) as anio,
-        DATE_FORMAT(fecha_matricula, '%Y-%m') as mes_completo,
+        MONTH(CONVERT_TZ(fecha_matricula, '+00:00', '-05:00')) as mes_numero,
+        YEAR(CONVERT_TZ(fecha_matricula, '+00:00', '-05:00')) as anio,
+        DATE_FORMAT(CONVERT_TZ(fecha_matricula, '+00:00', '-05:00'), '%Y-%m') as mes_completo,
         COUNT(*) as total
       FROM matriculas
       WHERE fecha_matricula >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
@@ -99,16 +99,16 @@ exports.getPagosPendientesVerificacion = async (req, res) => {
 
     switch (period) {
       case 'today':
-        dateFilter = "AND DATE(fecha_pago) = CURDATE()";
+        dateFilter = "AND DATE(CONVERT_TZ(fecha_pago, '+00:00', '-05:00')) = CURDATE()";
         break;
       case 'week':
-        dateFilter = "AND fecha_pago >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)";
+        dateFilter = "AND CONVERT_TZ(fecha_pago, '+00:00', '-05:00') >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
         break;
       case 'month':
-        dateFilter = "AND MONTH(fecha_pago) = MONTH(CURDATE()) AND YEAR(fecha_pago) = YEAR(CURDATE())";
+        dateFilter = "AND MONTH(CONVERT_TZ(fecha_pago, '+00:00', '-05:00')) = MONTH(CURDATE()) AND YEAR(CONVERT_TZ(fecha_pago, '+00:00', '-05:00')) = YEAR(CURDATE())";
         break;
       case 'year':
-        dateFilter = "AND YEAR(fecha_pago) = YEAR(CURDATE())";
+        dateFilter = "AND YEAR(CONVERT_TZ(fecha_pago, '+00:00', '-05:00')) = YEAR(CURDATE())";
         break;
       default:
         dateFilter = "";
@@ -649,8 +649,8 @@ exports.getEstadisticasSolicitudes = async (req, res) => {
         SUM(CASE WHEN estado = 'aprobado' THEN 1 ELSE 0 END) as solicitudes_aprobadas,
         SUM(CASE WHEN estado = 'rechazado' THEN 1 ELSE 0 END) as solicitudes_rechazadas
       FROM solicitudes_matricula
-      WHERE MONTH(fecha_solicitud) = MONTH(CURDATE())
-        AND YEAR(fecha_solicitud) = YEAR(CURDATE())
+      WHERE MONTH(CONVERT_TZ(fecha_solicitud, '+00:00', '-05:00')) = MONTH(CURDATE())
+        AND YEAR(CONVERT_TZ(fecha_solicitud, '+00:00', '-05:00')) = YEAR(CURDATE())
     `);
 
     res.json(result[0]);
@@ -660,23 +660,7 @@ exports.getEstadisticasSolicitudes = async (req, res) => {
   }
 };
 
-// Obtener pagos pendientes de verificación
-exports.getPagosPendientesVerificacion = async (req, res) => {
-  try {
-    const [result] = await pool.execute(`
-      SELECT COUNT(*) as total_pendientes
-      FROM pagos_mensuales
-      WHERE estado = 'pagado'
-    `);
 
-    res.json({
-      total_pendientes: parseInt(result[0].total_pendientes)
-    });
-  } catch (error) {
-    console.error('Error obteniendo pagos pendientes de verificación:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
-  }
-};
 
 // Obtener próximos vencimientos (7 días)
 exports.getProximosVencimientos = async (req, res) => {

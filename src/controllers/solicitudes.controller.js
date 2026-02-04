@@ -1565,7 +1565,7 @@ exports.generarReporteExcel = async (req, res) => {
         (sol.horario_curso ? sol.horario_curso.toUpperCase() : 'N/A'),
         parseFloat(sol.monto_matricula),
         (sol.metodo_pago ? sol.metodo_pago.toUpperCase() : 'N/A'),
-        new Date(sol.fecha_solicitud)
+        sol.fecha_solicitud ? new Date(sol.fecha_solicitud).toLocaleString('es-EC', { timeZone: 'America/Guayaquil' }) : ''
       ]);
 
       // Aplicar estilos y FORMATOS a cada celda de datos
@@ -1598,7 +1598,7 @@ exports.generarReporteExcel = async (req, res) => {
         }
         // 17: Fecha Solicitud
         else if (colNumber === 17) {
-          cell.numFmt = 'dd/mm/yyyy hh:mm';
+          cell.numFmt = '@';
         }
         // Texto general
         else {
@@ -1695,7 +1695,7 @@ exports.generarReporteExcel = async (req, res) => {
         (sol.tipo_curso ? sol.tipo_curso.toUpperCase() : 'N/A'),
         (sol.horario_preferido ? sol.horario_preferido.toUpperCase() : 'N/A'),
         parseFloat(sol.monto_matricula),
-        new Date(sol.fecha_solicitud)
+        sol.fecha_solicitud ? new Date(sol.fecha_solicitud).toLocaleString('es-EC', { timeZone: 'America/Guayaquil' }) : ''
       ]);
 
       row.eachCell((cell, colNumber) => {
@@ -1717,7 +1717,7 @@ exports.generarReporteExcel = async (req, res) => {
           cell.numFmt = '$#,##0.00';
           cell.alignment = { horizontal: 'right', vertical: 'middle' };
         } else if (colNumber === 12) {
-          cell.numFmt = 'dd/mm/yyyy hh:mm';
+          cell.numFmt = '@';
         } else {
           cell.numFmt = '@';
         }
@@ -1798,7 +1798,7 @@ exports.generarReporteExcel = async (req, res) => {
         (sol.curso_nombre ? sol.curso_nombre.toUpperCase() : 'N/A'),
         (sol.horario_preferido ? sol.horario_preferido.toUpperCase() : 'N/A'),
         parseFloat(sol.monto_matricula),
-        new Date(sol.fecha_solicitud),
+        sol.fecha_solicitud ? new Date(sol.fecha_solicitud).toLocaleString('es-EC', { timeZone: 'America/Guayaquil' }) : '',
         (sol.observaciones ? sol.observaciones.toUpperCase() : 'SIN OBSERVACIONES')
       ]);
 
@@ -1822,7 +1822,7 @@ exports.generarReporteExcel = async (req, res) => {
           cell.numFmt = '$#,##0.00';
           cell.alignment = { horizontal: 'right', vertical: 'middle' };
         } else if (colNumber === 11) {
-          cell.numFmt = 'dd/mm/yyyy hh:mm';
+          cell.numFmt = '@';
         } else {
           cell.numFmt = '@';
         }
