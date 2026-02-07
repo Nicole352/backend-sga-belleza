@@ -274,7 +274,7 @@ class DocentesModel {
       INNER JOIN aulas a ON aa.id_aula = a.id_aula
       WHERE aa.id_docente = ? 
         AND aa.estado = 'activa'
-        AND c.estado NOT IN ('finalizado', 'cancelado')
+        AND c.estado NOT IN ('finalizado')
         AND c.fecha_fin >= CURDATE()
       ORDER BY aa.hora_inicio ASC
     `, [id_docente]);

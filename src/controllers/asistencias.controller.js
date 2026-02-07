@@ -33,7 +33,7 @@ async function getCursosDocenteController(req, res) {
         AND ec.estado IN ('inscrito', 'activo')
       WHERE aa.id_docente = ?
         AND aa.estado = 'activa'
-        AND c.estado IN ('activo', 'planificado')
+        AND c.estado IN ('activo', 'planificado', 'cancelado')
       GROUP BY c.id_curso, c.codigo_curso, c.nombre, c.horario, 
                c.fecha_inicio, c.fecha_fin, c.estado, tc.nombre, aa.hora_inicio, aa.hora_fin
       ORDER BY c.fecha_inicio DESC, c.nombre

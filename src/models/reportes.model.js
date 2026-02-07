@@ -248,8 +248,12 @@ const ReportesModel = {
       }
 
       if (estadoCurso && estadoCurso !== 'todos') {
-        query += ` AND c.estado = ? `;
-        params.push(estadoCurso);
+        if (estadoCurso === 'activo') {
+          query += ` AND c.estado IN ('activo', 'cancelado') `;
+        } else {
+          query += ` AND c.estado = ? `;
+          params.push(estadoCurso);
+        }
       }
 
       if (horario && horario !== 'todos') {
@@ -402,8 +406,12 @@ const ReportesModel = {
       const params = [fechaInicio, fechaFin, fechaInicio, fechaFin, fechaInicio, fechaFin];
 
       if (estado && estado !== 'todos') {
-        query += ` AND c.estado = ? `;
-        params.push(estado);
+        if (estado === 'activo') {
+          query += ` AND c.estado IN ('activo', 'cancelado') `;
+        } else {
+          query += ` AND c.estado = ? `;
+          params.push(estado);
+        }
       }
 
       if (horario && horario !== 'todos') {
@@ -462,8 +470,12 @@ const ReportesModel = {
       }
 
       if (estado && estado !== 'todos') {
-        query += ` AND c.estado = ? `;
-        params.push(estado);
+        if (estado === 'activo') {
+          query += ` AND c.estado IN ('activo', 'cancelado') `;
+        } else {
+          query += ` AND c.estado = ? `;
+          params.push(estado);
+        }
       }
 
       if (horario && horario !== 'todos') {
@@ -502,7 +514,7 @@ const ReportesModel = {
           tc.nombre as tipo_curso
         FROM cursos c
         INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
-        WHERE c.estado IN('activo', 'planificado')
+        WHERE c.estado IN('activo', 'planificado', 'cancelado')
         ORDER BY c.fecha_inicio DESC, c.nombre
       `;
 

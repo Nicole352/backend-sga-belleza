@@ -1212,8 +1212,8 @@ exports.getMisCursos = async (req, res) => {
       const fechaFin = new Date(curso.fecha_fin);
       fechaFin.setHours(0, 0, 0, 0); // Normalizar a medianoche
 
-      // Excluir cursos finalizados o cancelados
-      if (curso.estado === 'finalizado' || curso.estado === 'cancelado') {
+      // Excluir solo cursos finalizados (cancelado sigue siendo visible si la fecha fin no ha pasado)
+      if (curso.estado === 'finalizado') {
         return false;
       }
 

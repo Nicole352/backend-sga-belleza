@@ -56,7 +56,7 @@ async function getCursosDisponiblesController(req, res) {
         COALESCE(SUM(promo_regalo.total_promociones_regalo), 0) AS promociones_como_regalo
       FROM tipos_cursos tc
       INNER JOIN cursos c ON c.id_tipo_curso = tc.id_tipo_curso 
-        AND c.estado = 'activo'
+        AND c.estado IN ('activo', 'cancelado')
         AND c.horario IS NOT NULL
       LEFT JOIN (
         SELECT 

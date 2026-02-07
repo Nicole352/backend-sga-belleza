@@ -46,7 +46,7 @@ exports.getAllPagos = async (req, res) => {
       INNER JOIN cursos c ON m.id_curso = c.id_curso
       INNER JOIN tipos_cursos tc ON c.id_tipo_curso = tc.id_tipo_curso
       LEFT JOIN usuarios verificador ON pm.verificado_por = verificador.id_usuario
-      WHERE m.estado = 'activa' AND c.estado = 'activo'
+      WHERE m.estado = 'activa'
     `;
 
     const params = [];

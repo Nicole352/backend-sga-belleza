@@ -56,8 +56,12 @@ class EstudiantesModel {
     }
 
     if (estadoCurso) {
-      sql += ` AND cur.estado = ?`;
-      params.push(estadoCurso);
+      if (estadoCurso === 'activo') {
+        sql += ` AND cur.estado IN ('activo', 'cancelado')`;
+      } else {
+        sql += ` AND cur.estado = ?`;
+        params.push(estadoCurso);
+      }
     }
 
     if (tipoCurso) {
@@ -100,8 +104,12 @@ class EstudiantesModel {
     }
 
     if (estadoCurso) {
-      sqlCount += ` AND cur.estado = ?`;
-      paramsCount.push(estadoCurso);
+      if (estadoCurso === 'activo') {
+        sqlCount += ` AND cur.estado IN ('activo', 'cancelado')`;
+      } else {
+        sqlCount += ` AND cur.estado = ?`;
+        paramsCount.push(estadoCurso);
+      }
     }
 
     if (tipoCurso) {

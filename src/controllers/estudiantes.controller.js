@@ -970,8 +970,8 @@ exports.getMisCursos = async (req, res) => {
       const fechaFin = new Date(curso.fecha_fin);
       fechaFin.setHours(0, 0, 0, 0); // Normalizar a medianoche
 
-      // Excluir cursos finalizados o cancelados
-      if (curso.estado === 'finalizado' || curso.estado === 'cancelado') {
+      // Excluir solo cursos finalizados (cancelado = matrículas cerradas, curso sigue activo)
+      if (curso.estado === 'finalizado') {
         return false;
       }
 
@@ -1031,7 +1031,6 @@ exports.getHistorialAcademico = async (req, res) => {
       // 1. El estado del curso es 'finalizado' o 'cancelado', O
       // 2. La fecha de fin ya pasó (es menor que hoy)
       const estaFinalizado = curso.estado === 'finalizado' ||
-        curso.estado === 'cancelado' ||
         fechaFin < hoy;
 
       // Un curso está ACTIVO si:
@@ -1414,8 +1413,12 @@ exports.generarReporteExcel = async (req, res) => {
     }
 
     if (estadoCurso) {
-      baseSql += ` AND cur.estado = ?`;
-      params.push(estadoCurso);
+      if (estadoCurso === 'activo') {
+        baseSql += ` AND cur.estado IN ('activo', 'cancelado')`;
+      } else {
+        baseSql += ` AND cur.estado = ?`;
+        params.push(estadoCurso);
+      }
     }
 
     if (tipoCurso) {
