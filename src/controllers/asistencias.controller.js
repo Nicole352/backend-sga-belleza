@@ -62,13 +62,13 @@ async function getEstudiantesCursoController(req, res) {
         u.nombre,
         u.apellido,
         u.email,
-        ec.estado AS estado_inscripcion,
-        ec.fecha_inscripcion
-      FROM estudiante_curso ec
-      INNER JOIN usuarios u ON ec.id_estudiante = u.id_usuario
+        m.estado AS estado_inscripcion,
+        m.fecha_matricula AS fecha_inscripcion
+      FROM matriculas m
+      INNER JOIN usuarios u ON m.id_estudiante = u.id_usuario
       INNER JOIN roles r ON u.id_rol = r.id_rol
-      WHERE ec.id_curso = ?
-        AND ec.estado IN ('inscrito', 'activo')
+      WHERE m.id_curso = ?
+        AND m.estado = 'activa'
         AND r.nombre_rol = 'estudiante'
         AND u.estado = 'activo'
       ORDER BY u.apellido, u.nombre

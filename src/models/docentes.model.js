@@ -205,6 +205,7 @@ class DocentesModel {
         c.id_curso,
         c.codigo_curso,
         c.nombre,
+        c.horario,
         c.fecha_inicio,
         c.fecha_fin,
         c.capacidad_maxima,
@@ -221,7 +222,7 @@ class DocentesModel {
       LEFT JOIN aulas a ON aa.id_aula = a.id_aula
       LEFT JOIN matriculas m ON c.id_curso = m.id_curso AND m.estado = 'activa'
       WHERE aa.id_docente = ? AND aa.estado = 'activa'
-      GROUP BY c.id_curso, c.codigo_curso, c.nombre, c.fecha_inicio, c.fecha_fin, 
+      GROUP BY c.id_curso, c.codigo_curso, c.nombre, c.horario, c.fecha_inicio, c.fecha_fin, 
                c.capacidad_maxima, c.estado, a.codigo_aula, a.nombre, a.ubicacion,
                aa.hora_inicio, aa.hora_fin, aa.dias
       ORDER BY c.fecha_inicio DESC

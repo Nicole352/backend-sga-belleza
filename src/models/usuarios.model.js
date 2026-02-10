@@ -564,6 +564,10 @@ async function getAllUsersWithFilters({ search = '', rol = 'todos', estado = 'to
   let whereConditions = [];
   let params = [];
 
+  // FILTRO: Solo mostrar docentes y estudiantes (excluir SuperAdmin y Administrativo)
+  whereConditions.push('r.nombre_rol IN (?, ?)');
+  params.push('docente', 'estudiante');
+
   // Búsqueda por nombre, apellido, cedula, username o email
   if (search) {
     whereConditions.push('(u.nombre LIKE ? OR u.apellido LIKE ? OR u.cedula LIKE ? OR u.username LIKE ? OR u.email LIKE ?)');
