@@ -445,7 +445,7 @@ async function generarExcelFechaController(req, res) {
 
     const curso = cursos[0];
 
-    // Obtener estudiantes del curso (ordenados alfabéticamente)
+    // Obtener estudiantes del curso (ordenados alfabéticamente) - Consistent with getEstudiantesCursoController
     const [estudiantes] = await pool.execute(`
       SELECT 
         u.id_usuario AS id_estudiante,
@@ -453,10 +453,10 @@ async function generarExcelFechaController(req, res) {
         u.nombre,
         u.apellido,
         u.email
-      FROM estudiante_curso ec
-      INNER JOIN usuarios u ON ec.id_estudiante = u.id_usuario
-      WHERE ec.id_curso = ?
-        AND ec.estado IN ('inscrito', 'activo')
+      FROM matriculas m
+      INNER JOIN usuarios u ON m.id_estudiante = u.id_usuario
+      WHERE m.id_curso = ?
+        AND m.estado = 'activa'
         AND u.estado = 'activo'
       ORDER BY u.apellido, u.nombre
     `, [id_curso]);
@@ -551,7 +551,7 @@ async function generarExcelRangoController(req, res) {
 
     const curso = cursos[0];
 
-    // Obtener estudiantes del curso (ordenados alfabéticamente)
+    // Obtener estudiantes del curso (ordenados alfabéticamente) - Consistent with getEstudiantesCursoController
     const [estudiantes] = await pool.execute(`
       SELECT 
         u.id_usuario AS id_estudiante,
@@ -559,10 +559,10 @@ async function generarExcelRangoController(req, res) {
         u.nombre,
         u.apellido,
         u.email
-      FROM estudiante_curso ec
-      INNER JOIN usuarios u ON ec.id_estudiante = u.id_usuario
-      WHERE ec.id_curso = ?
-        AND ec.estado IN ('inscrito', 'activo')
+      FROM matriculas m
+      INNER JOIN usuarios u ON m.id_estudiante = u.id_usuario
+      WHERE m.id_curso = ?
+        AND m.estado = 'activa'
         AND u.estado = 'activo'
       ORDER BY u.apellido, u.nombre
     `, [id_curso]);

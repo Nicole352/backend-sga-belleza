@@ -1565,7 +1565,7 @@ exports.generarReporteExcel = async (req, res) => {
         (sol.horario_curso ? sol.horario_curso.toUpperCase() : 'N/A'),
         parseFloat(sol.monto_matricula),
         (sol.metodo_pago ? sol.metodo_pago.toUpperCase() : 'N/A'),
-        sol.fecha_solicitud ? new Date(sol.fecha_solicitud).toLocaleString('es-EC', { timeZone: 'America/Guayaquil' }) : ''
+        sol.fecha_solicitud ? new Date(sol.fecha_solicitud) : null
       ]);
 
       // Aplicar estilos y FORMATOS a cada celda de datos
@@ -1598,7 +1598,7 @@ exports.generarReporteExcel = async (req, res) => {
         }
         // 17: Fecha Solicitud
         else if (colNumber === 17) {
-          cell.numFmt = '@';
+          cell.numFmt = 'dd/mm/yyyy hh:mm';
         }
         // Texto general
         else {
@@ -1695,7 +1695,7 @@ exports.generarReporteExcel = async (req, res) => {
         (sol.tipo_curso ? sol.tipo_curso.toUpperCase() : 'N/A'),
         (sol.horario_preferido ? sol.horario_preferido.toUpperCase() : 'N/A'),
         parseFloat(sol.monto_matricula),
-        sol.fecha_solicitud ? new Date(sol.fecha_solicitud).toLocaleString('es-EC', { timeZone: 'America/Guayaquil' }) : ''
+        sol.fecha_solicitud ? new Date(sol.fecha_solicitud) : null
       ]);
 
       row.eachCell((cell, colNumber) => {
@@ -1798,7 +1798,7 @@ exports.generarReporteExcel = async (req, res) => {
         (sol.curso_nombre ? sol.curso_nombre.toUpperCase() : 'N/A'),
         (sol.horario_preferido ? sol.horario_preferido.toUpperCase() : 'N/A'),
         parseFloat(sol.monto_matricula),
-        sol.fecha_solicitud ? new Date(sol.fecha_solicitud).toLocaleString('es-EC', { timeZone: 'America/Guayaquil' }) : '',
+        sol.fecha_solicitud ? new Date(sol.fecha_solicitud) : null,
         (sol.observaciones ? sol.observaciones.toUpperCase() : 'SIN OBSERVACIONES')
       ]);
 
@@ -1812,17 +1812,17 @@ exports.generarReporteExcel = async (req, res) => {
         cell.font = { size: 10, color: { argb: 'FF000000' }, name: 'Calibri' };
         cell.alignment = {
           vertical: 'middle',
-          horizontal: [1, 2, 3, 7, 9, 11].includes(colNumber) ? 'center' : 'left'
+          horizontal: [1, 2, 3, 7, 9, 10, 11].includes(colNumber) ? 'center' : 'left',
+          wrapText: colNumber === 12
         };
 
-        // Formatos por categoría (Evitar "General")
         if ([1, 7].includes(colNumber)) {
           cell.numFmt = '0';
         } else if (colNumber === 10) {
           cell.numFmt = '$#,##0.00';
           cell.alignment = { horizontal: 'right', vertical: 'middle' };
         } else if (colNumber === 11) {
-          cell.numFmt = '@';
+          cell.numFmt = 'dd/mm/yyyy hh:mm';
         } else {
           cell.numFmt = '@';
         }
@@ -1885,6 +1885,9 @@ exports.generarReporteExcel = async (req, res) => {
       };
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
     });
+    sheet4.getColumn(1).width = 60;
+    sheet4.getColumn(2).width = 15;
+    sheet4.getColumn(3).width = 15;
     sheet4.getRow(6).height = 35;
 
     const statsRaw = resumenGeneral[0];
@@ -1920,7 +1923,10 @@ exports.generarReporteExcel = async (req, res) => {
           name: 'Calibri',
           bold: col === 'A' // Negrita para la primera columna (Estado)
         };
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.alignment = {
+          horizontal: col === 'A' ? 'left' : 'center',
+          vertical: 'middle'
+        };
       });
 
       sheet4.getCell(`B${rowPointer}`).numFmt = '0';
@@ -2008,8 +2014,8 @@ exports.generarReporteExcel = async (req, res) => {
     });
 
     // Ajustar anchos
-    sheet4.getColumn('A').width = 15;
-    sheet4.getColumn('B').width = 38;
+    sheet4.getColumn('A').width = 30;
+    sheet4.getColumn('B').width = 20;
     sheet4.getColumn('C').width = 25;
     sheet4.getColumn('D').width = 15;
     sheet4.getColumn('E').width = 15;

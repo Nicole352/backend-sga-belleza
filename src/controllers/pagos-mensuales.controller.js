@@ -610,12 +610,12 @@ exports.generarReporteExcel = async (req, res) => {
       { key: 'monto', width: 11 },
       { key: 'fecha_venc', width: 13 },
       { key: 'fecha_pago', width: 13 },
-      { key: 'metodo', width: 12 },
+      { key: 'metodo', width: 14 },
       { key: 'recibido_por', width: 16 },
       { key: 'comprobante', width: 14 },
-      { key: 'banco', width: 12 },
+      { key: 'banco', width: 14 },
       { key: 'estado', width: 11 },
-      { key: 'verificado', width: 18 },
+      { key: 'verificado', width: 15 },
       { key: 'fecha_verif', width: 13 },
       { key: 'observaciones', width: 22 }
     ];
@@ -631,7 +631,7 @@ exports.generarReporteExcel = async (req, res) => {
     headers1.forEach((h, i) => {
       const cell = headerRow1.getCell(i + 1);
       cell.value = h;
-      cell.font = { bold: true, color: { argb: 'FF000000' }, size: 10 };
+      cell.font = { bold: true, color: { argb: 'FF000000' }, size: 10, name: 'Calibri' };
       cell.border = {
         top: { style: 'thin', color: { argb: 'FF000000' } },
         left: { style: 'thin', color: { argb: 'FF000000' } },
@@ -728,13 +728,20 @@ exports.generarReporteExcel = async (req, res) => {
         row.getCell('fecha_pago').alignment = { horizontal: 'center', vertical: 'middle' };
       }
 
-      if (pago.fecha_verificacion) {
-        row.getCell('fecha_verif').numFmt = 'dd/mm/yyyy';
-      }
       row.getCell('fecha_verif').alignment = { horizontal: 'center', vertical: 'middle' };
 
       row.getCell('metodo').alignment = { horizontal: 'center', vertical: 'middle' };
       row.getCell('estado').alignment = { horizontal: 'center', vertical: 'middle' };
+
+      // Ajuste de texto para observaciones
+      row.getCell('observaciones').alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+      row.getCell('estudiante').alignment = { vertical: 'middle', horizontal: 'left' };
+      row.getCell('email').alignment = { vertical: 'middle', horizontal: 'left' };
+      row.getCell('curso').alignment = { vertical: 'middle', horizontal: 'left' };
+      row.getCell('recibido_por').alignment = { vertical: 'middle', horizontal: 'center' };
+      row.getCell('comprobante').alignment = { vertical: 'middle', horizontal: 'center' };
+      row.getCell('banco').alignment = { vertical: 'middle', horizontal: 'center' };
+      row.getCell('verificado').alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
 
       // --- MERGE LOGIC ---
       if (siguienteEsDiferente && currentRow > filaInicioEstudiante) {
@@ -794,13 +801,13 @@ exports.generarReporteExcel = async (req, res) => {
     });
 
     // Configurar anchos de columna para evitar que el texto se corte
-    sheet2.getColumn('A').width = 18; // Identificación
-    sheet2.getColumn('B').width = 35; // Estudiante (más ancho para nombres completos)
-    sheet2.getColumn('C').width = 40; // Curso (más ancho para nombres completos como "Maquillaje Profesional")
-    sheet2.getColumn('D').width = 16; // Cuotas Pendientes
-    sheet2.getColumn('E').width = 16; // Monto Pendiente
-    sheet2.getColumn('F').width = 15; // (columna extra si existe)
-    sheet2.getColumn('G').width = 15; // (columna extra si existe)
+    sheet2.getColumn('A').width = 45; // CONCEPTO (Incrementado para evitar recortes)
+    sheet2.getColumn('B').width = 15; // CANTIDAD
+    sheet2.getColumn('C').width = 25; // MONTO TOTAL
+    sheet2.getColumn('D').width = 15;
+    sheet2.getColumn('E').width = 15;
+    sheet2.getColumn('F').width = 15;
+    sheet2.getColumn('G').width = 15;
 
     // Título principal
     sheet2.mergeCells('A1:E1');
@@ -820,8 +827,7 @@ exports.generarReporteExcel = async (req, res) => {
     sheet2.mergeCells('A4:E4');
     const titleResumen = sheet2.getCell('A4');
     titleResumen.value = 'RESUMEN GENERAL';
-    titleResumen.font = { bold: true, size: 11, color: { argb: 'FF000000' } };
-    titleResumen.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } }; // Blanco
+    titleResumen.font = { bold: true, size: 11, color: { argb: 'FF000000' }, name: 'Calibri' };
     titleResumen.border = {
       top: { style: 'thin', color: { argb: 'FF000000' } },
       left: { style: 'thin', color: { argb: 'FF000000' } },
@@ -851,15 +857,15 @@ exports.generarReporteExcel = async (req, res) => {
     if (estadisticas.length > 0) {
       const stats = estadisticas[0];
       const dataResumen = [
-        ['Total Recaudado (Verificado)', stats.verificados, parseFloat(stats.monto_verificado)],
-        ['Total Pendiente por Cobrar', stats.pendientes + stats.vencidos, parseFloat(stats.monto_pendiente)],
-        ['Pagos en Efectivo', stats.pagos_efectivo, null],
-        ['Pagos por Transferencia', stats.pagos_transferencia, null]
+        ['TOTAL RECAUDADO (VERIFICADO)', stats.verificados, parseFloat(stats.monto_verificado)],
+        ['TOTAL PENDIENTE POR COBRAR', Number(stats.pendientes) + Number(stats.vencidos), parseFloat(stats.monto_pendiente)],
+        ['PAGOS EN EFECTIVO', stats.pagos_efectivo, null],
+        ['PAGOS POR TRANSFERENCIA', stats.pagos_transferencia, null]
       ];
 
       dataResumen.forEach((d, i) => {
         const r = sheet2.getRow(6 + i);
-        r.getCell(1).value = d[0];
+        r.getCell(1).value = d[0].toUpperCase();
         r.getCell(2).value = d[1];
         r.getCell(3).value = d[2];
 

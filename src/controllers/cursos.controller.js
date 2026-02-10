@@ -429,10 +429,10 @@ module.exports = {
       const [estadisticas] = await pool.execute(`
         SELECT 
           COUNT(*) as total_cursos,
-          COUNT(CASE WHEN estado = 'activo' THEN 1 END) as activos,
+          COUNT(CASE WHEN estado IN ('activo', 'cancelado') THEN 1 END) as activos,
           COUNT(CASE WHEN estado = 'planificado' THEN 1 END) as planificados,
           COUNT(CASE WHEN estado = 'finalizado' THEN 1 END) as finalizados,
-          COUNT(CASE WHEN estado = 'cancelado' THEN 1 END) as cancelados,
+          0 as cancelados,
           SUM(capacidad_maxima) as capacidad_total,
           SUM(cupos_disponibles) as cupos_disponibles_total,
           SUM(capacidad_maxima - cupos_disponibles) as estudiantes_totales
@@ -528,7 +528,7 @@ module.exports = {
           curso.cupos_disponibles,
           new Date(curso.fecha_inicio),
           new Date(curso.fecha_fin),
-          (curso.estado ? curso.estado.toUpperCase() : 'N/A')
+          (curso.estado === 'cancelado' ? 'ACTIVO' : (curso.estado ? curso.estado.toUpperCase() : 'N/A'))
         ];
         const row = sheet1.addRow(rowValues);
 

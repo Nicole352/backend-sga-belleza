@@ -152,12 +152,17 @@ async function generarReporteNotasEstudiante(req, res) {
           const numTareasCat = tareasCat.length;
           const valorTarea = numTareasCat > 0 ? (catPond / numTareasCat) : 0;
 
+          let notaDisplay = t.nota !== null && t.nota !== undefined ? parseFloat(t.nota) : null;
+          if (notaDisplay === null || isNaN(notaDisplay)) {
+            notaDisplay = "-";
+          }
+
           const row = sheet.addRow([
             modCounter,
             moduloNombre.toUpperCase(),
             catNombre.toUpperCase(),
             t.tarea_titulo.toUpperCase(),
-            t.nota !== null ? parseFloat(t.nota) : "-",
+            notaDisplay,
             valorTarea.toFixed(2)
           ]);
 
@@ -196,7 +201,12 @@ async function generarReporteNotasEstudiante(req, res) {
 
       // Fila de Promedio del Módulo
       const modInfo = desgloseModulos.find(m => m.nombre_modulo === moduloNombre);
-      const promMod = modInfo ? parseFloat(modInfo.promedio_modulo_sobre_10) : 0;
+      let promMod = modInfo ? parseFloat(modInfo.promedio_modulo_sobre_10) : null;
+
+      // Validar si es un número válido, si no, poner un guion
+      if (promMod === null || isNaN(promMod)) {
+        promMod = "-";
+      }
 
       const subTotalRow = sheet.addRow([
         `PROMEDIO ${moduloNombre.toUpperCase()}`,
@@ -226,7 +236,13 @@ async function generarReporteNotasEstudiante(req, res) {
     });
 
     // Fila de Promedio Global Final
-    const promGlobal = parseFloat(promedioData.promedio_global);
+    let promGlobal = parseFloat(promedioData.promedio_global);
+
+    // Validar si es un número válido, si no, poner un guion
+    if (isNaN(promGlobal)) {
+      promGlobal = "-";
+    }
+
     const finalRow = sheet.addRow([
       'PROMEDIO GLOBAL FINAL',
       '',

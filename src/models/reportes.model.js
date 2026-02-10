@@ -453,7 +453,7 @@ const ReportesModel = {
       let query = `
         SELECT
           COUNT(DISTINCT c.id_curso) as total_cursos,
-          COUNT(DISTINCT CASE WHEN c.estado = 'activo' THEN c.id_curso END) as cursos_activos,
+          COUNT(DISTINCT CASE WHEN c.estado IN ('activo', 'cancelado') THEN c.id_curso END) as cursos_activos,
           COUNT(DISTINCT CASE WHEN c.estado = 'finalizado' THEN c.id_curso END) as cursos_finalizados,
           AVG(c.capacidad_maxima) as promedio_capacidad,
           AVG(c.cupos_disponibles) as promedio_cupos_disponibles,
