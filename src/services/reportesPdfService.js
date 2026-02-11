@@ -190,10 +190,10 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
           // Calcular altura dinámica
           const nombreCompleto = `${todosLosCursosEst[0].nombre} ${todosLosCursosEst[0].apellido}`.toUpperCase();
           const alturaNombre = doc.heightOfString(nombreCompleto, { width: colWidths.nombre });
-          // Altura base 20. Padding equilibrado de 6pt.
-          let rowHeight = 20;
+          // Altura base 18pt como solicitado.
+          let rowHeight = 18;
           if (cursosRestantes.length === 1) {
-            rowHeight = Math.max(20, alturaNombre + 6);
+            rowHeight = Math.max(18, alturaNombre + 6);
           }
 
           // Determinar cuántos cursos caben en la página actual
@@ -232,12 +232,15 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
             const yCentroCurso = yPos + (rowHeight / 2);
 
             // Curso
-            doc.text(estudiante.nombre_curso ? estudiante.nombre_curso.toUpperCase() : 'N/A', currentX, yCentroCurso - 4, { width: colWidths.curso, align: 'center' });
+            const textoCurso = estudiante.nombre_curso ? estudiante.nombre_curso.toUpperCase() : 'N/A';
+            const alturaTextoCurso = doc.heightOfString(textoCurso, { width: colWidths.curso });
+            doc.text(textoCurso, currentX, yPos + (rowHeight - alturaTextoCurso) / 2, { width: colWidths.curso, align: 'center' });
             currentX += colWidths.curso;
 
             // Fecha inscripción
             const fechaInsc = estudiante.fecha_inscripcion ? new Date(estudiante.fecha_inscripcion).toLocaleDateString('es-ES') : 'N/A';
-            doc.text(fechaInsc, currentX, yCentroCurso - 4, { width: colWidths.fecha, align: 'center' });
+            const alturaFecha = doc.heightOfString(fechaInsc, { width: colWidths.fecha });
+            doc.text(fechaInsc, currentX, yPos + (rowHeight - alturaFecha) / 2, { width: colWidths.fecha, align: 'center' });
             currentX += colWidths.fecha;
 
             // Estado con color (CORREGIDO: Eliminado amarillo)
@@ -246,8 +249,10 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
             if (estudiante.estado_academico === 'reprobado') estadoColor = colors.error;
             if (estudiante.estado_academico === 'retirado') estadoColor = colors.text; // Fixed: Yellow removed
 
+            const textoEstado = estudiante.estado_academico ? estudiante.estado_academico.toUpperCase() : 'N/A';
+            const alturaEstado = doc.heightOfString(textoEstado, { width: colWidths.estado });
             doc.fillColor(estadoColor).font('Helvetica')
-              .text(estudiante.estado_academico ? estudiante.estado_academico.toUpperCase() : 'N/A', currentX, yCentroCurso - 4, { width: colWidths.estado, align: 'center' });
+              .text(textoEstado, currentX, yPos + (rowHeight - alturaEstado) / 2, { width: colWidths.estado, align: 'center' });
 
             yPos += rowHeight;
           });
@@ -273,13 +278,16 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
           xCont += colWidths.indice;
 
           // Cédula
+          const textoCedula = primerEst.cedula || 'N/A';
+          const alturaCedula = doc.heightOfString(textoCedula, { width: colWidths.cedula });
           doc.font('Helvetica').fontSize(7.5)
-            .text(primerEst.cedula || 'N/A', xCont, yCentro - 4, { width: colWidths.cedula, align: 'center' });
+            .text(textoCedula, xCont, yInicioBloque + (alturaBloque - alturaCedula) / 2, { width: colWidths.cedula, align: 'center' });
           xCont += colWidths.cedula;
 
           // Nombre completo
+          const alturaNombreCompleto = doc.heightOfString(nombreCompleto, { width: colWidths.nombre });
           doc.font('Helvetica').fontSize(7.5)
-            .text(`${primerEst.apellido} ${primerEst.nombre}`.toUpperCase(), xCont, yCentro - 4, { width: colWidths.nombre, align: 'center' });
+            .text(nombreCompleto, xCont, yInicioBloque + (alturaBloque - alturaNombreCompleto) / 2, { width: colWidths.nombre, align: 'center' });
         }
         indiceGlobal++;
       });
@@ -587,10 +595,10 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
           // Calcular altura dinámica
           const nombreCompleto = `${todosLosPagosEstudiante[0].nombre_estudiante} ${todosLosPagosEstudiante[0].apellido_estudiante}`.toUpperCase();
           const alturaNombre = doc.heightOfString(nombreCompleto, { width: colWidths.nombre });
-          // Altura base 26. Padding de 8pt para balance.
-          let rowHeight = 26;
+          // Altura base 18pt como solicitado.
+          let rowHeight = 18;
           if (pagosRestantes.length === 1) {
-            rowHeight = Math.max(26, alturaNombre + 8);
+            rowHeight = Math.max(18, alturaNombre + 6);
           }
 
           // Determinar cuántos pagos del estudiante caben en la página actual
@@ -630,38 +638,42 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
             const yCentroRow = yPos + (rowHeight / 2);
 
             // Curso
-            const cursoNombre = pago.nombre_curso ? pago.nombre_curso.toUpperCase() : 'N/A';
-            const cursoCorto = cursoNombre.length > 20 ? cursoNombre.substring(0, 18) + '...' : cursoNombre;
-            doc.text(cursoCorto, currentX, yCentroRow - 4, { width: colWidths.curso, align: 'center' });
+            const textoCurso = pago.nombre_curso ? pago.nombre_curso.toUpperCase() : 'N/A';
+            const cursoCorto = textoCurso.length > 25 ? textoCurso.substring(0, 23) + '...' : textoCurso;
+            const alturaCurso = doc.heightOfString(cursoCorto, { width: colWidths.curso });
+            doc.text(cursoCorto, currentX, yPos + (rowHeight - alturaCurso) / 2, { width: colWidths.curso, align: 'center' });
             currentX += colWidths.curso;
 
             // Monto
-            doc.text(formatearMoneda(pago.monto), currentX, yCentroRow - 4, { width: colWidths.monto, align: 'center' });
+            const textoMonto = formatearMoneda(pago.monto);
+            const alturaMonto = doc.heightOfString(textoMonto, { width: colWidths.monto });
+            doc.text(textoMonto, currentX, yPos + (rowHeight - alturaMonto) / 2, { width: colWidths.monto, align: 'center' });
             currentX += colWidths.monto;
 
             // Fecha
             let fechaMostrar = 'N/A';
-            if (pago.fecha_pago) {
-              fechaMostrar = new Date(pago.fecha_pago).toLocaleDateString('es-ES');
-            } else if (pago.fecha_vencimiento) {
-              fechaMostrar = new Date(pago.fecha_vencimiento).toLocaleDateString('es-ES');
-            }
-            doc.text(fechaMostrar, currentX, yCentroRow - 4, { width: colWidths.fecha, align: 'center' });
+            if (pago.fecha_pago) fechaMostrar = new Date(pago.fecha_pago).toLocaleDateString('es-ES');
+            else if (pago.fecha_vencimiento) fechaMostrar = new Date(pago.fecha_vencimiento).toLocaleDateString('es-ES');
+            const alturaFecha = doc.heightOfString(fechaMostrar, { width: colWidths.fecha });
+            doc.text(fechaMostrar, currentX, yPos + (rowHeight - alturaFecha) / 2, { width: colWidths.fecha, align: 'center' });
             currentX += colWidths.fecha;
 
             // Método
             const metodoPago = (pago.estado_pago === 'verificado' || pago.estado_pago === 'pagado') && pago.metodo_pago
               ? pago.metodo_pago.toUpperCase()
               : 'PENDIENTE';
-            doc.text(metodoPago, currentX, yCentroRow - 4, { width: colWidths.metodo, align: 'center' });
+            const alturaMetodo = doc.heightOfString(metodoPago, { width: colWidths.metodo });
+            doc.text(metodoPago, currentX, yPos + (rowHeight - alturaMetodo) / 2, { width: colWidths.metodo, align: 'center' });
             currentX += colWidths.metodo;
 
             // Estado
             let estadoColor = colors.text;
             if (pago.estado_pago === 'verificado') estadoColor = colors.success;
             if (pago.estado_pago === 'pendiente') estadoColor = colors.error;
+            const textoEstado = pago.estado_pago.toUpperCase();
+            const alturaEstado = doc.heightOfString(textoEstado, { width: colWidths.estado });
             doc.fillColor(estadoColor).font('Helvetica')
-              .text(pago.estado_pago.toUpperCase(), currentX, yCentroRow - 4, { width: colWidths.estado, align: 'center' });
+              .text(textoEstado, currentX, yPos + (rowHeight - alturaEstado) / 2, { width: colWidths.estado, align: 'center' });
 
             yPos += rowHeight;
           });
@@ -835,14 +847,11 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
         // Ordenar por cantidad de cuotas pendientes (mayor a menor)
         listaEstudiantes.sort((a, b) => b.cuotasPendientes - a.cuotasPendientes);
 
-        // Mostrar hasta 15 estudiantes
-        const maxEstudiantes = Math.min(15, listaEstudiantes.length);
-
         doc.fontSize(9).fillColor(colors.textGray).font('Helvetica-Oblique')
-          .text(`MOSTRANDO ${maxEstudiantes} DE ${listaEstudiantes.length} ESTUDIANTES CON PAGOS PENDIENTES`);
+          .text(`LISTADO DE ESTUDIANTES CON PAGOS PENDIENTES (${listaEstudiantes.length})`);
         doc.moveDown(0.3);
 
-        listaEstudiantes.slice(0, maxEstudiantes).forEach((est, index) => {
+        listaEstudiantes.forEach((est, index) => {
           // Verificar si necesitamos nueva página
           if (doc.y > doc.page.height - 110) {
             doc.addPage();
@@ -851,7 +860,7 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
             doc.y = yPos;
 
             doc.fontSize(9).fillColor(colors.dark).font('Helvetica')
-              .text('ESTUDIANTE CON PAGOS PENDIENTES (CONTINUACIÓN)', 40, doc.y, { underline: true });
+              .text('ESTUDIANTES CON PAGOS PENDIENTES (CONTINUACIÓN)', 40, doc.y, { underline: true });
             doc.moveDown(0.5);
           }
 
@@ -861,7 +870,7 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
             .text(` (${est.cedula || 'SIN CÉDULA'})`);
 
           doc.fontSize(8).fillColor(colors.textGray)
-            .text(`   CURSO: ${est.curso.toUpperCase()}`);
+            .text(`   CURSO: ${est.cursoo ? est.cursoo.toUpperCase() : (est.curso ? est.curso.toUpperCase() : 'N/A')}`);
 
           doc.fillColor(colors.success).font('Helvetica')
             .text(`   PAGOS VERIFICADOS: ${est.cuotasVerificadas}`, { continued: true })
@@ -875,11 +884,6 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
 
           doc.moveDown(0.3);
         });
-
-        if (listaEstudiantes.length > maxEstudiantes) {
-          doc.fontSize(8).fillColor(colors.textGray).font('Helvetica-Oblique')
-            .text(`... Y ${listaEstudiantes.length - maxEstudiantes} ESTUDIANTES MÁS CON PAGOS PENDIENTES.`);
-        }
       } else {
         doc.fontSize(9).fillColor(colors.success).font('Helvetica')
           .text('¡EXCELENTE! NO HAY ESTUDIANTES CON PAGOS PENDIENTES EN ESTE PERÍODO.');
@@ -1054,8 +1058,8 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
 
         const alturaDocenteTotal = alturaID + alturaApellidos + alturaNombres + 4; // +4 normal
 
-        // Altura base 26. Padding 8pt.
-        const rowHeight = Math.max(26, alturaNombre + 8, alturaDocenteTotal + 8);
+        // Altura base 18pt como solicitado.
+        const rowHeight = Math.max(18, alturaNombre + 6, alturaDocenteTotal + 6);
 
         // Verificar si necesitamos nueva página
         if (yPos + rowHeight > doc.page.height - 100) {
@@ -1083,11 +1087,15 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
           .font('Helvetica');
 
         // Índice (#)
-        doc.text((index + 1).toString(), xPos, yCentroRow - 4, { width: colWidths.indice, align: 'center' });
+        const textoIndice = (index + 1).toString();
+        const alturaIndice = doc.heightOfString(textoIndice, { width: colWidths.indice });
+        doc.text(textoIndice, xPos, yPos + (rowHeight - alturaIndice) / 2, { width: colWidths.indice, align: 'center' });
         xPos += colWidths.indice;
 
         // Código
-        doc.font('Helvetica').text(curso.codigo_curso || 'N/A', xPos, yCentroRow - 4, { width: colWidths.codigo, align: 'center' });
+        const textoCodigo = curso.codigo_curso || 'N/A';
+        const alturaCodigo = doc.heightOfString(textoCodigo, { width: colWidths.codigo });
+        doc.font('Helvetica').text(textoCodigo, xPos, yPos + (rowHeight - alturaCodigo) / 2, { width: colWidths.codigo, align: 'center' });
         xPos += colWidths.codigo;
 
         // Docente (Fusión vertical: ID + Apellidos (Bold) + Nombres (Bold))
@@ -1117,7 +1125,7 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
 
         xPos += colWidths.docente;
 
-        // Nombre del curso (Movido después de Docente)
+        // Nombre del curso
         let yTextoNombre = yPos + (rowHeight - alturaNombre) / 2;
         doc.font('Helvetica').text(nombreCurso, xPos, yTextoNombre, { width: colWidths.nombre, align: 'center' });
         xPos += colWidths.nombre;
@@ -1127,16 +1135,21 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
           ? `${curso.hora_inicio.toString().substring(0, 5)} - ${curso.hora_fin.toString().substring(0, 5)}`
           : '';
         const horarioCompleto = `${curso.horario || 'N/A'}${intervalo ? '\n' + intervalo : ''}`.toUpperCase();
+        const alturaHorario = doc.heightOfString(horarioCompleto, { width: colWidths.horario });
 
-        doc.text(horarioCompleto, xPos, yCentroRow - (intervalo ? 8 : 4), { width: colWidths.horario, align: 'center' });
+        doc.text(horarioCompleto, xPos, yPos + (rowHeight - alturaHorario) / 2, { width: colWidths.horario, align: 'center' });
         xPos += colWidths.horario;
 
         // Capacidad
-        doc.text(`${curso.total_estudiantes}/${curso.capacidad_maxima}`, xPos, yCentroRow - 4, { width: colWidths.capacidad, align: 'center' });
+        const textoCapacidad = `${curso.total_estudiantes}/${curso.capacidad_maxima}`;
+        const alturaCapacidad = doc.heightOfString(textoCapacidad, { width: colWidths.capacidad });
+        doc.text(textoCapacidad, xPos, yPos + (rowHeight - alturaCapacidad) / 2, { width: colWidths.capacidad, align: 'center' });
         xPos += colWidths.capacidad;
 
         // Aula
-        doc.text(curso.aula_nombre || 'N/A', xPos, yCentroRow - 4, { width: colWidths.aula, align: 'center' });
+        const textoAula = curso.aula_nombre || 'N/A';
+        const alturaAula = doc.heightOfString(textoAula, { width: colWidths.aula });
+        doc.text(textoAula, xPos, yPos + (rowHeight - alturaAula) / 2, { width: colWidths.aula, align: 'center' });
 
         yPos += rowHeight;
       });
