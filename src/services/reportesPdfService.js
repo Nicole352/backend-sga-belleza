@@ -73,12 +73,12 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
         }
 
         // Título del reporte a la izquierda (y=35)
-        doc.fontSize(10)
+        doc.fontSize(6)
           .font('Helvetica-Bold')
           .fillColor(colors.dark)
           .text('REPORTE DE ESTUDIANTES', 40, 35);
 
-        doc.fontSize(8)
+        doc.fontSize(6)
           .fillColor(colors.text)
           .font('Helvetica')
           .text(`GENERADO EL: ${formatearFecha(new Date()).toUpperCase()}`, 40, 48);
@@ -95,14 +95,14 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
       // ========================================
       // INFORMACIÓN DEL PERÍODO Y FILTROS
       // ========================================
-      doc.fontSize(9)
+      doc.fontSize(6)
         .fillColor(colors.dark)
         .font('Helvetica-Bold')
         .text('PERÍODO DEL REPORTE', { underline: false });
 
       doc.moveDown(0.2);
 
-      doc.fontSize(8)
+      doc.fontSize(6)
         .font('Helvetica')
         .fillColor(colors.text)
         .text(`DESDE: ${formatearFecha(filtros.fechaInicio).toUpperCase()}`, { continued: true })
@@ -121,7 +121,7 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
       // ========================================
       // TABLA DE ESTUDIANTES
       // ========================================
-      doc.fontSize(9)
+      doc.fontSize(6)
         .fillColor(colors.dark)
         .font('Helvetica-Bold')
         .text('LISTADO DE ESTUDIANTES', { underline: false });
@@ -146,7 +146,7 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
         doc.rect(40, y, doc.page.width - 80, 22)
           .fillAndStroke('#FFFFFF', colors.dark);
 
-        doc.fontSize(7).fillColor(colors.dark).font('Helvetica-Bold');
+        doc.fontSize(6).fillColor(colors.dark).font('Helvetica-Bold');
 
         doc.text('#', x, y + 7, { width: colWidths.indice, align: 'center' });
         x += colWidths.indice;
@@ -190,10 +190,10 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
           // Calcular altura dinámica
           const nombreCompleto = `${todosLosCursosEst[0].nombre} ${todosLosCursosEst[0].apellido}`.toUpperCase();
           const alturaNombre = doc.heightOfString(nombreCompleto, { width: colWidths.nombre });
-          // Altura base 18pt como solicitado.
-          let rowHeight = 18;
+          // Altura base 14pt como solicitado.
+          let rowHeight = 14;
           if (cursosRestantes.length === 1) {
-            rowHeight = Math.max(18, alturaNombre + 6);
+            rowHeight = Math.max(14, alturaNombre + 4);
           }
 
           // Determinar cuántos cursos caben en la página actual
@@ -226,7 +226,7 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
 
             const xContenidoCurso = 40 + colWidths.indice + colWidths.cedula + colWidths.nombre;
             let currentX = xContenidoCurso;
-            doc.fontSize(6.5).fillColor(colors.text).font('Helvetica');
+            doc.fontSize(6).fillColor(colors.text).font('Helvetica');
 
             // Calcular centro vertical para texto de curso
             const yCentroCurso = yPos + (rowHeight / 2);
@@ -273,20 +273,20 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
           doc.fillColor(colors.text);
 
           // #
-          doc.font('Helvetica').fontSize(8)
-            .text(indiceGlobal.toString(), xCont, yCentro - 4, { width: colWidths.indice, align: 'center' });
+          doc.font('Helvetica').fontSize(6)
+            .text(indiceGlobal.toString(), xCont, yCentro - 3, { width: colWidths.indice, align: 'center' });
           xCont += colWidths.indice;
 
           // Cédula
           const textoCedula = primerEst.cedula || 'N/A';
           const alturaCedula = doc.heightOfString(textoCedula, { width: colWidths.cedula });
-          doc.font('Helvetica').fontSize(7.5)
+          doc.font('Helvetica').fontSize(6)
             .text(textoCedula, xCont, yInicioBloque + (alturaBloque - alturaCedula) / 2, { width: colWidths.cedula, align: 'center' });
           xCont += colWidths.cedula;
 
           // Nombre completo
           const alturaNombreCompleto = doc.heightOfString(nombreCompleto, { width: colWidths.nombre });
-          doc.font('Helvetica').fontSize(7.5)
+          doc.font('Helvetica').fontSize(6)
             .text(nombreCompleto, xCont, yInicioBloque + (alturaBloque - alturaNombreCompleto) / 2, { width: colWidths.nombre, align: 'center' });
         }
         indiceGlobal++;
@@ -303,7 +303,7 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
       // (Redundancia de logo eliminada, manejada por dibujarEncabezadoCompleto)
 
       // Título del resumen
-      doc.fontSize(10)
+      doc.fontSize(6)
         .fillColor(colors.primary)
         .font('Helvetica-Bold')
         .text('RESUMEN DETALLADO', 40, doc.y, { align: 'center', width: doc.page.width - 80 });
@@ -312,13 +312,13 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
       doc.moveDown(0.5);
 
       // Información del período
-      doc.fontSize(9)
+      doc.fontSize(6)
         .fillColor(colors.dark)
         .font('Helvetica')
         .text('PERÍODO DEL REPORTE', { underline: false });
 
       doc.moveDown(0.3);
-      doc.fontSize(8)
+      doc.fontSize(6)
         .fillColor(colors.text)
         .font('Helvetica')
         .text(`DESDE: ${formatearFecha(filtros.fechaInicio).toUpperCase()}`);
@@ -331,7 +331,7 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
       doc.moveDown(0.5);
 
       // Estadísticas generales
-      doc.fontSize(10)
+      doc.fontSize(6)
         .fillColor(colors.dark)
         .font('Helvetica-Bold')
         .text('ESTADÍSTICAS GENERALES', { underline: false });
@@ -349,7 +349,7 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
       ];
 
       stats.forEach(stat => {
-        doc.fontSize(8)
+        doc.fontSize(6)
           .fillColor(colors.text)
           .font('Helvetica')
           .text(stat.label, { continued: true })
@@ -361,7 +361,7 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
       doc.moveDown(0.5);
 
       // Análisis de rendimiento
-      doc.fontSize(9)
+      doc.fontSize(6)
         .fillColor(colors.dark)
         .font('Helvetica-Bold')
         .text('ANÁLISIS DE RENDIMIENTO', { underline: false });
@@ -372,7 +372,7 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
       const tasaAprobacion = totalEstudiantes > 0 ? ((estadisticas.aprobados / totalEstudiantes) * 100).toFixed(1) : 0;
       const tasaRetencion = totalEstudiantes > 0 ? (((totalEstudiantes - (estadisticas.retirados || 0)) / totalEstudiantes) * 100).toFixed(1) : 0;
 
-      doc.fontSize(8)
+      doc.fontSize(6)
         .fillColor(colors.text)
         .font('Helvetica')
         .text(`TASA DE APROBACIÓN: `, { continued: true })
@@ -390,13 +390,13 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
       doc.moveDown(0.5);
 
       // Observaciones
-      doc.fontSize(9)
+      doc.fontSize(6)
         .fillColor(colors.dark)
         .font('Helvetica-Bold')
         .text('OBSERVACIONES', { underline: false });
 
       doc.moveDown(0.2);
-      doc.fontSize(7)
+      doc.fontSize(6)
         .fillColor(colors.textGray)
         .font('Helvetica')
         .text('• ESTE REPORTE MUESTRA EL ESTADO ACADÉMICO DE LOS ESTUDIANTES EN EL PERÍODO SELECCIONADO.');
@@ -418,12 +418,12 @@ async function generarPDFEstudiantes(datos, filtros, estadisticas) {
           .lineTo(doc.page.width - 40, doc.page.height - 50)
           .stroke();
 
-        doc.fontSize(8)
+        doc.fontSize(6)
           .fillColor(colors.dark)
           .font('Helvetica')
           .text('Escuela de Belleza Jessica Vélez', 40, doc.page.height - 40);
 
-        doc.fontSize(8)
+        doc.fontSize(6)
           .fillColor(colors.text)
           .font('Helvetica')
           .text(
@@ -480,12 +480,12 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
         }
 
         // Título del reporte a la izquierda (y=35)
-        doc.fontSize(10)
+        doc.fontSize(6)
           .font('Helvetica-Bold')
           .fillColor(colors.dark)
           .text('REPORTE FINANCIERO', 40, 35);
 
-        doc.fontSize(8)
+        doc.fontSize(6)
           .fillColor(colors.text)
           .font('Helvetica')
           .text(`GENERADO EL: ${formatearFecha(new Date()).toUpperCase()}`, 40, 48);
@@ -500,14 +500,14 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
       doc.moveDown(0.1);
 
       // PERÍODO
-      doc.fontSize(9)
+      doc.fontSize(6)
         .fillColor(colors.dark)
         .font('Helvetica')
         .text('PERÍODO DEL REPORTE', { underline: false });
 
       doc.moveDown(0.2);
 
-      doc.fontSize(8)
+      doc.fontSize(6)
         .font('Helvetica')
         .fillColor(colors.text)
         .text(`DESDE: ${formatearFecha(filtros.fechaInicio).toUpperCase()}`, { continued: true })
@@ -516,7 +516,7 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
       doc.moveDown(1);
 
       // TABLA DE PAGOS
-      doc.fontSize(9)
+      doc.fontSize(6)
         .fillColor(colors.dark)
         .font('Helvetica-Bold')
         .text('DETALLE DE PAGOS', { underline: false });
@@ -544,7 +544,7 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
         doc.rect(40, y, doc.page.width - 80, 22)
           .fillAndStroke('#FFFFFF', colors.dark);
 
-        doc.fontSize(7).fillColor(colors.dark).font('Helvetica-Bold');
+        doc.fontSize(6).fillColor(colors.dark).font('Helvetica-Bold');
 
         doc.text('#', x, y + 7, { width: colWidths.indice, align: 'center' });
         x += colWidths.indice;
@@ -595,10 +595,10 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
           // Calcular altura dinámica
           const nombreCompleto = `${todosLosPagosEstudiante[0].nombre_estudiante} ${todosLosPagosEstudiante[0].apellido_estudiante}`.toUpperCase();
           const alturaNombre = doc.heightOfString(nombreCompleto, { width: colWidths.nombre });
-          // Altura base 18pt como solicitado.
-          let rowHeight = 18;
+          // Altura base 14pt como solicitado.
+          let rowHeight = 14;
           if (pagosRestantes.length === 1) {
-            rowHeight = Math.max(18, alturaNombre + 6);
+            rowHeight = Math.max(14, alturaNombre + 4);
           }
 
           // Determinar cuántos pagos del estudiante caben en la página actual
@@ -632,7 +632,7 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
             const xContenidoPago = 40 + colWidths.indice + colWidths.cedula + colWidths.nombre;
             let currentX = xContenidoPago;
 
-            doc.fontSize(6.5).fillColor(colors.text).font('Helvetica');
+            doc.fontSize(6).fillColor(colors.text).font('Helvetica'); // Changed from 6.5 to 6
 
             // Calcular centro vertical
             const yCentroRow = yPos + (rowHeight / 2);
@@ -694,11 +694,11 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
           let xPosBloque = 40;
 
           // Índice Global
-          doc.text(indiceGlobal.toString(), xPosBloque, yCentroBloque - 4, { width: colWidths.indice, align: 'center' });
+          doc.text(indiceGlobal.toString(), xPosBloque, yCentroBloque - 3, { width: colWidths.indice, align: 'center' });
           xPosBloque += colWidths.indice;
 
           // Cédula
-          doc.text(pagoRef.cedula_estudiante || 'N/A', xPosBloque, yCentroBloque - 4, { width: colWidths.cedula, align: 'center' });
+          doc.text(pagoRef.cedula_estudiante || 'N/A', xPosBloque, yCentroBloque - 3, { width: colWidths.cedula, align: 'center' });
           xPosBloque += colWidths.cedula;
 
           // Nombre (con wrap si es necesario)
@@ -718,14 +718,14 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
 
       // (Redundancia de logo eliminada)
 
-      doc.fontSize(10).fillColor(colors.primary).font('Helvetica-Bold')
+      doc.fontSize(6).fillColor(colors.primary).font('Helvetica-Bold')
         .text('RESUMEN FINANCIERO', 40, doc.y, { align: 'center', width: doc.page.width - 80 });
 
       doc.x = 40; // Reset X to 40
       doc.moveDown(0.5);
 
       // ESTADÍSTICAS GENERALES
-      doc.fontSize(10)
+      doc.fontSize(6)
         .fillColor(colors.dark)
         .font('Helvetica-Bold')
         .text('ESTADÍSTICAS GENERALES', { underline: false });
@@ -744,7 +744,7 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
       ];
 
       stats.forEach(stat => {
-        doc.fontSize(8)
+        doc.fontSize(6)
           .fillColor(colors.text)
           .font('Helvetica')
           .text(stat.label, { continued: true })
@@ -756,13 +756,13 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
       doc.moveDown(0.5);
 
       // Observaciones
-      doc.fontSize(9)
+      doc.fontSize(6)
         .fillColor(colors.dark)
         .font('Helvetica-Bold')
         .text('OBSERVACIONES', { underline: false });
 
       doc.moveDown(0.2);
-      doc.fontSize(7)
+      doc.fontSize(6)
         .fillColor(colors.textGray)
         .font('Helvetica')
         .text('• ESTE REPORTE MUESTRA EL ESTADO FINANCIERO DEL PERÍODO SELECCIONADO.');
@@ -779,14 +779,14 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
 
       // (Redundancia de logo eliminada)
 
-      doc.fontSize(10).fillColor(colors.primary).font('Helvetica-Bold')
+      doc.fontSize(6).fillColor(colors.primary).font('Helvetica-Bold')
         .text('RESUMEN DE CURSOS', 40, doc.y, { align: 'center', width: doc.page.width - 80 });
 
       doc.x = 40; // Reset X to 40
       doc.moveDown(1);
 
       // ESTADÍSTICAS
-      doc.fontSize(9).fillColor(colors.dark).text('ESTADÍSTICAS GENERALES', { underline: true });
+      doc.fontSize(6).fillColor(colors.dark).text('ESTADÍSTICAS GENERALES', { underline: true });
       doc.moveDown(0.5);
 
       const totalCursos = estadisticas.total_cursos || 0;
@@ -794,7 +794,7 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
       const totalInscritos = estadisticas.total_estudiantes_inscritos || 0;
       const promedioOcupacion = totalCursos > 0 ? ((totalInscritos / (estadisticas.promedio_capacidad * totalCursos)) * 100).toFixed(1) : 0;
 
-      doc.fontSize(9).fillColor(colors.text).font('Helvetica').text('TOTAL CURSOS: ', { continued: true }).font('Helvetica').text(`${totalCursos}`);
+      doc.fontSize(6).fillColor(colors.text).font('Helvetica').text('TOTAL CURSOS: ', { continued: true }).font('Helvetica').text(`${totalCursos}`);
       doc.font('Helvetica').text('ACTIVOS: ', { continued: true }).fillColor(colors.success).font('Helvetica').text(`${cursosActivos}`);
       doc.fillColor(colors.text).font('Helvetica').text('TOTAL INSCRITOS: ', { continued: true }).font('Helvetica').text(`${totalInscritos}`);
       doc.font('Helvetica').text('OCUPACIÓN PROMEDIO: ', { continued: true }).font('Helvetica').text(`${promedioOcupacion}%`);
@@ -806,7 +806,7 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
       doc.moveDown(1);
 
       // ESTUDIANTES CON PAGOS PENDIENTES
-      doc.fontSize(9).fillColor(colors.dark).font('Helvetica').text('ESTUDIANTES CON PAGOS PENDIENTES', { underline: true });
+      doc.fontSize(6).fillColor(colors.dark).font('Helvetica').text('ESTUDIANTES CON PAGOS PENDIENTES', { underline: true });
       doc.moveDown(0.5);
 
       // Agrupar pagos por estudiante (todos los pagos)
@@ -847,7 +847,7 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
         // Ordenar por cantidad de cuotas pendientes (mayor a menor)
         listaEstudiantes.sort((a, b) => b.cuotasPendientes - a.cuotasPendientes);
 
-        doc.fontSize(9).fillColor(colors.textGray).font('Helvetica-Oblique')
+        doc.fontSize(6).fillColor(colors.textGray).font('Helvetica-Oblique')
           .text(`LISTADO DE ESTUDIANTES CON PAGOS PENDIENTES (${listaEstudiantes.length})`);
         doc.moveDown(0.3);
 
@@ -859,17 +859,17 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
             yPos = dibujarEncabezadoCompleto(35) + 15; // Margen de seguridad
             doc.y = yPos;
 
-            doc.fontSize(9).fillColor(colors.dark).font('Helvetica')
+            doc.fontSize(6).fillColor(colors.dark).font('Helvetica')
               .text('ESTUDIANTES CON PAGOS PENDIENTES (CONTINUACIÓN)', 40, doc.y, { underline: true });
             doc.moveDown(0.5);
           }
 
-          doc.fontSize(9).fillColor(colors.text).font('Helvetica')
+          doc.fontSize(6).fillColor(colors.text).font('Helvetica')
             .text(`${index + 1}. ${est.nombre}`, { continued: true })
             .fillColor(colors.textGray).font('Helvetica')
             .text(` (${est.cedula || 'SIN CÉDULA'})`);
 
-          doc.fontSize(8).fillColor(colors.textGray)
+          doc.fontSize(6).fillColor(colors.textGray)
             .text(`   CURSO: ${est.cursoo ? est.cursoo.toUpperCase() : (est.curso ? est.curso.toUpperCase() : 'N/A')}`);
 
           doc.fillColor(colors.success).font('Helvetica')
@@ -885,7 +885,7 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
           doc.moveDown(0.3);
         });
       } else {
-        doc.fontSize(9).fillColor(colors.success).font('Helvetica')
+        doc.fontSize(6).fillColor(colors.success).font('Helvetica')
           .text('¡EXCELENTE! NO HAY ESTUDIANTES CON PAGOS PENDIENTES EN ESTE PERÍODO.');
       }
 
@@ -906,13 +906,13 @@ async function generarPDFFinanciero(datos, filtros, estadisticas) {
           .stroke();
 
         // Footer Izquierdo
-        doc.fontSize(8)
+        doc.fontSize(6)
           .fillColor(colors.dark)
           .font('Helvetica')
           .text('Escuela de Belleza Jessica Vélez', 40, doc.page.height - 40);
 
         // Footer Derecho
-        doc.fontSize(8)
+        doc.fontSize(6)
           .fillColor(colors.text)
           .font('Helvetica')
           .text(
@@ -969,12 +969,12 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
         }
 
         // Título del reporte a la izquierda (y=35)
-        doc.fontSize(10)
+        doc.fontSize(6)
           .font('Helvetica-Bold')
           .fillColor(colors.dark)
           .text('REPORTE DE CURSOS', 40, 35);
 
-        doc.fontSize(8)
+        doc.fontSize(6)
           .fillColor(colors.text)
           .font('Helvetica')
           .text(`GENERADO EL: ${formatearFecha(new Date()).toUpperCase()}`, 40, 48);
@@ -989,7 +989,7 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
       doc.moveDown(0.1);
 
       // TABLA DE CURSOS
-      doc.fontSize(9)
+      doc.fontSize(6)
         .fillColor(colors.dark)
         .font('Helvetica-Bold')
         .text('LISTADO DE CURSOS', 40, doc.y, { underline: false });
@@ -1018,7 +1018,7 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
         doc.rect(40, y, doc.page.width - 80, 22)
           .fillAndStroke('#FFFFFF', colors.dark);
 
-        doc.fontSize(7).fillColor(colors.dark).font('Helvetica-Bold');
+        doc.fontSize(6).fillColor(colors.dark).font('Helvetica-Bold');
 
         doc.text('#', x, y + 7, { width: colWidths.indice, align: 'center' });
         x += colWidths.indice;
@@ -1058,8 +1058,8 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
 
         const alturaDocenteTotal = alturaID + alturaApellidos + alturaNombres + 4; // +4 normal
 
-        // Altura base 18pt como solicitado.
-        const rowHeight = Math.max(18, alturaNombre + 6, alturaDocenteTotal + 6);
+        // Altura base 14pt como solicitado.
+        const rowHeight = Math.max(14, alturaNombre + 4, alturaDocenteTotal + 4);
 
         // Verificar si necesitamos nueva página
         if (yPos + rowHeight > doc.page.height - 100) {
@@ -1082,7 +1082,7 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
         let yCentroRow = yPos + (rowHeight / 2);
         let xPos = 40;
 
-        doc.fontSize(7.5)
+        doc.fontSize(6)
           .fillColor(colors.text)
           .font('Helvetica');
 
@@ -1102,24 +1102,24 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
         let yDocenteBloque = yPos + (rowHeight - alturaDocenteTotal) / 2;
 
         // ID (Normal)
-        doc.font('Helvetica').fontSize(6.5)
+        doc.font('Helvetica').fontSize(6)
           .text(docenteIdentificacion, xPos, yDocenteBloque, { width: colWidths.docente, align: 'center' });
 
         let currentY = yDocenteBloque + alturaID + 1;
 
         // Apellidos
         if (apellidos) {
-          doc.font('Helvetica').fontSize(7.5)
+          doc.font('Helvetica').fontSize(6)
             .text(apellidos, xPos, currentY, { width: colWidths.docente, align: 'center' });
           currentY += alturaApellidos + 1;
         }
 
         // Nombres
         if (nombres) {
-          doc.font('Helvetica').fontSize(7.5)
+          doc.font('Helvetica').fontSize(6)
             .text(nombres, xPos, currentY, { width: colWidths.docente, align: 'center' });
         } else if (!apellidos) {
-          doc.font('Helvetica').fontSize(7.5)
+          doc.font('Helvetica').fontSize(6)
             .text('N/A', xPos, currentY, { width: colWidths.docente, align: 'center' });
         }
 
@@ -1168,7 +1168,7 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
       // (Redundancia de logo eliminada)
 
       // Título del resumen
-      doc.fontSize(10)
+      doc.fontSize(6)
         .fillColor(colors.primary)
         .font('Helvetica-Bold')
         .text('RESUMEN DE CURSOS', 40, doc.y, { align: 'center', width: doc.page.width - 80 });
@@ -1177,7 +1177,7 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
       doc.moveDown(0.5);
 
       // Estadísticas generales
-      doc.fontSize(10)
+      doc.fontSize(6)
         .fillColor(colors.dark)
         .font('Helvetica-Bold')
         .text('ESTADÍSTICAS GENERALES', { underline: false });
@@ -1196,7 +1196,7 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
       ];
 
       stats.forEach(stat => {
-        doc.fontSize(8)
+        doc.fontSize(6)
           .fillColor(colors.text)
           .font('Helvetica')
           .text(stat.label, { continued: true })
@@ -1208,14 +1208,14 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
       doc.moveDown(0.5);
 
       // Análisis
-      doc.fontSize(9)
+      doc.fontSize(6)
         .fillColor(colors.dark)
         .font('Helvetica-Bold')
         .text('ANÁLISIS DE GESTIÓN', { underline: false });
 
       doc.moveDown(0.2);
 
-      doc.fontSize(7)
+      doc.fontSize(6)
         .fillColor(colors.textGray)
         .font('Helvetica')
         .text('• CURSOS CON ALTA DEMANDA REQUIEREN LA EVALUACIÓN DE NUEVAS SECCIONES.');
@@ -1225,13 +1225,13 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
       doc.moveDown(0.5);
 
       // Observaciones
-      doc.fontSize(9)
+      doc.fontSize(6)
         .fillColor(colors.dark)
         .font('Helvetica-Bold')
         .text('OBSERVACIONES', { underline: false });
 
       doc.moveDown(0.2);
-      doc.fontSize(7)
+      doc.fontSize(6)
         .fillColor(colors.textGray)
         .font('Helvetica')
         .text('• ESTE REPORTE MUESTRA EL ESTADO OPERATIVO DE LOS CURSOS EN EL SISTEMA.');
@@ -1253,12 +1253,12 @@ async function generarPDFCursos(datos, filtros, estadisticas) {
           .lineTo(doc.page.width - 40, doc.page.height - 50)
           .stroke();
 
-        doc.fontSize(8)
+        doc.fontSize(6)
           .fillColor(colors.dark)
           .font('Helvetica')
           .text('Escuela de Belleza Jessica Vélez', 40, doc.page.height - 40);
 
-        doc.fontSize(8)
+        doc.fontSize(6)
           .fillColor(colors.text)
           .font('Helvetica')
           .text(
